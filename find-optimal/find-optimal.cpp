@@ -5,11 +5,12 @@
 #include <limits.h>
 #include <unistd.h>
 #include <time.h>
+#include <string.h>
+#include "mt.h"
 
 //#include "bloom.h"
 
 #include <set>
-#include <random>
 using namespace std;
 
 static const unsigned long gNeighborFilters[64] = {
@@ -101,25 +102,28 @@ pthread_mutex_t gMutex = PTHREAD_MUTEX_INITIALIZER;
 
 void asBinary(unsigned long number, char *buf) {
     for (int i = 63; i >= 0; i--) {
-        buf[i] = (number >> i) & 1 ? '1' : '0';
+        buf[-i+63] = (number >> i) & 1 ? '1' : '0';
     }
 }
 
 void printPattern(unsigned long number) {
+    char pat[65] = {'\0'};
+    asBinary(number, pat);
     for (int i = 0; i < 64; i++) {
-        printf(" %lu ", (number >> i) & 1);
+        printf(" %c ", pat[i]);
         if ((i+1) % 8 == 0) {
             printf("\n");
         }
     }
+    printf("\n");
 }
 
 
 unsigned long computeNextGeneration(unsigned long currentGeneration) {
     unsigned long nextGeneration = currentGeneration;
     for (int i = 0; i < 64; i++) {
-        unsigned long neighbors = __builtin_popcount(currentGeneration & gNeighborFilters[i]);
-        if (currentGeneration & (1 << i)) {
+        unsigned long neighbors = __builtin_popcountll(currentGeneration & gNeighborFilters[i]);
+        if (currentGeneration & (1UL << i)) {
             // Currently alive...
             if (neighbors <= 1) {
                 // DIE - lonely
@@ -143,6 +147,7 @@ unsigned long computeNextGeneration(unsigned long currentGeneration) {
 
 typedef struct SearchRange {
     int threadId;
+    bool random;
     unsigned long beginAt;
     unsigned long endAt;
 } SearchRange;
@@ -150,30 +155,21 @@ typedef struct SearchRange {
 void *search(void *range) {
     SearchRange *r = (SearchRange*)range;
 
-#ifndef RANDOM
-    printf("\n[Thread %d] searching range %lu - %lu\n", r->threadId, r->beginAt, r->endAt);
-    sleep(1);
-    for (unsigned long pattern = r->beginAt; pattern < r->endAt; pattern++) {
-#else
-    printf("\n[Thread %d] RANDOMLY searching range %lu - %lu\n", r->threadId, r->beginAt, r->endAt);
-    sleep(1);
+    if (r->random) {
+        // Initialize Random number generator
+        init_genrand64((unsigned long long) time(NULL));
+    }
 
-    // Random number generator
-    random_device seeder;
-    mt19937 rng(seeder());
-    uniform_int_distribution<> randomPattern(r->beginAt, r->endAt); // uniform, unbiased
-
-    unsigned long pattern = 0;
-    for (unsigned long i = r->beginAt; i < r->endAt; i++) {
-        pattern = randomPattern(rng);
-#endif
+    printf("\n[Thread %d] %s range %lu - %lu\n", r->threadId, r->random ? "RANDOMLY searching" : "searching ALL", r->beginAt, r->endAt);
+    sleep(1);
+    for (unsigned long pattern = r->beginAt; pattern <= r->endAt; pattern++) {
         if (pattern % 10000000 == 0) {
             printf(".");
         }
 
-        // Don't check starting patterns with less than 6 bits or more than 32 bits
-        if (__builtin_popcount(pattern) < 6 || __builtin_popcount(pattern) > 32) {
-            continue;
+        // Change to random pattern
+        if (r->random) {
+            pattern = genrand64_int64() % (r->endAt + 1 - r->beginAt) + r->beginAt;
         }
 
         bool ended = false;
@@ -190,18 +186,12 @@ void *search(void *range) {
 
             // We found a terminal pattern if we found a pattern that doesn't change with computeNextGeneration()
             if (nextGen == 0 || currentGen == nextGen)  {
-                /*
-                int visitPos = 1; int visitTotal = visitedPatterns.size();
-                for (unsigned long p : visitedPatterns) {
-                    printf("VISITED: %lu : %d : %d\n", p, visitPos++, visitTotal);
-                }
-                */
                 ended = true;
                 break;
             }
 
             // Safety valve... we assume that an 8x8 grid is either infinite or terminal in less than 1000 steps
-            if (generations > 80) {
+            if (generations > 1000) {
                 printf("\n[Thread %d] WARN found pattern %lu with more than 1000 generations\n", r->threadId, pattern);
                 break;
             }
@@ -211,15 +201,15 @@ void *search(void *range) {
         } while (visitedPatterns.find(currentGen) == visitedPatterns.end());
 
         if (ended) {
+            pthread_mutex_lock(&gMutex);
             if (gBestGenerations < generations) {
-                pthread_mutex_lock(&gMutex);
                 char bin[65] = {'\0'};
                 asBinary(pattern, bin);
                 printf("[Thread %d] %lu generations : %lu : %s\n", r->threadId, generations, pattern, bin);
                 gBestPattern = pattern;
                 gBestGenerations = generations;
-                pthread_mutex_unlock(&gMutex);
             }
+            pthread_mutex_unlock(&gMutex);
         }
     }
 
@@ -229,21 +219,42 @@ void *search(void *range) {
 int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
 
-    if (argc != 2) {
-        printf("./find-optimal <num-threads>\n");
+    if (argc != 3) {
+        printf("./find-optimal <test | searchall | searchrandom> <num-threads or test-number>\n");
         return 1;
     }
 
+    bool testMode = false;
+    bool random = false;
+    int numThreads = 1;
+    unsigned long testNumber;
+    if (strncmp(argv[1], "test", 4) == 0) {
+        char *end;
+        testMode = true;
+        testNumber = strtoul(argv[2], &end, 10);
+    }
+    else {
+        if (strncmp(argv[1], "searchrandom", 12) == 0) {
+            random = true;
+        }
+        numThreads = atoi(argv[2]);
+    }
+
     // Allocate an array of threads
-    int numThreads = atoi(argv[1]);
     pthread_t *threads = (pthread_t *) malloc(sizeof(pthread_t) * numThreads);
 
     unsigned long numPer = ULONG_MAX / numThreads;
     for (int i = 0; i < numThreads; i++) {
         SearchRange *r = (SearchRange *) malloc(sizeof(SearchRange));
+        r->random = random;
         r->threadId = i+1;
-        r->beginAt = (i * numPer) + 1;
-        r->endAt = r->beginAt + numPer -1;
+        if (testMode) {
+            r->beginAt = r->endAt = testNumber;
+        }
+        else {
+            r->beginAt = (i * numPer) + 1;
+            r->endAt = r->beginAt + numPer - 1;
+        }
         pthread_create(&threads[i], NULL, search, (void*) r);
     }
 

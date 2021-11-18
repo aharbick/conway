@@ -77,7 +77,7 @@ void loop() {
             case 4: {
                 char pattern[65] = {'\0'};
                 uint8_t target = awaitInteger("# generations", 1, 100);
-                simulation->findFittestPattern(pattern, 5000, target);
+                simulation->findFittestPattern(pattern, 1000, target);
                 break;
             }
             case 5: {
