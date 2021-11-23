@@ -2,8 +2,8 @@ CC=g++
 CFLAGS=-std=c++11
 BUILDDIR=build
 
-DEPS = mt.h #bloom.h
-_OBJ = find-optimal.o mt.o #bloom.o
+DEPS = mt.h
+_OBJ = find-optimal.o mt.o
 OBJ = $(patsubst %,$(BUILDDIR)/%,$(_OBJ))
 
 all: setup find-optimal
