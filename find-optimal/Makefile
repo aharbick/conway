@@ -1,4 +1,6 @@
 CC=g++
+NVCC=nvcc
+NVCFLAGS=-w --ptxas-options=-v -O3
 CFLAGS=-std=c++11
 BUILDDIR=build
 
@@ -12,6 +14,12 @@ $(BUILDDIR)/%.o: %.cpp $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 find-optimal: $(OBJ)
+	$(CC) -lpthread -o $(BUILDDIR)/$@ $^ $(CFLAGS)
+
+$(BUILDDIR)/%.o: %.cu
+	$(NVCC) -c -o $@ $< $(NVCFLAGS)
+
+find-cuda-optimal: $(OBJ) $(BUILDDIR)/gol.o
 	$(CC) -lpthread -o $(BUILDDIR)/$@ $^ $(CFLAGS)
 
 setup:

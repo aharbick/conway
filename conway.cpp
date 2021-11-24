@@ -44,8 +44,9 @@ void Conway::waveColumns() {
       uint8_t shield = (i/4)*2+(j/4)+1;
       uint8_t servo = (i%4)*4+(j%4)+1;
       changeServo(shield, servo, WHITE);
+      delay(25);
     }
-    delay(100);
+    delay(250);
   }
 
   // Give it a bit before spinning immediately back
@@ -59,8 +60,9 @@ void Conway::waveColumns() {
       uint8_t shield = (i/4)*2+(rj/4)+1;
       uint8_t servo = (i%4)*4+(rj%4)+1;
       changeServo(shield, servo, BLACK);
+      delay(25);
     }
-    delay(100);
+    delay(250);
   }
 }
 

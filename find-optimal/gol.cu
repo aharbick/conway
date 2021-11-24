@@ -91,8 +91,62 @@ __constant__ unsigned long gNeighborFilters[64] = {
   (unsigned long) 16576 << 48
 };
 
-__device__ int numNeighbors(int bitIdx, unsigned long pattern) {
-  return __popcll(pattern & gNeighborFilters[bitIdx]);
+__device__ unsigned long computeNextGeneration(unsigned long currentGeneration) {
+  unsigned long nextGeneration = currentGeneration;
+  for (int i = 0; i < 64; i++) {
+    unsigned long neighbors = __popcll(currentGeneration & gNeighborFilters[i]);
+    if (currentGeneration & (1UL << i)) {
+      // Currently alive...
+      if (neighbors <= 1) {
+        // DIE - lonely
+        nextGeneration &= ~(1UL << i);
+      }
+      else if (neighbors >= 4) {
+        // DIE - too crowded
+        nextGeneration &= ~(1UL << i);
+      }
+    }
+    else {
+      // Currently dead
+      if (neighbors == 3) {
+        // BIRTH - perfect number of neighbors
+        nextGeneration |= 1UL << i;
+      }
+    }
+  }
+  return nextGeneration;
+}
+
+__device__ unsigned long countGenerations(unsigned long pattern) {
+  // Using a set/map/hash to spot cycles should be faster in general for this
+  // problem since the number of generations is relatively small.  However on a
+  // CUDA core we don't have easy access to such data structures so instead we
+  // use Floyd's algorithm for cycle detection:
+  // https://en.wikipedia.org/wiki/Cycle_detection#Floyd's_tortoise_and_hare
+  unsigned long generations = 0;
+  unsigned long slow = pattern;
+  unsigned long fast = computeNextGeneration(slow);
+  do {
+    generations++;
+    unsigned long nextSlow = computeNextGeneration(slow);
+
+    if (slow == nextSlow) {
+      ended = true; // If we didn't change then we ended
+      break;
+    }
+    slow = nextSlow;
+    fast = computeNextGeneration(computeNextGeneration(fast));
+  }
+  while (slow != fast);
+  ended = slow == 0; // If we died out then we ended
+
+  return ended ? generations : 0;
+}
+
+__device__ void asBinary(unsigned long number, char *buf) {
+  for (int i = 63; i >= 0; i--) {
+    buf[-i+63] = (number >> i) & 1 ? '1' : '0';
+  }
 }
 
 __global__ void evaluateRange(unsigned long beginAt, unsigned long endAt,
@@ -100,6 +154,13 @@ __global__ void evaluateRange(unsigned long beginAt, unsigned long endAt,
   for (int pattern = beginAt + (blockIdx.x * blockDim.x + threadIdx.x);
        pattern < endAt;
        pattern += blockDim.x * gridDim.x) {
-
+    unsigned long generations = countGenerations(pattern);
+    if (generations > *bestGenerations) {
+      char bin[65] = {'\0'};
+      asBinary(pattern, bin);
+      printf("[Block %d, Thread %d] %lu generations : %lu : %s\n", blockIdx.x, threadIdx.x, generations, pattern, bin);
+      *bestPattern = pattern;
+      *bestGenerations = generations;
+    }
   }
 }
