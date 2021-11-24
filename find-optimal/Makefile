@@ -14,13 +14,13 @@ $(BUILDDIR)/%.o: %.cpp $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 find-optimal: $(OBJ)
-	$(CC) -lpthread -o $(BUILDDIR)/$@ $^ $(CFLAGS)
+	$(CC) -pthread -o $(BUILDDIR)/$@ $^ $(CFLAGS)
 
 $(BUILDDIR)/%.o: %.cu
 	$(NVCC) -c -o $@ $< $(NVCFLAGS)
 
 find-cuda-optimal: $(OBJ) $(BUILDDIR)/gol.o
-	$(CC) -lpthread -o $(BUILDDIR)/$@ $^ $(CFLAGS)
+	$(CC) -pthread -o $(BUILDDIR)/$@ $^ $(CFLAGS)
 
 setup:
 	mkdir -p build
