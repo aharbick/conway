@@ -19,7 +19,7 @@ find-optimal: $(OBJ)
 $(BUILDDIR)/%.o: %.cu
 	$(NVCC) -c -o $@ $< $(NVCFLAGS)
 
-find-cuda-optimal: $(OBJ) $(BUILDDIR)/gol.o
+find-cuda-optimal: $(BUILDDIR)/find-cuda-optimal.o $(BUILDDIR)/gol.o
 	$(CC) -pthread -o $(BUILDDIR)/$@ $^ $(CFLAGS)
 
 setup:
