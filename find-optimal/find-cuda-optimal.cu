@@ -3,6 +3,14 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <stdbool.h>
+#include <pthread.h>
+#include <limits.h>
+#include <unistd.h>
+#include <time.h>
+#include <string.h>
+#include "mt.h"
+
 
 #define ROWS 8
 #define COLS 8
@@ -123,6 +131,7 @@ __device__ unsigned long countGenerations(unsigned long pattern) {
   // CUDA core we don't have easy access to such data structures so instead we
   // use Floyd's algorithm for cycle detection:
   // https://en.wikipedia.org/wiki/Cycle_detection#Floyd's_tortoise_and_hare
+  bool ended = false;
   unsigned long generations = 0;
   unsigned long slow = pattern;
   unsigned long fast = computeNextGeneration(slow);
@@ -143,24 +152,45 @@ __device__ unsigned long countGenerations(unsigned long pattern) {
   return ended ? generations : 0;
 }
 
-__device__ void asBinary(unsigned long number, char *buf) {
+__device__ __host__ void asBinary(unsigned long number, char *buf) {
   for (int i = 63; i >= 0; i--) {
     buf[-i+63] = (number >> i) & 1 ? '1' : '0';
   }
 }
 
-__global__ void evaluateRange(unsigned long beginAt, unsigned long endAt,
-                              unsigned long *bestPattern, unsigned long *bestGenerations) {
+__global__ void evaluateRange(unsigned long beginAt, unsigned long endAt) {
+  unsigned long bestGenerations = 0;
   for (int pattern = beginAt + (blockIdx.x * blockDim.x + threadIdx.x);
        pattern < endAt;
        pattern += blockDim.x * gridDim.x) {
     unsigned long generations = countGenerations(pattern);
-    if (generations > *bestGenerations) {
+    if (generations > bestGenerations) {
       char bin[65] = {'\0'};
       asBinary(pattern, bin);
       printf("[Block %d, Thread %d] %lu generations : %lu : %s\n", blockIdx.x, threadIdx.x, generations, pattern, bin);
-      *bestPattern = pattern;
-      *bestGenerations = generations;
+      bestGenerations = generations;
     }
   }
+}
+
+#define CHUNKSIZE 1024*1024
+int main(int argc, char **argv) {
+  setvbuf(stdout, NULL, _IONBF, 0);
+
+  unsigned long beginAt = 1;
+  unsigned long endAt = ULONG_MAX;
+
+  if (argc == 3) {
+    char *end;
+    beginAt = strtoul(argv[1], &end, 10);
+    endAt = strtoul(argv[2], &end, 10);
+  }
+
+  for (unsigned long i = beginAt; i+CHUNKSIZE < endAt; i += CHUNKSIZE) {
+    //printf("Calling CUDA kernel for %lu - %lu\n", i, i+CHUNKSIZE);
+    evaluateRange<<<1024,1024>>>(beginAt, endAt);
+  }
+  cudaDeviceSynchronize();
+
+  return 0;
 }
