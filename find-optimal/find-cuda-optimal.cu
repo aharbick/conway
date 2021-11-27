@@ -187,8 +187,7 @@ int main(int argc, char **argv) {
   }
 
   for (unsigned long i = beginAt; i+CHUNKSIZE < endAt; i += CHUNKSIZE) {
-    //printf("Calling CUDA kernel for %lu - %lu\n", i, i+CHUNKSIZE);
-    evaluateRange<<<1024,1024>>>(beginAt, endAt);
+    evaluateRange<<<1024,1024>>>(i, i+CHUNKSIZE);
   }
   cudaDeviceSynchronize();
 
