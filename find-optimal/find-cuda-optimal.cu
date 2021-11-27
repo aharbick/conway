@@ -206,7 +206,7 @@ int main(int argc, char **argv) {
 
     cudaMemset(devBestPattern, 0x0, sizeof(unsigned long));
     cudaMemset(devBestGenerations, 0x0, sizeof(unsigned long));
-    evaluateRange<<<1024, 1024>>>(i, j, devBestPattern, devBestGenerations);
+    evaluateRange<<<4096, 256>>>(i, j, devBestPattern, devBestGenerations);
 
     // Copy device answer to host and emit
 		cudaMemcpy(hostBestPattern, devBestPattern, sizeof(unsigned long), cudaMemcpyDeviceToHost);
