@@ -158,38 +158,65 @@ __device__ __host__ void asBinary(unsigned long number, char *buf) {
   }
 }
 
-__global__ void evaluateRange(unsigned long beginAt, unsigned long endAt) {
-  unsigned long bestGenerations = 0;
+__global__ void evaluateRange(unsigned long beginAt, unsigned long endAt,
+                              unsigned long *bestPattern, unsigned long *bestGenerations) {
   for (int pattern = beginAt + (blockIdx.x * blockDim.x + threadIdx.x);
        pattern < endAt;
        pattern += blockDim.x * gridDim.x) {
+    /*
+    if ((pattern & (pattern - 1)) == 0)  {
+      printf("%lu ---- begin: %lu, end: %lu, block: %d, blockdim: %d, thread: %d, griddim: %d\n", pattern, beginAt, endAt, blockIdx.x, blockDim.x, threadIdx.x, gridDim.x);
+    }
+    */
+
     unsigned long generations = countGenerations(pattern);
-    if (generations > bestGenerations) {
-      char bin[65] = {'\0'};
-      asBinary(pattern, bin);
-      printf("[Block %d, Thread %d] %lu generations : %lu : %s\n", blockIdx.x, threadIdx.x, generations, pattern, bin);
-      bestGenerations = generations;
+    if (generations > *bestGenerations) {
+      *bestGenerations = generations;
+      *bestPattern = pattern;
     }
   }
 }
 
 #define CHUNKSIZE 1024*1024
+
 int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
 
+  //  Figure out which range we're processing
   unsigned long beginAt = 1;
   unsigned long endAt = ULONG_MAX;
-
   if (argc == 3) {
     char *end;
     beginAt = strtoul(argv[1], &end, 10);
     endAt = strtoul(argv[2], &end, 10);
   }
 
-  for (unsigned long i = beginAt; i+CHUNKSIZE < endAt; i += CHUNKSIZE) {
-    evaluateRange<<<1024,1024>>>(i, i+CHUNKSIZE);
+  // Allocate memory on CUDA device and locally on host to get the best answers
+  unsigned long *devBestPattern, *hostBestPattern;
+  hostBestPattern = (unsigned long *)malloc(sizeof(unsigned long));
+  cudaMalloc((void**)&devBestPattern, sizeof(unsigned long));
+
+  unsigned long *devBestGenerations, *hostBestGenerations;
+  hostBestGenerations = (unsigned long *)malloc(sizeof(unsigned long));
+  cudaMalloc((void**)&devBestGenerations, sizeof(unsigned long));
+
+  unsigned long i = beginAt;
+  while (i < endAt) {
+    unsigned j = (i+CHUNKSIZE) > endAt ? endAt : i+CHUNKSIZE;
+
+    cudaMemset(devBestPattern, 0x0, sizeof(unsigned long));
+    cudaMemset(devBestGenerations, 0x0, sizeof(unsigned long));
+    evaluateRange<<<1024, 1024>>>(i, j, devBestPattern, devBestGenerations);
+
+    // Copy device answer to host and emit
+		cudaMemcpy(hostBestPattern, devBestPattern, sizeof(unsigned long), cudaMemcpyDeviceToHost);
+		cudaMemcpy(hostBestGenerations, devBestGenerations, sizeof(unsigned long), cudaMemcpyDeviceToHost);
+    char bin[65] = {'\0'};
+    asBinary(*hostBestPattern, bin);
+    printf("generations - %lu, %s in range %lu-%lu\n", *hostBestGenerations, bin, i, j);
+
+    i += CHUNKSIZE;
   }
-  cudaDeviceSynchronize();
 
   return 0;
 }
