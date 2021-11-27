@@ -184,6 +184,7 @@ int main(int argc, char **argv) {
   *hostBestGenerations = 0;
   cudaMalloc((void**)&devBestGenerations, sizeof(ulong64));
 
+  ulong64 chunk = 1;
   ulong64 i = beginAt;
   while (i < endAt) {
     unsigned j = (i+CHUNKSIZE) > endAt ? endAt : i+CHUNKSIZE;
@@ -201,10 +202,11 @@ int main(int argc, char **argv) {
       printf("\nNEW best! %lu generations, %s (%lu) in range %lu-%lu\n",
              *hostBestGenerations, bin, *hostBestPattern, i, j);
     }
-    else {
-      printf(".");
+    else if (chunk % 1000 == 0) { // every billion
+      printf("Up to %lu, %2.10f%% complete\n", i, (float) i/endAt * 100);
     }
 
+    chunk++;
     i += CHUNKSIZE;
   }
 
