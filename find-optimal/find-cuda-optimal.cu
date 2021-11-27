@@ -1,108 +1,97 @@
 #include <cuda.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/time.h>
-#include <unistd.h>
 #include <stdbool.h>
-#include <pthread.h>
-#include <limits.h>
-#include <unistd.h>
-#include <time.h>
-#include <string.h>
-#include "mt.h"
-
-
-#define ROWS 8
-#define COLS 8
 
 typedef unsigned char ubyte;
+typedef unsigned long long ulong64;
 
-__constant__ unsigned long gNeighborFilters[64] = {
+__constant__ ulong64 gNeighborFilters[64] = {
   // Row 0 pixels
-  (unsigned long) 770,
-  (unsigned long) 1797 << 0,
-  (unsigned long) 1797 << 1,
-  (unsigned long) 1797 << 2,
-  (unsigned long) 1797 << 3,
-  (unsigned long) 1797 << 4,
-  (unsigned long) 1797 << 5,
-  (unsigned long) 49216,
+  (ulong64) 770,
+  (ulong64) 1797 << 0,
+  (ulong64) 1797 << 1,
+  (ulong64) 1797 << 2,
+  (ulong64) 1797 << 3,
+  (ulong64) 1797 << 4,
+  (ulong64) 1797 << 5,
+  (ulong64) 49216,
 
   // Row 1 pixels
-  (unsigned long) 197123,
-  (unsigned long) 460039 << 0,
-  (unsigned long) 460039 << 1,
-  (unsigned long) 460039 << 2,
-  (unsigned long) 460039 << 3,
-  (unsigned long) 460039 << 4,
-  (unsigned long) 460039 << 5,
-  (unsigned long) 12599488,
+  (ulong64) 197123,
+  (ulong64) 460039 << 0,
+  (ulong64) 460039 << 1,
+  (ulong64) 460039 << 2,
+  (ulong64) 460039 << 3,
+  (ulong64) 460039 << 4,
+  (ulong64) 460039 << 5,
+  (ulong64) 12599488,
 
   // Row 2 pixels
-  (unsigned long) 197123 << 8,
-  (unsigned long) 460039 << 8 << 0,
-  (unsigned long) 460039 << 8 << 1,
-  (unsigned long) 460039 << 8 << 2,
-  (unsigned long) 460039 << 8 << 3,
-  (unsigned long) 460039 << 8 << 4,
-  (unsigned long) 460039 << 8 << 5,
-  (unsigned long) 12599488 << 8,
+  (ulong64) 197123 << 8,
+  (ulong64) 460039 << 8 << 0,
+  (ulong64) 460039 << 8 << 1,
+  (ulong64) 460039 << 8 << 2,
+  (ulong64) 460039 << 8 << 3,
+  (ulong64) 460039 << 8 << 4,
+  (ulong64) 460039 << 8 << 5,
+  (ulong64) 12599488 << 8,
 
   // Row 3 pixels
-  (unsigned long) 197123 << 16,
-  (unsigned long) 460039 << 16 << 0,
-  (unsigned long) 460039 << 16 << 1,
-  (unsigned long) 460039 << 16 << 2,
-  (unsigned long) 460039 << 16 << 3,
-  (unsigned long) 460039 << 16 << 4,
-  (unsigned long) 460039 << 16 << 5,
-  (unsigned long) 12599488 << 16,
+  (ulong64) 197123 << 16,
+  (ulong64) 460039 << 16 << 0,
+  (ulong64) 460039 << 16 << 1,
+  (ulong64) 460039 << 16 << 2,
+  (ulong64) 460039 << 16 << 3,
+  (ulong64) 460039 << 16 << 4,
+  (ulong64) 460039 << 16 << 5,
+  (ulong64) 12599488 << 16,
 
   // Row 4 pixels
-  (unsigned long) 197123 << 24,
-  (unsigned long) 460039 << 24 << 0,
-  (unsigned long) 460039 << 24 << 1,
-  (unsigned long) 460039 << 24 << 2,
-  (unsigned long) 460039 << 24 << 3,
-  (unsigned long) 460039 << 24 << 4,
-  (unsigned long) 460039 << 24 << 5,
-  (unsigned long) 12599488 << 24,
+  (ulong64) 197123 << 24,
+  (ulong64) 460039 << 24 << 0,
+  (ulong64) 460039 << 24 << 1,
+  (ulong64) 460039 << 24 << 2,
+  (ulong64) 460039 << 24 << 3,
+  (ulong64) 460039 << 24 << 4,
+  (ulong64) 460039 << 24 << 5,
+  (ulong64) 12599488 << 24,
 
   // Row 5 pixels
-  (unsigned long) 197123 << 32,
-  (unsigned long) 460039 << 32 << 0,
-  (unsigned long) 460039 << 32 << 1,
-  (unsigned long) 460039 << 32 << 2,
-  (unsigned long) 460039 << 32 << 3,
-  (unsigned long) 460039 << 32 << 4,
-  (unsigned long) 460039 << 32 << 5,
-  (unsigned long) 12599488 << 32,
+  (ulong64) 197123 << 32,
+  (ulong64) 460039 << 32 << 0,
+  (ulong64) 460039 << 32 << 1,
+  (ulong64) 460039 << 32 << 2,
+  (ulong64) 460039 << 32 << 3,
+  (ulong64) 460039 << 32 << 4,
+  (ulong64) 460039 << 32 << 5,
+  (ulong64) 12599488 << 32,
 
   // Row 6 pixels
-  (unsigned long) 197123 << 40,
-  (unsigned long) 460039 << 40 << 0,
-  (unsigned long) 460039 << 40 << 1,
-  (unsigned long) 460039 << 40 << 2,
-  (unsigned long) 460039 << 40 << 3,
-  (unsigned long) 460039 << 40 << 4,
-  (unsigned long) 460039 << 40 << 5,
-  (unsigned long) 12599488 << 40,
+  (ulong64) 197123 << 40,
+  (ulong64) 460039 << 40 << 0,
+  (ulong64) 460039 << 40 << 1,
+  (ulong64) 460039 << 40 << 2,
+  (ulong64) 460039 << 40 << 3,
+  (ulong64) 460039 << 40 << 4,
+  (ulong64) 460039 << 40 << 5,
+  (ulong64) 12599488 << 40,
 
   // Row 7 pixels
-  (unsigned long) 515 << 48,
-  (unsigned long) 1287 << 48 << 0,
-  (unsigned long) 1287 << 48 << 1,
-  (unsigned long) 1287 << 48 << 2,
-  (unsigned long) 1287 << 48 << 3,
-  (unsigned long) 1287 << 48 << 4,
-  (unsigned long) 1287 << 48 << 5,
-  (unsigned long) 16576 << 48
+  (ulong64) 515 << 48,
+  (ulong64) 1287 << 48 << 0,
+  (ulong64) 1287 << 48 << 1,
+  (ulong64) 1287 << 48 << 2,
+  (ulong64) 1287 << 48 << 3,
+  (ulong64) 1287 << 48 << 4,
+  (ulong64) 1287 << 48 << 5,
+  (ulong64) 16576 << 48
 };
 
-__device__ unsigned long computeNextGeneration(unsigned long currentGeneration) {
-  unsigned long nextGeneration = currentGeneration;
+__device__ ulong64 computeNextGeneration(ulong64 currentGeneration) {
+  ulong64 nextGeneration = currentGeneration;
   for (int i = 0; i < 64; i++) {
-    unsigned long neighbors = __popcll(currentGeneration & gNeighborFilters[i]);
+    ulong64 neighbors = __popcll(currentGeneration & gNeighborFilters[i]);
     if (currentGeneration & (1UL << i)) {
       // Currently alive...
       if (neighbors <= 1) {
@@ -125,19 +114,19 @@ __device__ unsigned long computeNextGeneration(unsigned long currentGeneration) 
   return nextGeneration;
 }
 
-__device__ unsigned long countGenerations(unsigned long pattern) {
+__device__ ulong64 countGenerations(ulong64 pattern) {
   // Using a set/map/hash to spot cycles should be faster in general for this
   // problem since the number of generations is relatively small.  However on a
   // CUDA core we don't have easy access to such data structures so instead we
   // use Floyd's algorithm for cycle detection:
   // https://en.wikipedia.org/wiki/Cycle_detection#Floyd's_tortoise_and_hare
   bool ended = false;
-  unsigned long generations = 0;
-  unsigned long slow = pattern;
-  unsigned long fast = computeNextGeneration(slow);
+  ulong64 generations = 0;
+  ulong64 slow = pattern;
+  ulong64 fast = computeNextGeneration(slow);
   do {
     generations++;
-    unsigned long nextSlow = computeNextGeneration(slow);
+    ulong64 nextSlow = computeNextGeneration(slow);
 
     if (slow == nextSlow) {
       ended = true; // If we didn't change then we ended
@@ -152,28 +141,22 @@ __device__ unsigned long countGenerations(unsigned long pattern) {
   return ended ? generations : 0;
 }
 
-__device__ __host__ void asBinary(unsigned long number, char *buf) {
-  for (int i = 63; i >= 0; i--) {
-    buf[-i+63] = (number >> i) & 1 ? '1' : '0';
-  }
-}
-
-__global__ void evaluateRange(unsigned long beginAt, unsigned long endAt,
-                              unsigned long *bestPattern, unsigned long *bestGenerations) {
+__global__ void evaluateRange(ulong64 beginAt, ulong64 endAt,
+                              ulong64 *bestPattern, ulong64 *bestGenerations) {
   for (int pattern = beginAt + (blockIdx.x * blockDim.x + threadIdx.x);
        pattern < endAt;
        pattern += blockDim.x * gridDim.x) {
-    /*
-    if ((pattern & (pattern - 1)) == 0)  {
-      printf("%lu ---- begin: %lu, end: %lu, block: %d, blockdim: %d, thread: %d, griddim: %d\n", pattern, beginAt, endAt, blockIdx.x, blockDim.x, threadIdx.x, gridDim.x);
-    }
-    */
-
-    unsigned long generations = countGenerations(pattern);
-    if (generations > *bestGenerations) {
-      *bestGenerations = generations;
+    ulong64 generations = countGenerations(pattern);
+    ulong64 old = atomicMax(bestGenerations, generations);
+    if (old < generations) {
       *bestPattern = pattern;
     }
+  }
+}
+
+void asBinary(ulong64 number, char *buf) {
+  for (int i = 63; i >= 0; i--) {
+    buf[-i+63] = (number >> i) & 1 ? '1' : '0';
   }
 }
 
@@ -183,8 +166,8 @@ int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
 
   //  Figure out which range we're processing
-  unsigned long beginAt = 1;
-  unsigned long endAt = ULONG_MAX;
+  ulong64 beginAt = 1;
+  ulong64 endAt = ULONG_MAX;
   if (argc == 3) {
     char *end;
     beginAt = strtoul(argv[1], &end, 10);
@@ -192,28 +175,35 @@ int main(int argc, char **argv) {
   }
 
   // Allocate memory on CUDA device and locally on host to get the best answers
-  unsigned long *devBestPattern, *hostBestPattern;
-  hostBestPattern = (unsigned long *)malloc(sizeof(unsigned long));
-  cudaMalloc((void**)&devBestPattern, sizeof(unsigned long));
+  ulong64 *devBestPattern, *hostBestPattern;
+  hostBestPattern = (ulong64 *)malloc(sizeof(ulong64));
+  cudaMalloc((void**)&devBestPattern, sizeof(ulong64));
 
-  unsigned long *devBestGenerations, *hostBestGenerations;
-  hostBestGenerations = (unsigned long *)malloc(sizeof(unsigned long));
-  cudaMalloc((void**)&devBestGenerations, sizeof(unsigned long));
+  ulong64 *devBestGenerations, *hostBestGenerations;
+  hostBestGenerations = (ulong64 *)malloc(sizeof(ulong64));
+  *hostBestGenerations = 0;
+  cudaMalloc((void**)&devBestGenerations, sizeof(ulong64));
 
-  unsigned long i = beginAt;
+  ulong64 i = beginAt;
   while (i < endAt) {
     unsigned j = (i+CHUNKSIZE) > endAt ? endAt : i+CHUNKSIZE;
 
-    cudaMemset(devBestPattern, 0x0, sizeof(unsigned long));
-    cudaMemset(devBestGenerations, 0x0, sizeof(unsigned long));
+    cudaMemcpy(devBestGenerations, hostBestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice);
     evaluateRange<<<4096, 256>>>(i, j, devBestPattern, devBestGenerations);
 
     // Copy device answer to host and emit
-		cudaMemcpy(hostBestPattern, devBestPattern, sizeof(unsigned long), cudaMemcpyDeviceToHost);
-		cudaMemcpy(hostBestGenerations, devBestGenerations, sizeof(unsigned long), cudaMemcpyDeviceToHost);
+    ulong64 prevGen = *hostBestGenerations;
+		cudaMemcpy(hostBestPattern, devBestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost);
+		cudaMemcpy(hostBestGenerations, devBestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost);
     char bin[65] = {'\0'};
-    asBinary(*hostBestPattern, bin);
-    printf("generations - %lu, %s in range %lu-%lu\n", *hostBestGenerations, bin, i, j);
+    if (*hostBestGenerations != prevGen) {
+      asBinary(*hostBestPattern, bin);
+      printf("\nNEW best! %lu generations, %s (%lu) in range %lu-%lu\n",
+             *hostBestGenerations, bin, *hostBestPattern, i, j);
+    }
+    else {
+      printf(".");
+    }
 
     i += CHUNKSIZE;
   }
