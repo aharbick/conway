@@ -168,10 +168,10 @@ const char *prog_bug_email = "aharbick@aharbick.com";
 static char prog_doc[] = "CUDA based exhaustive search for terminal and stable states in an 8x8 bounded Conway's Game of Life grid";
 static char prog_args_doc[] = "";
 static struct argp_option argp_options[] = {
-  { "chunkroot", 'c', "chunkroot", OPTION_ARG_OPTIONAL, "Process chunks of candidates in 2^chunkroot."},
-  { "gpus", 'g', "num", OPTION_ARG_OPTIONAL, "How many GPUs to use."},
-  { "blocksize", 'b', "size", OPTION_ARG_OPTIONAL, "Size of CUDA block in kernel call."},
-  { "threadsperblock", 't', "threads", OPTION_ARG_OPTIONAL, "Threads per block in CUDA kernel call."},
+  { "chunkroot", 'c', "chunkroot", 0, "Process chunks of candidates in 2^chunkroot."},
+  { "gpus", 'g', "num", 0, "How many GPUs to use."},
+  { "blocksize", 'b', "size", 0, "Size of CUDA block in kernel call."},
+  { "threadsperblock", 't', "threads", 0, "Threads per block in CUDA kernel call."},
   { "random", 'r', 0, OPTION_ARG_OPTIONAL, "Search each chunk randomly."},
   { 0 }
 };
