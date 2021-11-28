@@ -1,7 +1,10 @@
 #include <cuda.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <pthread.h>
+#include <argp.h>
 
 typedef unsigned char ubyte;
 typedef unsigned long long ulong64;
@@ -160,19 +163,52 @@ void asBinary(ulong64 number, char *buf) {
   }
 }
 
-#define CHUNKSIZE 1024*1024
+const char *prog = "find-cuda-optimal v0.1";
+const char *prog_bug_email = "aharbick@aharbick.com";
+static char prog_doc[] = "CUDA based exhaustive search for terminal and stable states in an 8x8 bounded Conway's Game of Life grid";
+static char prog_args_doc[] = "";
+static struct argp_option argp_options[] = {
+  { "chunkroot", 'c', "chunkroot", OPTION_ARG_OPTIONAL, "Process chunks of candidates in 2^chunkroot."},
+  { "gpus", 'g', "num", OPTION_ARG_OPTIONAL, "How many GPUs to use."},
+  { "blocksize", 'b', "size", OPTION_ARG_OPTIONAL, "Size of CUDA block in kernel call."},
+  { "threadsperblock", 't', "threads", OPTION_ARG_OPTIONAL, "Threads per block in CUDA kernel call."},
+  { "random", 'r', 0, OPTION_ARG_OPTIONAL, "Search each chunk randomly."},
+  { 0 }
+};
 
-int main(int argc, char **argv) {
-  setvbuf(stdout, NULL, _IONBF, 0);
+typedef struct prog_args {
+  int threadId = 0;
+  bool random = false;
+  ulong64 chunkSize = 1024*1024;
+  int gpusToUse = 1;
+  int blockSize = 4096;
+  int threadsPerBlock = 256;
+  ulong64 beginAt;
+  ulong64 endAt;
+} prog_args;
 
-  //  Figure out which range we're processing
-  ulong64 beginAt = 1;
-  ulong64 endAt = ULONG_MAX;
-  if (argc == 3) {
-    char *end;
-    beginAt = strtoul(argv[1], &end, 10);
-    endAt = strtoul(argv[2], &end, 10);
+static error_t parse_argp_options(int key, char *arg, struct argp_state *state) {
+  prog_args *a = (prog_args *)state->input;
+  switch(key) {
+  case 'c':
+    a->chunkSize = atoi(arg) * atoi(arg);
+    break;
+  case 'g':
+    a->gpusToUse = atoi(arg);
+    break;
+  case 'b':
+    a->blockSize = atoi(arg);
+    break;
+  case 't':
+    a->threadsPerBlock = atoi(arg);
+    break;
+  default: return ARGP_ERR_UNKNOWN;
   }
+  return 0;
+}
+
+void *cudaSearch(void *args) {
+  prog_args *cli = (prog_args *)args;
 
   // Allocate memory on CUDA device and locally on host to get the best answers
   ulong64 *devBestPattern, *hostBestPattern;
@@ -185,17 +221,17 @@ int main(int argc, char **argv) {
   cudaMalloc((void**)&devBestGenerations, sizeof(ulong64));
 
   ulong64 chunk = 1;
-  ulong64 i = beginAt;
-  while (i < endAt) {
-    unsigned j = (i+CHUNKSIZE) > endAt ? endAt : i+CHUNKSIZE;
+  ulong64 i = cli->beginAt;
+  while (i < cli->endAt) {
+    unsigned j = (i+cli->chunkSize) > cli->endAt ? cli->endAt : i+cli->chunkSize;
 
     cudaMemcpy(devBestGenerations, hostBestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice);
-    evaluateRange<<<4096, 256>>>(i, j, devBestPattern, devBestGenerations);
+    evaluateRange<<<cli->blockSize, cli->threadsPerBlock>>>(i, j, devBestPattern, devBestGenerations);
 
     // Copy device answer to host and emit
     ulong64 prevGen = *hostBestGenerations;
-		cudaMemcpy(hostBestPattern, devBestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost);
-		cudaMemcpy(hostBestGenerations, devBestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost);
+    cudaMemcpy(hostBestPattern, devBestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost);
+    cudaMemcpy(hostBestGenerations, devBestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost);
     char bin[65] = {'\0'};
     if (*hostBestGenerations != prevGen) {
       asBinary(*hostBestPattern, bin);
@@ -203,11 +239,45 @@ int main(int argc, char **argv) {
              *hostBestGenerations, bin, *hostBestPattern, i, j);
     }
     else if (chunk % 1000 == 0) { // every billion
-      printf("Up to %lu, %2.10f%% complete\n", i, (float) i/endAt * 100);
+      printf("Up to %lu, %2.10f%% complete\n", i, (float) i/cli->endAt * 100);
     }
 
     chunk++;
-    i += CHUNKSIZE;
+    i += cli->chunkSize;
+  }
+
+  return NULL;
+}
+
+static struct argp argp = {argp_options, parse_argp_options, prog_args_doc, prog_doc, 0, 0};
+
+int main(int argc, char *argv[]) {
+  setvbuf(stdout, NULL, _IONBF, 0);
+
+  // Process the arguments
+  prog_args *cli = (prog_args *) malloc(sizeof(prog_args));
+  cli->chunkSize = 1024*1024;
+  cli->gpusToUse = 1;
+  cli->blockSize = 4096;
+  cli->threadsPerBlock = 256;
+  argp_parse(&argp, argc, argv, 0, 0, cli);
+
+  // We're going to spin up one CPU thread per GPU and assign that an equal portion of the search space
+  ulong64 candidatesPerGpu = ULONG_MAX / cli->gpusToUse;
+  pthread_t *threads = (pthread_t *) malloc(sizeof(pthread_t) * cli->gpusToUse);
+
+  for (int t = 0; t < cli->gpusToUse; t++) {
+    // Spin up a thread per gpu
+    cudaSetDevice(t);
+    cli->threadId = t+1;
+    cli->beginAt = t * candidatesPerGpu + 1;
+    cli->endAt = cli->beginAt + candidatesPerGpu -1;
+    pthread_create(&threads[t], NULL, cudaSearch, (void*) cli);
+  }
+
+  for (int t = 0; t < cli->gpusToUse; t++) {
+    printf("\nWaiting on thread %i\n", t+1);
+    pthread_join(threads[t], NULL);
   }
 
   return 0;

@@ -1,7 +1,7 @@
 CC=g++
 NVCC=nvcc
 NVCFLAGS=-w --ptxas-options=-v -O3 -arch sm_53
-NVLIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda
+NVLIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda -pthread
 CFLAGS=-std=c++11
 BUILDDIR=build
 
