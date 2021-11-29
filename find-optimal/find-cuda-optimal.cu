@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include <unistd.h>
 #include <argp.h>
 
 typedef unsigned char ubyte;
@@ -90,10 +91,6 @@ __constant__ ulong64 gNeighborFilters[64] = {
   (ulong64) 1287 << 48 << 5,
   (ulong64) 16576 << 48
 };
-
-unsigned long  gBestPattern = 0;
-unsigned long gBestGenerations = 0;
-pthread_mutex_t gMutex = PTHREAD_MUTEX_INITIALIZER;
 
 __device__ ulong64 computeNextGeneration(ulong64 currentGeneration) {
   ulong64 nextGeneration = currentGeneration;
@@ -215,6 +212,7 @@ void *cudaSearch(void *args) {
   prog_args *cli = (prog_args *)args;
 
   // Choose our GPU
+  printf("[Thread %d] %lu - %lu\n", cli->threadId, cli->beginAt, cli->endAt);
   cudaSetDevice(cli->threadId);
 
   // Allocate memory on CUDA device and locally on host to get the best answers
@@ -236,18 +234,15 @@ void *cudaSearch(void *args) {
     evaluateRange<<<cli->blockSize, cli->threadsPerBlock>>>(i, j, devBestPattern, devBestGenerations);
 
     // Copy device answer to host and emit
+    ulong64 prev = *hostBestPattern;
     cudaMemcpy(hostBestPattern, devBestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost);
     cudaMemcpy(hostBestGenerations, devBestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost);
-    pthread_mutex_lock(&gMutex);
-    if (gBestGenerations < *hostBestGenerations) {
+    if (prev != *hostBestPattern) {
       char bin[65] = {'\0'};
       asBinary(*hostBestPattern, bin);
       printf("[Thread %d] %lu generations : %lu :%s\n",
              cli->threadId, *hostBestGenerations, *hostBestPattern, bin);
-      gBestPattern = *hostBestPattern;
-      gBestGenerations = *hostBestGenerations;
     }
-    pthread_mutex_unlock(&gMutex);
 
     if (chunk % 1000 == 0) { // every billion
       printf("[Thread %d] Up to %lu, %2.10f%% complete\n", cli->threadId, i, (float) i/cli->endAt * 100);
@@ -285,6 +280,7 @@ int main(int argc, char *argv[]) {
     targs->beginAt = t * candidatesPerGpu + 1;
     targs->endAt = targs->beginAt + candidatesPerGpu -1;
     pthread_create(&threads[t], NULL, cudaSearch, (void*) targs);
+    sleep(5);
   }
 
   for (int t = 0; t < cli->gpusToUse; t++) {
