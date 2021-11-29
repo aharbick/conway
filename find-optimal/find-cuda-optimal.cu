@@ -8,7 +8,7 @@
 #include <argp.h>
 
 typedef unsigned char ubyte;
-typedef unsigned long long ulong64;
+typedef unsigned long long int ulong64;
 
 __constant__ ulong64 gNeighborFilters[64] = {
   // Row 0 pixels
@@ -174,6 +174,8 @@ static struct argp_option argp_options[] = {
   { "blocksize", 'b', "size", 0, "Size of CUDA block in kernel call."},
   { "threadsperblock", 't', "threads", 0, "Threads per block in CUDA kernel call."},
   { "random", 'r', 0, OPTION_ARG_OPTIONAL, "Search each chunk randomly."},
+  { "beginat", 's', "num", 0, "Explicit beginAt."},
+  { "endat", 'e', "num", 0, "Explicit endAt."},
   { 0 }
 };
 
@@ -202,6 +204,12 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
     break;
   case 't':
     a->threadsPerBlock = atoi(arg);
+    break;
+  case 's':
+    a->beginAt = strtoull(arg, NULL, 10);
+    break;
+  case 'e':
+    a->endAt = strtoull(arg, NULL, 10);
     break;
   default: return ARGP_ERR_UNKNOWN;
   }
@@ -266,6 +274,8 @@ int main(int argc, char *argv[]) {
   cli->gpusToUse = 1;
   cli->blockSize = 4096;
   cli->threadsPerBlock = 256;
+  cli->beginAt = 0;
+  cli->endAt = 0;
   argp_parse(&argp, argc, argv, 0, 0, cli);
 
   // We're going to spin up one CPU thread per GPU and assign that an equal portion of the search space
@@ -277,8 +287,8 @@ int main(int argc, char *argv[]) {
     prog_args *targs = (prog_args *) malloc(sizeof(prog_args));
     memcpy(targs, cli, sizeof(prog_args));
     targs->threadId = t;
-    targs->beginAt = t * candidatesPerGpu + 1;
-    targs->endAt = targs->beginAt + candidatesPerGpu -1;
+    targs->beginAt = (cli->beginAt > 0) ? cli->beginAt : t * candidatesPerGpu + 1;
+    targs->endAt = (cli->endAt > 0) ? cli->endAt : targs->beginAt + candidatesPerGpu -1;
     pthread_create(&threads[t], NULL, cudaSearch, (void*) targs);
     sleep(5);
   }
