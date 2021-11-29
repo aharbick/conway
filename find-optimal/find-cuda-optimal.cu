@@ -173,7 +173,6 @@ static struct argp_option argp_options[] = {
   { "gpus", 'g', "num", 0, "How many GPUs to use."},
   { "blocksize", 'b', "size", 0, "Size of CUDA block in kernel call."},
   { "threadsperblock", 't', "threads", 0, "Threads per block in CUDA kernel call."},
-  { "random", 'r', 0, OPTION_ARG_OPTIONAL, "Search each chunk randomly."},
   { "beginat", 's', "num", 0, "Explicit beginAt."},
   { "endat", 'e', "num", 0, "Explicit endAt."},
   { 0 }
@@ -181,7 +180,6 @@ static struct argp_option argp_options[] = {
 
 typedef struct prog_args {
   int threadId = 0;
-  bool random = false;
   ulong64 chunkSize = 1024*1024;
   int gpusToUse = 1;
   int blockSize = 4096;
