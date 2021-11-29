@@ -279,15 +279,17 @@ int main(int argc, char *argv[]) {
 
   for (int t = 0; t < cli->gpusToUse; t++) {
     // Spin up a thread per gpu
-    cli->threadId = t;
-    cli->beginAt = t * candidatesPerGpu + 1;
-    cli->endAt = cli->beginAt + candidatesPerGpu -1;
-    pthread_create(&threads[t], NULL, cudaSearch, (void*) cli);
+    prog_args *targs = (prog_args *) malloc(sizeof(prog_args));
+    memcpy(targs, cli, sizeof(prog_args));
+    targs->threadId = t;
+    targs->beginAt = t * candidatesPerGpu + 1;
+    targs->endAt = targs->beginAt + candidatesPerGpu -1;
+    pthread_create(&threads[t], NULL, cudaSearch, (void*) targs);
   }
 
   for (int t = 0; t < cli->gpusToUse; t++) {
-    printf("\nWaiting on thread %i\n", t+1);
     pthread_join(threads[t], NULL);
+    printf("[Thread %d] COMPLETE\n", t);
   }
 
   return 0;
