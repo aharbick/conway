@@ -91,6 +91,10 @@ __constant__ ulong64 gNeighborFilters[64] = {
   (ulong64) 16576 << 48
 };
 
+unsigned long  gBestPattern = 0;
+unsigned long gBestGenerations = 0;
+pthread_mutex_t gMutex = PTHREAD_MUTEX_INITIALIZER;
+
 __device__ ulong64 computeNextGeneration(ulong64 currentGeneration) {
   ulong64 nextGeneration = currentGeneration;
   for (int i = 0; i < 64; i++) {
@@ -210,6 +214,9 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
 void *cudaSearch(void *args) {
   prog_args *cli = (prog_args *)args;
 
+  // Choose our GPU
+  cudaSetDevice(cli->threadId);
+
   // Allocate memory on CUDA device and locally on host to get the best answers
   ulong64 *devBestPattern, *hostBestPattern;
   hostBestPattern = (ulong64 *)malloc(sizeof(ulong64));
@@ -229,17 +236,21 @@ void *cudaSearch(void *args) {
     evaluateRange<<<cli->blockSize, cli->threadsPerBlock>>>(i, j, devBestPattern, devBestGenerations);
 
     // Copy device answer to host and emit
-    ulong64 prevGen = *hostBestGenerations;
     cudaMemcpy(hostBestPattern, devBestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost);
     cudaMemcpy(hostBestGenerations, devBestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost);
-    char bin[65] = {'\0'};
-    if (*hostBestGenerations != prevGen) {
+    pthread_mutex_lock(&gMutex);
+    if (gBestGenerations < *hostBestGenerations) {
+      char bin[65] = {'\0'};
       asBinary(*hostBestPattern, bin);
-      printf("\nNEW best! %lu generations, %s (%lu) in range %lu-%lu\n",
-             *hostBestGenerations, bin, *hostBestPattern, i, j);
+      printf("[Thread %d] %lu generations : %lu :%s\n",
+             cli->threadId, *hostBestGenerations, *hostBestPattern, bin);
+      gBestPattern = *hostBestPattern;
+      gBestGenerations = *hostBestGenerations;
     }
-    else if (chunk % 1000 == 0) { // every billion
-      printf("Up to %lu, %2.10f%% complete\n", i, (float) i/cli->endAt * 100);
+    pthread_mutex_unlock(&gMutex);
+
+    if (chunk % 1000 == 0) { // every billion
+      printf("[Thread %d] Up to %lu, %2.10f%% complete\n", cli->threadId, i, (float) i/cli->endAt * 100);
     }
 
     chunk++;
@@ -268,8 +279,7 @@ int main(int argc, char *argv[]) {
 
   for (int t = 0; t < cli->gpusToUse; t++) {
     // Spin up a thread per gpu
-    cudaSetDevice(t);
-    cli->threadId = t+1;
+    cli->threadId = t;
     cli->beginAt = t * candidatesPerGpu + 1;
     cli->endAt = cli->beginAt + candidatesPerGpu -1;
     pthread_create(&threads[t], NULL, cudaSearch, (void*) cli);
