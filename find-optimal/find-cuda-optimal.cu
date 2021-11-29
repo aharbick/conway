@@ -8,7 +8,7 @@
 #include <argp.h>
 
 typedef unsigned char ubyte;
-typedef unsigned long long int ulong64;
+typedef unsigned long long ulong64;
 
 __constant__ ulong64 gNeighborFilters[64] = {
   // Row 0 pixels
@@ -147,7 +147,7 @@ __device__ ulong64 countGenerations(ulong64 pattern) {
 
 __global__ void evaluateRange(ulong64 beginAt, ulong64 endAt,
                               ulong64 *bestPattern, ulong64 *bestGenerations) {
-  for (int pattern = beginAt + (blockIdx.x * blockDim.x + threadIdx.x);
+  for (ulong64 pattern = beginAt + (blockIdx.x * blockDim.x + threadIdx.x);
        pattern < endAt;
        pattern += blockDim.x * gridDim.x) {
     ulong64 generations = countGenerations(pattern);
