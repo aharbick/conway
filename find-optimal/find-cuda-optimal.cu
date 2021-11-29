@@ -228,7 +228,7 @@ void *cudaSearch(void *args) {
   ulong64 chunk = 1;
   ulong64 i = cli->beginAt;
   while (i < cli->endAt) {
-    unsigned j = (i+cli->chunkSize) > cli->endAt ? cli->endAt : i+cli->chunkSize;
+    ulong64 j = (i+cli->chunkSize) > cli->endAt ? cli->endAt : i+cli->chunkSize;
 
     cudaMemcpy(devBestGenerations, hostBestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice);
     evaluateRange<<<cli->blockSize, cli->threadsPerBlock>>>(i, j, devBestPattern, devBestGenerations);
