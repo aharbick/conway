@@ -25,7 +25,6 @@ static struct argp_option argp_options[] = {
   { "threads", 't', "num", 0, "Number of CPU threads (if you use more than one GPU you should use matching threads)."},
   { "beginat", 'b', "num", 0, "Explicit beginAt."},
   { "endat", 'e', "num", 0, "Explicit endAt."},
-  { "cachingfilter", 'f', "y,x", 0, "Used for caching (e.g. 5x7)" },
   { "random", 'r', 0, OPTION_ARG_OPTIONAL, "Explicit endAt."},
   { 0 }
 };
@@ -60,17 +59,6 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
   case 'e':
     a->endAt = strtoull(arg, NULL, 10);
     break;
-  case 'f':
-    a->filter.y = strtol(arg, &end, 10);
-    if (*end == ',') {
-      a->filter.x = strtol(end+1, &end, 10);
-    }
-    else {
-      printf("[WARN] invalid cachefilter '%s', using default (5x7) for filter\n", arg);
-      a->filter.x = 7;
-      a->filter.y = 5;
-    }
-    break;
   case 'r':
     a->random = true;
     break;
@@ -91,8 +79,6 @@ int main(int argc, char **argv) {
   cli->gpusToUse = 1;
   cli->blockSize = 4096;
   cli->threadsPerBlock = 256;
-  cli->filter.x = 4;
-  cli->filter.y = 4;
   cli->beginAt = 0;
   cli->endAt = 0;
   cli->random = false;
