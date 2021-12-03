@@ -1,29 +1,39 @@
 CC=g++
-NVCC=nvcc
-NVCFLAGS=-w --ptxas-options=-v -O3 -arch sm_53
-NVLIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda -pthread
-CFLAGS=-std=c++11
+CFLAGS=
+LIBS=
 BUILDDIR=build
 
-DEPS = mt.h
-_OBJ = find-optimal.o mt.o
-OBJ = $(patsubst %,$(BUILDDIR)/%,$(_OBJ))
-_CUDA_OBJ = find-cuda-optimal.o mt.o
-CUDA_OBJ = $(patsubst %,$(BUILDDIR)/%,$(_CUDA_OBJ))
+OS := $(shell uname -s)
+HAS_CUDA := $(shell which nvcc)
 
-all: setup find-optimal find-cuda-optimal
+ifeq ($(OS),Darwin)
+	CFLAGS = -I/opt/homebrew/include
+	LIBS = -L/opt/homebrew/lib -largp
+else
+	ifneq (,$(HAS_CUDA))
+		CC=nvcc
+		CFLAGS=-w --ptxas-options=-v -O3 -arch sm_53
+		LIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda -pthread
+	endif
+endif
+
+_OBJ = find-optimal.o gol.o utils.o
+OBJ = $(patsubst %,$(BUILDDIR)/%,$(_OBJ))
+DEPS=mt.h cli.h utils.h
+
+all: setup explore-cachability find-optimal find-cuda-optimal
 
 $(BUILDDIR)/%.o: %.cpp $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-find-optimal: $(OBJ)
-	$(CC) -pthread -o $(BUILDDIR)/$@ $^ $(CFLAGS)
-
 $(BUILDDIR)/%.o: %.cu $(DEPS)
-	$(NVCC) -c -o $@ $< $(NVCFLAGS)
+	$(CC) -c -o $@ $< $(CFLAGS)
 
-find-cuda-optimal: $(CUDA_OBJ)
-	$(CC) -o $(BUILDDIR)/$@ $^ $(NVLIBS)
+find-optimal: $(OBJ)
+	$(CC) -pthread -o $(BUILDDIR)/$@ $^ $(CFLAGS) $(LIBS)
+
+explore-cachability: $(BUILDDIR)/explore-cachability.o
+	$(CC) -o $(BUILDDIR)/$@ $^ $(CFLAGS)
 
 setup:
 	mkdir -p build
