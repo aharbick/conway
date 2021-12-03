@@ -44,13 +44,13 @@ void Conway::waveColumns() {
       uint8_t shield = (i/4)*2+(j/4)+1;
       uint8_t servo = (i%4)*4+(j%4)+1;
       changeServo(shield, servo, WHITE);
-      delay(25);
+      delay(5);
     }
-    delay(250);
+    delay(100);
   }
 
   // Give it a bit before spinning immediately back
-  delay(250);
+  delay(300);
 
   // Change columns one by one to BLACK in reverse
   for (uint8_t j = 0; j < COLS; j++) {
@@ -60,10 +60,13 @@ void Conway::waveColumns() {
       uint8_t shield = (i/4)*2+(rj/4)+1;
       uint8_t servo = (i%4)*4+(rj%4)+1;
       changeServo(shield, servo, BLACK);
-      delay(25);
+      delay(5);
     }
-    delay(250);
+    delay(100);
   }
+
+  // Give it a bit before something else takes over
+  delay(300);
 }
 
 void Conway::randomizePixels(uint8_t alivePct = 20) {
@@ -317,7 +320,7 @@ void Conway::initializeShields() {
   for (uint8_t i = 0; i < 4; i++) {
     shields[i].begin();
     shields[i].setOscillatorFrequency(27000000);
-    shields[i].setPWMFreq(50);
+    shields[i].setPWMFreq(SERVO_FREQ);
   }
 }
 
@@ -373,6 +376,7 @@ void Conway::initializeServos() {
       uint8_t shield = (i/4)*2+(j/4)+1;
       uint8_t servo = (i%4)*4+(j%4)+1;
       changeServo(shield, servo, (Color) pixels[i][j]);
+      delay(5);
     }
   }
 }

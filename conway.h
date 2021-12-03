@@ -26,8 +26,8 @@ public:
   // Choose a random pattern...  Each pixel has a 20% change of being alive e.g. black
   void randomizePixels(uint8_t alivePct = 20);
 
-  // Initialize the pixels to a pattern from a comma-separated string of 64 ones and zeroes.
-  // e.g. "0,0,1,1,0,0,0,0,1,1,0,1,0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,1,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"
+  // Initialize the pixels to a pattern from a string of 64 ones and zeroes.
+  // e.g. "0011000011010000110000001101000000110000000000000000000000000000"
   void initializePixels(const char *pattern);
 
   // Set a specific pixel to a specific color
@@ -61,8 +61,6 @@ private:
   static const int SERVOMIN = 120; // This is the 'minimum' pulse length count (out of 4096)
   static const int SERVOHALF = 300;
   static const int SERVOMAX = 600; // This is the 'maximum' pulse length count (out of 4096)
-  static const int USMIN = 600; // This is the rounded 'minimum' microsecond length based on the minimum pulse of 150
-  static const int USMAX = 2400; // This is the rounded 'maximum' microsecond length based on the maximum pulse of 600
   static const int SERVO_FREQ = 50; // Analog servos run at ~50 Hz updates
 
   // Our shields

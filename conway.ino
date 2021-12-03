@@ -54,9 +54,9 @@ void loop() {
       }
       case 3: {
         simulation->waveColumns();
-        simulation->initializePixels("1001001010001000000101110110100000001111010110011101000000101101");
+        simulation->initializePixels("0010110011000010101000000100010010101001011010010001111111001100");
         delay(2000);
-        for (int16_t i = 1; i <= 192; i++) {
+        for (int16_t i = 1; i <= 199; i++) {
           int changes = simulation->nextGeneration();
           if (simulation->getLogLevel() > Conway::QUIET) {
             sprintf(msg, "Generation %d made %d changes", i, changes);
