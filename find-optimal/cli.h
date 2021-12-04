@@ -10,6 +10,7 @@ typedef struct prog_args {
   int blockSize;
   int threadsPerBlock;
   bool random;
+  bool unrestrictedRandom;
   ulong64 beginAt;
   ulong64 endAt;
 } prog_args;

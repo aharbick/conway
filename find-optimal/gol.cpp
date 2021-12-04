@@ -85,7 +85,8 @@ void *search(void *args) {
     // Sequential or random pattern...
     ulong64 pattern = i;
     if (cli->random) {
-      pattern = genrand64_int64() % (cli->endAt + 1 - cli->beginAt) + cli->beginAt;
+      ulong64 max = cli->unrestrictedRandom ? ULONG_MAX : (cli->endAt + 1 - cli->beginAt) + cli->beginAt;
+      pattern = genrand64_int64() % max;
     }
 
     int generations = countGenerations(pattern);
