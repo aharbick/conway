@@ -26,7 +26,7 @@ static struct argp_option argp_options[] = {
   { "beginat", 'b', "num", 0, "Explicit beginAt."},
   { "endat", 'e', "num", 0, "Explicit endAt."},
   { "cachingfilter", 'f', "y,x", 0, "Used for caching (e.g. 5x7)" },
-  { "random", 'r', 0, OPTION_ARG_OPTIONAL, "Explicit endAt."},
+  { "random", 'r', "ignorerange", OPTION_ARG_OPTIONAL, "Use random patterns. Default in [beginAt-endAt]. -r1 [1-ULONG_MAX]."},
   { 0 }
 };
 
@@ -73,6 +73,9 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
     break;
   case 'r':
     a->random = true;
+    if (arg) {
+      a->unrestrictedRandom = true;
+    }
     break;
   default: return ARGP_ERR_UNKNOWN;
   }
@@ -96,10 +99,11 @@ int main(int argc, char **argv) {
   cli->beginAt = 0;
   cli->endAt = 0;
   cli->random = false;
+  cli->unrestrictedRandom = false;
   argp_parse(&argp, argc, argv, 0, 0, cli);
 
   // Allocate an array of threads
-  ulong64 patternsPerThread = ULONG_MAX / cli->cpuThreads;
+  ulong64 patternsPerThread = ((cli->endAt > 0) ? cli->endAt - cli->beginAt : ULONG_MAX) / cli->cpuThreads;
   pthread_t *threads = (pthread_t *) malloc(sizeof(pthread_t) * cli->cpuThreads);
 
   for (int t = 0; t < cli->cpuThreads; t++) {
@@ -108,7 +112,7 @@ int main(int argc, char **argv) {
     memcpy(targs, cli, sizeof(prog_args));
     targs->threadId = t;
     targs->beginAt = (cli->beginAt > 0) ? cli->beginAt : t * patternsPerThread + 1;
-    targs->endAt = (cli->endAt > 0) ? cli->endAt : targs->beginAt + patternsPerThread -1;
+    targs->endAt = targs->beginAt + patternsPerThread -1;
     pthread_create(&threads[t], NULL, search, (void*) targs);
   }
 

@@ -16,6 +16,7 @@ typedef struct prog_args {
   int threadsPerBlock;
   struct caching_filter filter;
   bool random;
+  bool unrestrictedRandom;
   ulong64 beginAt;
   ulong64 endAt;
 } prog_args;
