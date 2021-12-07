@@ -3,6 +3,7 @@
 // Default constructor
 Conway::Conway() {
   initializeShields();
+  initializeServos();
 }
 
 // Initialize to the specified pattern
@@ -296,15 +297,12 @@ void Conway::changeServo(uint8_t shield, uint8_t servo, Color color) {
   servo--;
 
   if (color == WHITE) {
-    shields[shield].setPWM(servo, 0, SERVOMIN);
     shields[shield].setPWM(servo, 0, SERVOMAX);
   }
   else if (color == BLACK) {
-    shields[shield].setPWM(servo, 0, SERVOMAX);
     shields[shield].setPWM(servo, 0, SERVOMIN);
   }
   else if (color == SPLIT) {
-    shields[shield].setPWM(servo, 0, SERVOMIN);
     shields[shield].setPWM(servo, 0, SERVOHALF);
   }
 }
@@ -377,6 +375,17 @@ void Conway::initializeServos() {
       uint8_t servo = (i%4)*4+(j%4)+1;
       changeServo(shield, servo, (Color) pixels[i][j]);
       delay(5);
+    }
+  }
+
+  pauseAllServos();
+}
+
+void Conway::pauseAllServos() {
+  delay(2000); // Wait long enough for the servos to stop moving
+  for (uint8_t shield = 0; shield < 4; shield++) {
+    for (uint8_t servo = 0; servo < 16; servo++) {
+      shields[shield].setPWM(servo, 0, SERVOSTOPPED);
     }
   }
 }

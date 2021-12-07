@@ -86,6 +86,9 @@ void loop() {
           }
           delay(500);
         }
+
+        //  Make sure we're pause servos..
+        simulation->pauseAllServos();
         break;
       }
       case 5: {
@@ -120,6 +123,9 @@ void loop() {
             iterations++;
             delay(500);
           } while (changes > 0 && iterations < 50);
+
+          //  Make sure we're pause servos..
+          simulation->pauseAllServos();
 
           //  Wait until the top of the our to run again.
           unsigned long delayMillis = nextHourMillis - (millis() - startTime);
