@@ -33,6 +33,10 @@ public:
   // Set a specific pixel to a specific color
   void changeServo(uint8_t shield, uint8_t servo, Color color);
 
+  // Actively turn off all servos.  Otherwise they sit constantly under tension. This probably shortens
+  // the servo life and also causes miscellaneous chirps and mechanical noises.
+  void pauseAllServos();
+
   // Iterate the current set of pixels and apply the default rules of Conway's Game of Life:
   //   1. If a living cell is too isolated (0 or 1 neighbors) then it dies in the next generation.
   //   2. If a living cell has 2 or 3 neighbors then it remains alive in the next generation.
@@ -58,6 +62,7 @@ private:
   bool testMode = false;
 
   // Some constants
+  static const int SERVOSTOPPED = 4096; // Turn off the servo...
   static const int SERVOMIN = 120; // This is the 'minimum' pulse length count (out of 4096)
   static const int SERVOHALF = 300;
   static const int SERVOMAX = 600; // This is the 'maximum' pulse length count (out of 4096)
@@ -74,15 +79,15 @@ private:
   void initializeShields();
   void initializeServos();
 
-  // Cell state - default is for an infinite pattern that crawls the perimeter.
+  // Cell state
   static const uint8_t ROWS = 8;
   static const uint8_t COLS = 8;
   uint8_t pixels[8][8] = {
-    {0,0,1,1,0,0,0,0},
-    {1,1,0,1,0,0,0,0},
-    {1,1,0,0,0,0,0,0},
-    {1,1,0,1,0,0,0,0},
-    {0,0,1,1,0,0,0,0},
+    {0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0},
     {0,0,0,0,0,0,0,0},
     {0,0,0,0,0,0,0,0},
     {0,0,0,0,0,0,0,0}
