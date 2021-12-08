@@ -74,13 +74,9 @@ __global__ void evaluateRange(ulong64 beginAt, ulong64 endAt,
 void *search(void *args) {
   prog_args *cli = (prog_args *)args;
 
-  if (cli->random) {
-    printf("WARN: random searching not supported. Continuing with sequential searching.\n");
-    cli->random = false;
-  }
-
   printf("[Thread %d] %s %llu - %llu\n",
          cli->threadId, cli->random ? "RANDOMLY searching" : "searching ALL", cli->beginAt, cli->endAt);
+  cudaSetDevice((cli->gpusToUse > 1) ? cli->threadId : 0);
 
   if (cli->random) {
     // Initialize Random number generator
@@ -101,10 +97,17 @@ void *search(void *args) {
   ulong64 chunkSize = 1024*1024;
   ulong64 i = cli->beginAt;
   while (i < cli->endAt) {
-    ulong64 j = (i + chunkSize) > cli->endAt ? cli->endAt : i+chunkSize;
+    ulong64 start = i;
+    ulong64 end = (start + chunkSize) > cli->endAt ? cli->endAt : start+chunkSize;
+    if (cli->random) {
+      // We're randomly searching..  I didn't get cuRAND to work so we randomize our batches. Each
+      // call to evaluateRange is sequential but we look at random locations across all possible.
+      start = genrand64_int64() % ULONG_MAX;
+      end  = start + chunkSize;
+    }
 
-    cudaMemcpy(devBestGenerations, hostBestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice);
-    evaluateRange<<<cli->blockSize, cli->threadsPerBlock>>>(i, j, devBestPattern, devBestGenerations);
+    cudaMemcpy(devBestGenerations, &gBestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice);
+    evaluateRange<<<cli->blockSize, cli->threadsPerBlock>>>(start, end, devBestPattern, devBestGenerations);
 
     // Copy device answer to host and emit
     ulong64 prev = *hostBestPattern;
