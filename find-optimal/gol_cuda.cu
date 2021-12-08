@@ -80,7 +80,7 @@ void *search(void *args) {
 
   if (cli->random) {
     // Initialize Random number generator
-    init_genrand64((ulong64) time(NULL));
+    init_genrand64((ulong64) time(NULL) + cli->threadId);
   }
 
   // Allocate memory on CUDA device and locally on host to get the best answers
@@ -114,7 +114,7 @@ void *search(void *args) {
     cudaMemcpy(hostBestGenerations, devBestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost);
     if (prev != *hostBestPattern) {
       pthread_mutex_lock(&gMutex);
-      if (gBestGenerations < *hostBestGenerations) {
+      if (gBestGenerations <= *hostBestGenerations) {
         char bin[65] = {'\0'};
         asBinary(*hostBestPattern, bin);
         printf("[Thread %d] %d generations : %llu : %s\n", cli->threadId, *hostBestGenerations, *hostBestPattern, bin);
