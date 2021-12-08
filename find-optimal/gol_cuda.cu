@@ -1,5 +1,15 @@
 #include <cuda.h>
+#include <pthread.h>
+#include "cli.h"
 #include "gol_cuda.h"
+#include "utils.h"
+#include "mt.h"
+
+///////////////////////////////////////////////////////////////////////////
+// GLOBAL variables updated across CPU threads
+
+pthread_mutex_t gMutex = PTHREAD_MUTEX_INITIALIZER;
+int gBestGenerations = 0;
 
 __device__ ulong64 computeNextGeneration(ulong64 currentGeneration) {
   ulong64 nextGeneration = currentGeneration;
@@ -59,4 +69,65 @@ __global__ void evaluateRange(ulong64 beginAt, ulong64 endAt,
       *bestPattern = pattern;
     }
   }
+}
+
+void *search(void *args) {
+  prog_args *cli = (prog_args *)args;
+
+  if (cli->random) {
+    printf("WARN: random searching not supported. Continuing with sequential searching.\n");
+    cli->random = false;
+  }
+
+  printf("[Thread %d] %s %llu - %llu\n",
+         cli->threadId, cli->random ? "RANDOMLY searching" : "searching ALL", cli->beginAt, cli->endAt);
+
+  if (cli->random) {
+    // Initialize Random number generator
+    init_genrand64((ulong64) time(NULL));
+  }
+
+  // Allocate memory on CUDA device and locally on host to get the best answers
+  ulong64 *devBestPattern, *hostBestPattern;
+  hostBestPattern = (ulong64 *)malloc(sizeof(ulong64));
+  cudaMalloc((void**)&devBestPattern, sizeof(ulong64));
+
+  ulong64 *devBestGenerations, *hostBestGenerations;
+  hostBestGenerations = (ulong64 *)malloc(sizeof(ulong64));
+  *hostBestGenerations = 0;
+  cudaMalloc((void**)&devBestGenerations, sizeof(ulong64));
+
+  ulong64 chunk = 1;
+  ulong64 chunkSize = 1024*1024;
+  ulong64 i = cli->beginAt;
+  while (i < cli->endAt) {
+    ulong64 j = (i + chunkSize) > cli->endAt ? cli->endAt : i+chunkSize;
+
+    cudaMemcpy(devBestGenerations, hostBestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice);
+    evaluateRange<<<cli->blockSize, cli->threadsPerBlock>>>(i, j, devBestPattern, devBestGenerations);
+
+    // Copy device answer to host and emit
+    ulong64 prev = *hostBestPattern;
+    cudaMemcpy(hostBestPattern, devBestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost);
+    cudaMemcpy(hostBestGenerations, devBestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost);
+    if (prev != *hostBestPattern) {
+      pthread_mutex_lock(&gMutex);
+      if (gBestGenerations < *hostBestGenerations) {
+        char bin[65] = {'\0'};
+        asBinary(*hostBestPattern, bin);
+        printf("[Thread %d] %d generations : %llu : %s\n", cli->threadId, *hostBestGenerations, *hostBestPattern, bin);
+        gBestGenerations = *hostBestGenerations;
+      }
+      pthread_mutex_unlock(&gMutex);
+    }
+
+    if (chunk % 1000 == 0) { // every billion
+      printf("[Thread %d] Up to %lu, %2.10f%% complete\n", cli->threadId, i, (float) i/cli->endAt * 100);
+    }
+
+    chunk++;
+    i += chunkSize;
+  }
+
+  return NULL;
 }

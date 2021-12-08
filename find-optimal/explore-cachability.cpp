@@ -254,7 +254,6 @@ int main(int argc, char **argv) {
   for (unsigned long i = 0; i < 1000*1000; i++) {
     unsigned long pattern = genrand64_int64() % ULONG_MAX;
 
-    bool ended = false;
     unsigned long generations = 0;
     unsigned long shortcutGenerations = 0;
     unsigned long currentGen = pattern;

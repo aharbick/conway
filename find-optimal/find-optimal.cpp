@@ -13,6 +13,7 @@
 #ifndef HAS_CUDA
 #include "gol.h"
 #else
+#include <cuda_runtime.h>
 #include "gol_cuda.h"
 #endif
 
