@@ -105,7 +105,6 @@ void *search(void *args) {
       start = genrand64_int64() % ULONG_MAX;
       end  = start + chunkSize;
     }
-
     cudaMemcpy(devBestGenerations, &gBestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice);
     evaluateRange<<<cli->blockSize, cli->threadsPerBlock>>>(start, end, devBestPattern, devBestGenerations);
 
@@ -124,8 +123,8 @@ void *search(void *args) {
       pthread_mutex_unlock(&gMutex);
     }
 
-    if (chunk % 1000 == 0) { // every billion
-      printf("[Thread %d] Up to %lu, %2.10f%% complete\n", cli->threadId, i, (float) i/cli->endAt * 100);
+    if (chunk % 1000 == 0) { //
+      printf("."); // every billion patterns
     }
 
     chunk++;
