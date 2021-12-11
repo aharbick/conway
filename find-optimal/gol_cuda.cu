@@ -74,17 +74,13 @@ __global__ void evaluateRange(ulong64 beginAt, ulong64 endAt,
 void *search(void *args) {
   prog_args *cli = (prog_args *)args;
 
-  if (cli->random) {
-    printf("WARN: random searching not supported. Continuing with sequential searching.\n");
-    cli->random = false;
-  }
-
   printf("[Thread %d] %s %llu - %llu\n",
          cli->threadId, cli->random ? "RANDOMLY searching" : "searching ALL", cli->beginAt, cli->endAt);
+  cudaSetDevice((cli->gpusToUse > 1) ? cli->threadId : 0);
 
   if (cli->random) {
     // Initialize Random number generator
-    init_genrand64((ulong64) time(NULL));
+    init_genrand64((ulong64) time(NULL) + cli->threadId);
   }
 
   // Allocate memory on CUDA device and locally on host to get the best answers
@@ -101,10 +97,16 @@ void *search(void *args) {
   ulong64 chunkSize = 1024*1024;
   ulong64 i = cli->beginAt;
   while (i < cli->endAt) {
-    ulong64 j = (i + chunkSize) > cli->endAt ? cli->endAt : i+chunkSize;
-
-    cudaMemcpy(devBestGenerations, hostBestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice);
-    evaluateRange<<<cli->blockSize, cli->threadsPerBlock>>>(i, j, devBestPattern, devBestGenerations);
+    ulong64 start = i;
+    ulong64 end = (start + chunkSize) > cli->endAt ? cli->endAt : start+chunkSize;
+    if (cli->random) {
+      // We're randomly searching..  I didn't get cuRAND to work so we randomize our batches. Each
+      // call to evaluateRange is sequential but we look at random locations across all possible.
+      start = genrand64_int64() % ULONG_MAX;
+      end  = start + chunkSize;
+    }
+    cudaMemcpy(devBestGenerations, &gBestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice);
+    evaluateRange<<<cli->blockSize, cli->threadsPerBlock>>>(start, end, devBestPattern, devBestGenerations);
 
     // Copy device answer to host and emit
     ulong64 prev = *hostBestPattern;
@@ -112,7 +114,7 @@ void *search(void *args) {
     cudaMemcpy(hostBestGenerations, devBestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost);
     if (prev != *hostBestPattern) {
       pthread_mutex_lock(&gMutex);
-      if (gBestGenerations < *hostBestGenerations) {
+      if (gBestGenerations <= *hostBestGenerations) {
         char bin[65] = {'\0'};
         asBinary(*hostBestPattern, bin);
         printf("[Thread %d] %d generations : %llu : %s\n", cli->threadId, *hostBestGenerations, *hostBestPattern, bin);
@@ -121,8 +123,8 @@ void *search(void *args) {
       pthread_mutex_unlock(&gMutex);
     }
 
-    if (chunk % 1000 == 0) { // every billion
-      printf("[Thread %d] Up to %lu, %2.10f%% complete\n", cli->threadId, i, (float) i/cli->endAt * 100);
+    if (chunk % 1000 == 0) { //
+      printf("."); // every billion patterns
     }
 
     chunk++;
