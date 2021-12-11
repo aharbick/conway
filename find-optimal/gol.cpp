@@ -69,12 +69,21 @@ int countGenerations(ulong64 pattern) {
 void *search(void *args) {
   prog_args *cli = (prog_args *)args;
 
-  printf("[Thread %d] %s %llu - %llu\n",
-         cli->threadId, cli->random ? "RANDOMLY searching" : "searching ALL", cli->beginAt, cli->endAt);
-
   if (cli->random) {
     // Initialize Random number generator
     init_genrand64((ulong64) time(NULL));
+    char range[64] = {'\0'};
+    if (cli->unrestrictedRandom) {
+      sprintf(range, "(1 - ULONG_MAX)");
+    }
+    else {
+      sprintf(range, "(%llu - %llu)", cli->beginAt, cli->endAt);
+    }
+    printf("[Thread %d] RANDOMLY searching %llu candidates %s\n", cli->threadId, cli->endAt - cli->beginAt, range);
+
+  }
+  else {
+    printf("[Thread %d] searching ALL %llu - %llu\n", cli->threadId, cli->beginAt, cli->endAt);
   }
 
   for (ulong64 i = cli->beginAt; i <= cli->endAt; i++) {
