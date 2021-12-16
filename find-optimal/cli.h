@@ -13,6 +13,7 @@ typedef struct prog_args {
   bool unrestrictedRandom;
   ulong64 beginAt;
   ulong64 endAt;
+  ulong64 perf_iterations;
 } prog_args;
 
 #endif

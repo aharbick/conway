@@ -12,7 +12,7 @@ ifeq ($(OS),Darwin)
 else
 	ifneq (,$(HAS_CUDA))
 		CC=nvcc
-		CFLAGS=-w --ptxas-options=-v -O3 -arch sm_53 -DHAS_CUDA
+		CFLAGS=-w -O3 --ptxas-options=-v -lineinfo -arch sm_53 -DHAS_CUDA
 		LIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda -lpthread
 	endif
 endif

@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <argp.h>
+#include <sys/time.h>
+#include <locale.h>
 
 #include "cli.h"
 #include "utils.h"
@@ -27,6 +29,7 @@ static struct argp_option argp_options[] = {
   { "beginat", 'b', "num", 0, "Explicit beginAt."},
   { "endat", 'e', "num", 0, "Explicit endAt."},
   { "random", 'r', "ignorerange", OPTION_ARG_OPTIONAL, "Use random patterns. Default in [beginAt-endAt]. -r1 [1-ULONG_MAX]."},
+  { "perf", 'p', "iterations", OPTION_ARG_OPTIONAL, "Run a performance test"},
   { 0 }
 };
 
@@ -66,6 +69,15 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
       a->unrestrictedRandom = true;
     }
     break;
+  case 'p': {
+    if (arg) {
+      a->perf_iterations = strtoull(arg, NULL, 10);
+    }
+    else {
+      a->perf_iterations = 1 << 24;
+    }
+    break;
+  }
   default: return ARGP_ERR_UNKNOWN;
   }
   return 0;
@@ -86,25 +98,41 @@ int main(int argc, char **argv) {
   cli->beginAt = 0;
   cli->endAt = 0;
   cli->random = false;
+  cli->perf_iterations = 0;
   cli->unrestrictedRandom = false;
   argp_parse(&argp, argc, argv, 0, 0, cli);
 
-  // Allocate an array of threads
-  ulong64 patternsPerThread = ((cli->endAt > 0) ? cli->endAt - cli->beginAt : ULONG_MAX) / cli->cpuThreads;
-  pthread_t *threads = (pthread_t *) malloc(sizeof(pthread_t) * cli->cpuThreads);
-
-  for (int t = 0; t < cli->cpuThreads; t++) {
-    // Spin up a thread per gpu
-    prog_args *targs = (prog_args *) malloc(sizeof(prog_args));
-    memcpy(targs, cli, sizeof(prog_args));
-    targs->threadId = t;
-    targs->beginAt = (cli->beginAt > 0) ? cli->beginAt : t * patternsPerThread + 1;
-    targs->endAt = targs->beginAt + patternsPerThread -1;
-    pthread_create(&threads[t], NULL, search, (void*) targs);
+  if (cli->perf_iterations) {
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
+    ulong64 pattern = 3517523309367394304; // D walker
+    for (ulong64 i = 0; i < cli->perf_iterations; i++) {
+      pattern = computeNextGeneration(pattern);
+    }
+    gettimeofday(&end, NULL);
+    double elapsedSeconds = (end.tv_sec - start.tv_sec) + ((double)(end.tv_usec - start.tv_usec)/1000000);
+    double gensPerSecond = (double) cli->perf_iterations / elapsedSeconds;
+    setlocale(LC_NUMERIC, "");
+    printf("Computed %'0.2f generations per second (%0.2f)\n", gensPerSecond, elapsedSeconds);
   }
+  else {
+    // Allocate an array of threads
+    ulong64 patternsPerThread = ((cli->endAt > 0) ? cli->endAt - cli->beginAt : ULONG_MAX) / cli->cpuThreads;
+    pthread_t *threads = (pthread_t *) malloc(sizeof(pthread_t) * cli->cpuThreads);
 
-  for (int t = 0; t < cli->cpuThreads; t++) {
-    pthread_join(threads[t], NULL);
-    printf("[Thread %d] COMPLETE\n", t);
+    for (int t = 0; t < cli->cpuThreads; t++) {
+      // Spin up a thread per gpu
+      prog_args *targs = (prog_args *) malloc(sizeof(prog_args));
+      memcpy(targs, cli, sizeof(prog_args));
+      targs->threadId = t;
+      targs->beginAt = (cli->beginAt > 0) ? cli->beginAt : t * patternsPerThread + 1;
+      targs->endAt = targs->beginAt + patternsPerThread -1;
+      pthread_create(&threads[t], NULL, search, (void*) targs);
+    }
+
+    for (int t = 0; t < cli->cpuThreads; t++) {
+      pthread_join(threads[t], NULL);
+      printf("[Thread %d] COMPLETE\n", t);
+    }
   }
 }
