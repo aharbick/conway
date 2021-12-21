@@ -27,7 +27,7 @@ Conway::LogLevel Conway::getLogLevel() {
 }
 
 void Conway::resetToColor(Color color) {
-  for(uint8_t i = 0; i < ROWS; i++) {
+  for (uint8_t i = 0; i < ROWS; i++) {
     for(uint8_t j = 0; j < COLS; j++) {
       this->pixels[i][j] = color;
     }
@@ -35,9 +35,27 @@ void Conway::resetToColor(Color color) {
   initializeServos();
 }
 
+void Conway::burnIn() {
+  // Toggle between black and white 10 times
+  for (uint8_t i = 0; i < 10; i++) {
+    resetToColor((Color) i%2);
+    delay(2000);
+  }
+
+  // Wave
+  waveColumns();
+
+  // Toggle between black and white 10 times
+  for (uint8_t i = 0; i < 10; i++) {
+    resetToColor((Color) i%2);
+    delay(2000);
+  }
+}
+
 void Conway::waveColumns() {
   // Set to black first
   resetToColor(BLACK);
+  delay(2000);
 
   // Change columns one by one to WHITE
   for (uint8_t j = 0; j < COLS; j++) {
@@ -45,13 +63,12 @@ void Conway::waveColumns() {
       uint8_t shield = (i/4)*2+(j/4)+1;
       uint8_t servo = (i%4)*4+(j%4)+1;
       changeServo(shield, servo, WHITE);
-      delay(5);
     }
     delay(100);
   }
 
   // Give it a bit before spinning immediately back
-  delay(300);
+  delay(500);
 
   // Change columns one by one to BLACK in reverse
   for (uint8_t j = 0; j < COLS; j++) {
@@ -61,13 +78,12 @@ void Conway::waveColumns() {
       uint8_t shield = (i/4)*2+(rj/4)+1;
       uint8_t servo = (i%4)*4+(rj%4)+1;
       changeServo(shield, servo, BLACK);
-      delay(5);
     }
     delay(100);
   }
 
   // Give it a bit before something else takes over
-  delay(300);
+  delay(500);
 }
 
 void Conway::randomizePixels(uint8_t alivePct = 20) {
@@ -142,8 +158,8 @@ void Conway::initializePixels(const char *pattern) {
   initializeServos();
 }
 
-int Conway::nextGeneration() {
-  int changesMade = 0;
+uint8_t Conway::nextGeneration() {
+  uint8_t changesMade = 0;
 
   uint8_t future[ROWS][COLS];
   for (uint8_t i = 0; i < ROWS; i++) {
@@ -157,39 +173,18 @@ int Conway::nextGeneration() {
       //      | SW | S | SE |
       //      -------------
 
-      //  Count our alive neighbors
-      uint8_t aliveNeighbors = 0;
-      for (uint8_t ioff = -1; ioff != 2; ioff++) {
-        for (uint8_t joff = -1; joff != 2; joff++) {
-          uint8_t ineighbor = i + ioff;
-          uint8_t jneighbor = j + joff;
-          if ((ineighbor >= 0 && ineighbor < ROWS) && // ineighbor is inbounds
-              (jneighbor >= 0 && jneighbor < COLS) && // jneighbor is inbounds
-              (ineighbor != i || jneighbor != j)       // NOT comparing to ourself
-              ) {
-            if (pixels[ineighbor][jneighbor] == 1) {
-              aliveNeighbors++;
-            }
-          }
-        }
-      }
+      uint8_t nw = (i > 0 && j > 0) ? pixels[i-1][j-1] : 0;
+      uint8_t n = (i > 0 && j > 0) ? pixels[i-1][j] : 0;
+      uint8_t ne = (i > 0 && j < COLS) ? pixels[i-1][j+1] : 0;
+      uint8_t w = (i > 0 && j > 0) ? pixels[i][j-1] : 0;
+      uint8_t e = (i > 0 && j < COLS) ? pixels[i][j+1] : 0;
+      uint8_t sw = (i < ROWS && j > 0) ? pixels[i+1][j-1] : 0;
+      uint8_t s = (i < ROWS && j > 0) ? pixels[i+1][j] : 0;
+      uint8_t se = (i < ROWS && j < COLS) ? pixels[i+1][j+1] : 0;
+      uint8_t aliveNeighbors = nw + n + ne + w + e + sw + s + se;
 
-      if (pixels[i][j] == 1 && aliveNeighbors <= 1) {
-        // DIE if we're alive and we have less 0 or 1 neighbors
-        future[i][j] = 0;
-      }
-      else if (pixels[i][j] == 1 && aliveNeighbors >= 4) {
-        // DIE if we're alive and we have 4 or more neighbors
-        future[i][j] = 0;
-      }
-      else if (pixels[i][j] == 0 && aliveNeighbors == 3) {
-        // BIRTH if we're dead and we have 3 aliveNeighbors
-        future[i][j] = 1;
-      }
-      else {
-        // Stay the same...
-        future[i][j] = pixels[i][j];
-      }
+      // Set our new alive/dead state
+      future[i][j] = (aliveNeighbors == 3 || (aliveNeighbors == 2 && pixels[i][j]));
     }
   }
 
@@ -214,54 +209,35 @@ int Conway::nextGeneration() {
   return changesMade;
 }
 
-uint8_t Conway::findFittestPattern(char *bestPattern, int maxAttempts, uint8_t targetGenerations) {
-  // Set ourself to testMode so that we don't actually change the servos.
-  testMode = true;
-
-  char testPattern[(ROWS*COLS)+1] = {'\0'};
-  uint8_t mostGenerations = 0;
-  for (int i = 0; i < maxAttempts; i++) {
-    if (logLevel > QUIET && i % 100 == 0) {
-      Serial.print(".");
+uint16_t Conway::population() {
+  uint16_t pop = 0;
+  for (uint8_t i = 0; i < ROWS; i++) {
+    for (uint8_t j = 0; j < COLS; j++) {
+      pop += pixels[i][j];
     }
+  }
 
-    // Make a random pattern of alive pixels between (20 and 80% alive)
+  return pop;
+}
+
+uint16_t Conway::findFittestPattern(char *bestPattern, uint16_t maxAttempts, uint16_t maxGenerations) {
+  testMode = true;
+  char testPattern[(ROWS*COLS)+1] = {'\0'};
+  uint16_t mostGenerations = 0;
+  while (maxAttempts > 0) {
     randomizePixels();
     pixelsToPattern(testPattern); // save the pattern
 
-    if (logLevel == DEBUG) {
-      sprintf(logMsg, "Trying pattern: %s", testPattern);
-      Serial.println(logMsg);
-    }
-
-    int lastChanges = 0;
-    uint8_t repeats = 0;
-    bool finite = false;
-    uint8_t generations = 0;
-    while (true) {
-      generations++;
-      int changes = nextGeneration();
-      if (lastChanges == changes) {
-        repeats++;
-      }
-      else {
-        repeats = 0;
-        lastChanges = changes;
-      }
-
-      // Break out of the loop if we repeat 4 (or more) times.
-      if (repeats == 4) {
-        // It's a finite simulation.
-        if (changes == 0) {
-          finite = true;
-          generations -= 4; // Subtract the repeats
-        }
+    uint16_t generations = 0;
+    for (generations = 0; generations < maxGenerations; generations++) {
+      if (!nextGeneration()) { // no changes stop checking generations
         break;
       }
     }
 
-    if (finite && mostGenerations < generations) {
-      if (logLevel > QUIET && targetGenerations > 0) {
+    // We died out after observing the most generations so far.
+    if (population() == 0 && generations > mostGenerations) {
+      if (logLevel > QUIET) {
         sprintf(logMsg, "\Best with %d generations\n%s", generations, testPattern);
         Serial.println(logMsg);
       }
@@ -269,12 +245,8 @@ uint8_t Conway::findFittestPattern(char *bestPattern, int maxAttempts, uint8_t t
       mostGenerations = generations;
     }
 
-    if (targetGenerations > 0 && mostGenerations >= targetGenerations) {
-      break;
-    }
+    maxAttempts--;
   }
-
-  // Leave test mode
   testMode = false;
 
   return mostGenerations;
@@ -298,13 +270,13 @@ void Conway::changeServo(uint8_t shield, uint8_t servo, Color color) {
   servo--;
 
   if (color == WHITE) {
-    shields[shield].setPWM(servo, 0, SERVOMAX);
+    shields[shield].writeMicroseconds(servo, SERVOMAX);
   }
   else if (color == BLACK) {
-    shields[shield].setPWM(servo, 0, SERVOMIN);
+    shields[shield].writeMicroseconds(servo, SERVOMIN);
   }
   else if (color == SPLIT) {
-    shields[shield].setPWM(servo, 0, SERVOHALF);
+    shields[shield].writeMicroseconds(servo, SERVOHALF);
   }
 }
 
@@ -370,23 +342,13 @@ void Conway::initializeShields() {
 void Conway::initializeServos() {
   if (testMode) {return;}
 
-  for (uint8_t i = 0; i < ROWS; i++) {
-    for (uint8_t j = 0; j < COLS; j++) {
+  // COLS then ROWS here because it looks the same as waveColumns
+  for (uint8_t j = 0; j < COLS; j++) {
+    for (uint8_t i = 0; i < ROWS; i++) {
       uint8_t shield = (i/4)*2+(j/4)+1;
       uint8_t servo = (i%4)*4+(j%4)+1;
       changeServo(shield, servo, (Color) pixels[i][j]);
-      delay(5);
-    }
-  }
-
-  pauseAllServos();
-}
-
-void Conway::pauseAllServos() {
-  delay(2000); // Wait long enough for the servos to stop moving
-  for (uint8_t shield = 0; shield < 4; shield++) {
-    for (uint8_t servo = 0; servo < 16; servo++) {
-      shields[shield].setPWM(servo, 0, SERVOSTOPPED);
+      delay(10);
     }
   }
 }
