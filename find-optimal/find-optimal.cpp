@@ -106,8 +106,10 @@ int main(int argc, char **argv) {
     struct timeval start, end;
     gettimeofday(&start, NULL);
     ulong64 pattern = 3517523309367394304; // D walker
+    //ulong64 pattern = 17661173956608; // Blinker
     for (ulong64 i = 0; i < cli->perf_iterations; i++) {
       pattern = computeNextGeneration(pattern);
+      //printf("%llu %d\n", i, __builtin_popcountll(pattern));
     }
     gettimeofday(&end, NULL);
     double elapsedSeconds = (end.tv_sec - start.tv_sec) + ((double)(end.tv_usec - start.tv_usec)/1000000);

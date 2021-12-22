@@ -18,23 +18,14 @@ else
 endif
 
 DEPS=mt.h cli.h utils.h gol.h
-OBJ = $(BUILDDIR)/find-optimal.o $(BUILDDIR)/gol.o $(BUILDDIR)/utils.o
+OBJ = $(BUILDDIR)/find-optimal.o $(BUILDDIR)/utils.o
 
-CUDA_DEPS=mt.h cli.h utils.h gol_cuda.h
-CUDA_OBJ = $(BUILDDIR)/find-optimal.o $(BUILDDIR)/gol_cuda.o $(BUILDDIR)/utils.o
-
-all: setup explore-cachability find-optimal $(if $(HAS_CUDA), find-cuda-optimal)
+all: setup explore-cachability find-optimal
 
 $(BUILDDIR)/%.o: %.cpp $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-$(BUILDDIR)/%.o: %.cu $(CUDA_DEPS)
-	$(CC) -c -o $@ $< $(CFLAGS)
-
 find-optimal: $(OBJ)
-	$(CC) -o $(BUILDDIR)/$@ $^ $(CFLAGS) $(LIBS)
-
-find-cuda-optimal: $(CUDA_OBJ)
 	$(CC) -o $(BUILDDIR)/$@ $^ $(CFLAGS) $(LIBS)
 
 explore-cachability: $(BUILDDIR)/explore-cachability.o
