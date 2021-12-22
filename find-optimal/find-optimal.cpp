@@ -11,12 +11,10 @@
 
 #include "cli.h"
 #include "utils.h"
-
-#ifndef HAS_CUDA
 #include "gol.h"
-#else
+
+#ifdef HAS_CUDA
 #include <cuda_runtime.h>
-#include "gol_cuda.h"
 #endif
 
 const char *prog = "find-optimal v0.1";
