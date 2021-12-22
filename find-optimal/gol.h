@@ -1,29 +1,58 @@
 #ifndef _GOL_H_
 #define _GOL_H_
 
-#include "utils.h"
-
-#ifdef HAS_CUDA
-#include <cuda.h>
-#else
-#define __device__
-#define __host__
-#endif
-
-static const int INFINITE = -1;
-
 #include <assert.h>
 #include <stdbool.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 #include <limits.h>
 
-#include "cli.h"
-#include "gol.h"
-#include "utils.h"
+#ifdef __NVCC__
+#include <cuda.h>
+#else
+#define __device__
+#define __host__
+#define __global__
+#endif
+
 #include "mt.h" // For mersenne twister random numbers
+
+typedef unsigned long long ulong64;
+typedef struct prog_args {
+  int threadId;
+  int cpuThreads;
+  int gpusToUse;
+  int blockSize;
+  int threadsPerBlock;
+  bool random;
+  bool unrestrictedRandom;
+  ulong64 beginAt;
+  ulong64 endAt;
+  ulong64 perf_iterations;
+} prog_args;
+
+static const int INFINITE = -1;
+
+void asBinary(ulong64 number, char *buf) {
+  for (int i = 63; i >= 0; i--) {
+    buf[-i+63] = (number >> i) & 1 ? '1' : '0';
+  }
+}
+
+void printPattern(ulong64 number) {
+  char pat[65] = {'\0'};
+  asBinary(number, pat);
+  for (int i = 0; i < 64; i++) {
+    printf(" %c ", pat[i]);
+    if ((i+1) % 8 == 0) {
+      printf("\n");
+    }
+  }
+  printf("\n");
+}
 
 ///////////////////////////////////////////////////////////////////////////
 // GLOBAL variables updated across threads
@@ -82,6 +111,21 @@ __device__ int countGenerations(ulong64 pattern) {
   return ended ? generations : INFINITE;
 }
 
+#ifdef __NVCC__
+__global__ void evaluateRange(ulong64 beginAt, ulong64 endAt,
+                              ulong64 *bestPattern, ulong64 *bestGenerations) {
+  for (ulong64 pattern = beginAt + (blockIdx.x * blockDim.x + threadIdx.x);
+       pattern < endAt;
+       pattern += blockDim.x * gridDim.x) {
+    ulong64 generations = countGenerations(pattern);
+    ulong64 old = atomicMax(bestGenerations, generations);
+    if (old < generations) {
+      *bestPattern = pattern;
+    }
+  }
+}
+#endif
+
 __host__ void *search(void *args) {
   prog_args *cli = (prog_args *)args;
 
@@ -102,7 +146,7 @@ __host__ void *search(void *args) {
     printf("[Thread %d] searching ALL %llu - %llu\n", cli->threadId, cli->beginAt, cli->endAt);
   }
 
-#ifdef HAS_CUDA
+#ifdef __NVCC__
   // Allocate memory on CUDA device and locally on host to get the best answers
   ulong64 *devBestPattern, *hostBestPattern;
   hostBestPattern = (ulong64 *)malloc(sizeof(ulong64));

@@ -11,22 +11,19 @@ ifeq ($(OS),Darwin)
 	LIBS = -L/opt/homebrew/lib -largp -lpthread
 else
 	ifneq (,$(HAS_CUDA))
-		CC=nvcc
-		CFLAGS=-w -O3 --ptxas-options=-v -lineinfo -arch sm_53 -DHAS_CUDA
+		CC=nvcc -arch=sm_53
+		CFLAGS=-w -O3 --ptxas-options=-v -lineinfo
 		LIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda -lpthread
 	endif
 endif
 
-DEPS=mt.h cli.h utils.h gol.h
-OBJ = $(BUILDDIR)/find-optimal.o $(BUILDDIR)/utils.o
+all: setup find-optimal
 
-all: setup explore-cachability find-optimal
+$(BUILDDIR)/find-optimal.o: find-optimal.cpp mt.h gol.h
+	$(CC) -x cu $(CFLAGS) -I. -dc $< -o $@
 
-$(BUILDDIR)/%.o: %.cpp $(DEPS)
-	$(CC) -c -o $@ $< $(CFLAGS)
-
-find-optimal: $(OBJ)
-	$(CC) -o $(BUILDDIR)/$@ $^ $(CFLAGS) $(LIBS)
+find-optimal: $(BUILDDIR)/find-optimal.o
+	$(CC) $(CFLAGS) $^ -o $(BUILDDIR)/$@ $(LIBS)
 
 explore-cachability: $(BUILDDIR)/explore-cachability.o
 	$(CC) -o $(BUILDDIR)/$@ $^ $(CFLAGS)

@@ -9,13 +9,7 @@
 #include <sys/time.h>
 #include <locale.h>
 
-#include "cli.h"
-#include "utils.h"
 #include "gol.h"
-
-#ifdef HAS_CUDA
-#include <cuda_runtime.h>
-#endif
 
 const char *prog = "find-optimal v0.1";
 const char *prog_bug_email = "aharbick@aharbick.com";
@@ -100,39 +94,22 @@ int main(int argc, char **argv) {
   cli->unrestrictedRandom = false;
   argp_parse(&argp, argc, argv, 0, 0, cli);
 
-  if (cli->perf_iterations) {
-    struct timeval start, end;
-    gettimeofday(&start, NULL);
-    ulong64 pattern = 3517523309367394304; // D walker
-    //ulong64 pattern = 17661173956608; // Blinker
-    for (ulong64 i = 0; i < cli->perf_iterations; i++) {
-      pattern = computeNextGeneration(pattern);
-      //printf("%llu %d\n", i, __builtin_popcountll(pattern));
-    }
-    gettimeofday(&end, NULL);
-    double elapsedSeconds = (end.tv_sec - start.tv_sec) + ((double)(end.tv_usec - start.tv_usec)/1000000);
-    double gensPerSecond = (double) cli->perf_iterations / elapsedSeconds;
-    setlocale(LC_NUMERIC, "");
-    printf("Computed %'0.2f generations per second (%0.2f)\n", gensPerSecond, elapsedSeconds);
+  // Allocate an array of threads
+  ulong64 patternsPerThread = ((cli->endAt > 0) ? cli->endAt - cli->beginAt : ULONG_MAX) / cli->cpuThreads;
+  pthread_t *threads = (pthread_t *) malloc(sizeof(pthread_t) * cli->cpuThreads);
+
+  for (int t = 0; t < cli->cpuThreads; t++) {
+    // Spin up a thread per gpu
+    prog_args *targs = (prog_args *) malloc(sizeof(prog_args));
+    memcpy(targs, cli, sizeof(prog_args));
+    targs->threadId = t;
+    targs->beginAt = (cli->beginAt > 0) ? cli->beginAt : t * patternsPerThread + 1;
+    targs->endAt = targs->beginAt + patternsPerThread -1;
+    pthread_create(&threads[t], NULL, search, (void*) targs);
   }
-  else {
-    // Allocate an array of threads
-    ulong64 patternsPerThread = ((cli->endAt > 0) ? cli->endAt - cli->beginAt : ULONG_MAX) / cli->cpuThreads;
-    pthread_t *threads = (pthread_t *) malloc(sizeof(pthread_t) * cli->cpuThreads);
 
-    for (int t = 0; t < cli->cpuThreads; t++) {
-      // Spin up a thread per gpu
-      prog_args *targs = (prog_args *) malloc(sizeof(prog_args));
-      memcpy(targs, cli, sizeof(prog_args));
-      targs->threadId = t;
-      targs->beginAt = (cli->beginAt > 0) ? cli->beginAt : t * patternsPerThread + 1;
-      targs->endAt = targs->beginAt + patternsPerThread -1;
-      pthread_create(&threads[t], NULL, search, (void*) targs);
-    }
-
-    for (int t = 0; t < cli->cpuThreads; t++) {
-      pthread_join(threads[t], NULL);
-      printf("[Thread %d] COMPLETE\n", t);
-    }
+  for (int t = 0; t < cli->cpuThreads; t++) {
+    pthread_join(threads[t], NULL);
+    printf("[Thread %d] COMPLETE\n", t);
   }
 }
