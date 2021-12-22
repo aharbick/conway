@@ -34,8 +34,6 @@ typedef struct prog_args {
   ulong64 perf_iterations;
 } prog_args;
 
-static const int INFINITE = -1;
-
 void asBinary(ulong64 number, char *buf) {
   for (int i = 63; i >= 0; i--) {
     buf[-i+63] = (number >> i) & 1 ? '1' : '0';
@@ -108,7 +106,7 @@ __device__ int countGenerations(ulong64 pattern) {
   while (slow != fast);
   ended = slow == 0; // If we died out then we ended
 
-  return ended ? generations : INFINITE;
+  return ended ? generations : 0;
 }
 
 #ifdef __NVCC__
