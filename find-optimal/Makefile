@@ -17,13 +17,16 @@ else
 	endif
 endif
 
-all: setup find-optimal
+all: setup explore-cachability find-optimal
 
 $(BUILDDIR)/find-optimal.o: find-optimal.cpp mt.h gol.h
 	$(CC) $(CFLAGS) -I. -c $< -o $@
 
 find-optimal: $(BUILDDIR)/find-optimal.o
 	$(CC) $^ -o $(BUILDDIR)/$@ $(LIBS)
+
+$(BUILDDIR)/explore-cachability.o: explore-cachability.cpp mt.h
+	$(CC) $(CFLAGS) -I. -c $< -o $@
 
 explore-cachability: $(BUILDDIR)/explore-cachability.o
 	$(CC) -o $(BUILDDIR)/$@ $^ $(CFLAGS)
