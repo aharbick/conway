@@ -12,7 +12,7 @@ ifeq ($(OS),Darwin)
 else
 	ifneq (,$(HAS_CUDA))
 		CC=nvcc -arch=sm_53
-		CFLAGS=-x cu -w -O3 --ptxas-options=-v -lineinfo
+		CFLAGS=-w -O3 --ptxas-options=-v -lineinfo
 		LIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda -lpthread
 	endif
 endif
@@ -20,7 +20,7 @@ endif
 all: setup explore-cachability find-optimal
 
 $(BUILDDIR)/find-optimal.o: find-optimal.cpp mt.h gol.h
-	$(CC) $(CFLAGS) -I. -c $< -o $@
+	$(CC) -x cu $(CFLAGS) -I. -c $< -o $@
 
 find-optimal: $(BUILDDIR)/find-optimal.o
 	$(CC) $^ -o $(BUILDDIR)/$@ $(LIBS)
