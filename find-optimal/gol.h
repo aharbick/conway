@@ -86,25 +86,60 @@ __device__ int countGenerations(ulong64 pattern) {
   // efficient (if it's a long period cycle) than a map structure, but when
   // implementing this on a GPU in CUDA those data structures are not readily
   // available.
-  // https://en.wikipedia.org/wiki/Cycle_detection#Floyd's_tortoise_and_hare
   bool ended = false;
   int generations = 0;
 
-  ulong64 slow = pattern;
-  ulong64 fast = computeNextGeneration(slow);
+  //  Run for up to  generations just checking if we cycle within 6
+  //  generations or die out.
+  ulong64 g1, g2, g3, g4, g5, g6;
+  g1 = pattern;
   do {
-    generations++;
-    ulong64 nextSlow = computeNextGeneration(slow);
+    generations+=6;
+    g2 = computeNextGeneration(g1);
+    g3 = computeNextGeneration(g2);
+    g4 = computeNextGeneration(g3);
+    g5 = computeNextGeneration(g4);
+    g6 = computeNextGeneration(g5);
 
-    if (slow == nextSlow) {
-      ended = true; // If we didn't change then we ended
+    if (g1 == g2 || g1 == g3 || g1 == g4 || g1 == g5 || g1 == g6) {
+      break; // periodic
+    }
+
+    g1 = computeNextGeneration(g6);
+    if (g1 == 0 || g2 == 0 || g3 == 0 || g4 == 0 || g5 == 0 || g6 == 0) {
+      ended = true; // died out
+
+      // Adjust the age
+      if (g2 == 0) {generations-=5;}
+      else if (g3 == 0) {generations-=4;}
+      else if (g4 == 0) {generations-=3;}
+      else if (g5 == 0) {generations-=2;}
+      else if (g6 == 0) {generations-=1;}
+
       break;
     }
-    slow = nextSlow;
-    fast = computeNextGeneration(computeNextGeneration(fast));
   }
-  while (slow != fast);
-  ended = slow == 0; // If we died out then we ended
+  while (generations < 300);
+
+  // Fall back to Floyd's cycle detection algorithm if we haven't
+  // we didn't exit the previous loop because of die out or cycle.
+  if (!ended && generations >= 300) {
+    ulong64 slow = g1;
+    ulong64 fast = computeNextGeneration(slow);
+    do {
+      generations++;
+      ulong64 nextSlow = computeNextGeneration(slow);
+
+      if (slow == nextSlow) {
+        ended = true; // If we didn't change then we ended
+        break;
+      }
+      slow = nextSlow;
+      fast = computeNextGeneration(computeNextGeneration(fast));
+    }
+    while (slow != fast);
+    ended = slow == 0; // If we died out then we ended
+  }
 
   return ended ? generations : 0;
 }
