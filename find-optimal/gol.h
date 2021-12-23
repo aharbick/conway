@@ -193,7 +193,7 @@ __host__ void *search(void *args) {
   cudaMalloc((void**)&devBestGenerations, sizeof(ulong64));
 
   ulong64 chunk = 1;
-  ulong64 chunkSize = 1024*1024;
+  ulong64 chunkSize = 1024*1024*10; // 1M per call to evaluateRange
   ulong64 i = cli->beginAt;
   while (i < cli->endAt) {
     if (chunk % 1000 == 0) { //
