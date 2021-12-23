@@ -100,13 +100,9 @@ __device__ int countGenerations(ulong64 pattern) {
     g4 = computeNextGeneration(g3);
     g5 = computeNextGeneration(g4);
     g6 = computeNextGeneration(g5);
-
-    if (g1 == g2 || g1 == g3 || g1 == g4 || g1 == g5 || g1 == g6) {
-      break; // periodic
-    }
-
     g1 = computeNextGeneration(g6);
-    if (g1 == 0 || g2 == 0 || g3 == 0 || g4 == 0 || g5 == 0 || g6 == 0) {
+
+    if (g1 == 0) {
       ended = true; // died out
 
       // Adjust the age
@@ -118,6 +114,12 @@ __device__ int countGenerations(ulong64 pattern) {
 
       break;
     }
+
+    if ((g1 == g2) || (g1 == g3) || (g1 == g4)) {
+      // periodic
+      break;
+    }
+
   }
   while (generations < 300);
 
