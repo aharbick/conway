@@ -37,14 +37,14 @@ void showIntro() {
     "evolve this 8x8",
     "grid.",
 
-    "On this 8x8 grid",
+    "On which",
     "there are...",
 
     "18,446,744,073,",
     "709,551,616",
 
     "initial starting",
-    "grids.",
+    "positions.",
 
     "We want to find",
     "which lives the",
@@ -52,9 +52,23 @@ void showIntro() {
     "longest before",
     "dying out.",
 
-    "Push any button",
-    "to search...",
+    "Press a button",
+    "to search 1,000",
 
+    "possibilities.",
+    "",
+
+    "In gallons,",
+    "Niagara Falls",
+
+    "needs 210,000yrs",
+    "to use that up!",
+
+    "This is gonna",
+    "take a while.",
+
+    "Push any button",
+    "to get started!",
   };
 
   for (uint8_t i = 0; i < sizeof(introMessages)/sizeof(introMessages[0]); i++) {
