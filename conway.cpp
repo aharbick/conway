@@ -26,6 +26,20 @@ Conway::LogLevel Conway::getLogLevel() {
   return this->logLevel;
 }
 
+void Conway::printPixels(char *msg) {
+  if (msg) {
+    Serial.println(msg);
+  }
+
+  for(uint8_t i = 0; i < ROWS; i++) {
+    Serial.print("\t| ");
+    for(uint8_t j = 0; j < COLS; j++) {
+      Serial.print(this->pixels[i][j]); Serial.print(" | ");
+    }
+    Serial.print("\n");
+  }
+}
+
 void Conway::resetToColor(Color color) {
   for (uint8_t i = 0; i < ROWS; i++) {
     for(uint8_t j = 0; j < COLS; j++) {
@@ -175,14 +189,7 @@ void Conway::initializePixels(const char *pattern) {
   }
 
   if (logLevel > QUIET) {
-    Serial.println("Initialize pixels to:\n");
-    for(uint8_t i = 0; i < ROWS; i++) {
-      Serial.print("\t| ");
-      for(uint8_t j = 0; j < COLS; j++) {
-        Serial.print(this->pixels[i][j]); Serial.print(" | ");
-      }
-      Serial.print("\n");
-    }
+    printPixels("Initialize pixels to:\n");
   }
 
   initializeServos();
@@ -190,7 +197,6 @@ void Conway::initializePixels(const char *pattern) {
 
 uint8_t Conway::nextGeneration() {
   uint8_t changesMade = 0;
-
   uint8_t future[ROWS][COLS];
   for (uint8_t i = 0; i < ROWS; i++) {
     for (uint8_t j = 0; j < COLS; j++) {
@@ -205,16 +211,16 @@ uint8_t Conway::nextGeneration() {
 
       uint8_t nw = (i > 0 && j > 0) ? pixels[i-1][j-1] : 0;
       uint8_t n = (i > 0 && j > 0) ? pixels[i-1][j] : 0;
-      uint8_t ne = (i > 0 && j < COLS) ? pixels[i-1][j+1] : 0;
+      uint8_t ne = (i > 0 && j < COLS-1) ? pixels[i-1][j+1] : 0;
       uint8_t w = (i > 0 && j > 0) ? pixels[i][j-1] : 0;
-      uint8_t e = (i > 0 && j < COLS) ? pixels[i][j+1] : 0;
-      uint8_t sw = (i < ROWS && j > 0) ? pixels[i+1][j-1] : 0;
-      uint8_t s = (i < ROWS && j > 0) ? pixels[i+1][j] : 0;
-      uint8_t se = (i < ROWS && j < COLS) ? pixels[i+1][j+1] : 0;
+      uint8_t e = (i > 0 && j < COLS-1) ? pixels[i][j+1] : 0;
+      uint8_t sw = (i < ROWS-1 && j > 0) ? pixels[i+1][j-1] : 0;
+      uint8_t s = (i < ROWS-1 && j > 0) ? pixels[i+1][j] : 0;
+      uint8_t se = (i < ROWS-1 && j < COLS-1) ? pixels[i+1][j+1] : 0;
       uint8_t aliveNeighbors = nw + n + ne + w + e + sw + s + se;
 
       // Set our new alive/dead state
-      future[i][j] = (aliveNeighbors == 3 || (aliveNeighbors == 2 && pixels[i][j]));
+      future[i][j] = (aliveNeighbors == 3 || (aliveNeighbors == 2 && pixels[i][j] == 1)) ? 1 : 0;
     }
   }
 

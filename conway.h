@@ -52,6 +52,9 @@ public:
   // Find an initial pattern that makes the most changes...
   uint16_t findFittestPattern(char *buf, uint16_t maxAttempts, uint16_t maxGenerations = 256);
 
+  // Print out the pixels to Serial
+  void printPixels(char *msg = NULL);
+
   void setLogLevel(LogLevel level);
   LogLevel getLogLevel();
 
