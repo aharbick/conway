@@ -50,7 +50,7 @@ void showIntro() {
     "which lives the",
 
     "longest before",
-    "dieing out.",
+    "dying out.",
 
     "Push any button",
     "to search...",
