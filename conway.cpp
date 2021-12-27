@@ -210,13 +210,13 @@ uint8_t Conway::nextGeneration() {
       //      -------------
 
       uint8_t nw = (i > 0 && j > 0) ? pixels[i-1][j-1] : 0;
-      uint8_t n = (i > 0 && j > 0) ? pixels[i-1][j] : 0;
-      uint8_t ne = (i > 0 && j < COLS-1) ? pixels[i-1][j+1] : 0;
-      uint8_t w = (i > 0 && j > 0) ? pixels[i][j-1] : 0;
-      uint8_t e = (i > 0 && j < COLS-1) ? pixels[i][j+1] : 0;
-      uint8_t sw = (i < ROWS-1 && j > 0) ? pixels[i+1][j-1] : 0;
-      uint8_t s = (i < ROWS-1 && j > 0) ? pixels[i+1][j] : 0;
-      uint8_t se = (i < ROWS-1 && j < COLS-1) ? pixels[i+1][j+1] : 0;
+      uint8_t n = (i > 0) ? pixels[i-1][j] : 0;
+      uint8_t ne = (i > 0 && j+1 < COLS) ? pixels[i-1][j+1] : 0;
+      uint8_t w = (j > 0) ? pixels[i][j-1] : 0;
+      uint8_t e = (j+1 < COLS) ? pixels[i][j+1] : 0;
+      uint8_t sw = (i+1 < ROWS && j > 0) ? pixels[i+1][j-1] : 0;
+      uint8_t s = (i+1 < ROWS) ? pixels[i+1][j] : 0;
+      uint8_t se = (i+1 < ROWS && j+1 < COLS) ? pixels[i+1][j+1] : 0;
       uint8_t aliveNeighbors = nw + n + ne + w + e + sw + s + se;
 
       // Set our new alive/dead state

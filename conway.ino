@@ -52,7 +52,7 @@ void showIntro() {
     "longest before",
     "dying out.",
 
-    "Press a button",
+    "Press Up button",
     "to search 1,000",
 
     "possibilities.",
@@ -65,9 +65,9 @@ void showIntro() {
     "to use that up!",
 
     "This is gonna",
-    "take a while.",
+    "take a while...",
 
-    "Push any button",
+    "Press Up button",
     "to get started!",
   };
 
@@ -79,6 +79,35 @@ void showIntro() {
     }
     if (i % 2 == 1) { delay(4000); }
   }
+}
+
+void runSimulation(uint16_t years) {
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("  Simulating... ");
+  for (int16_t i = 0; i < years; i++) {
+    simulation->nextGeneration();
+    sprintf(msg, "     Year %d", i+1);
+    lcd.setCursor(0,1);
+    lcd.print(msg);
+    delay(500);
+  }
+}
+
+void playLongestKnown() {
+  // Show our searching message
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("Longest known...");
+  lcd.setCursor(0,1);
+  lcd.print("208 generations!");
+
+
+  simulation->waveColumns();
+  delay(4000);
+  simulation->initializePixels("1100101100000110100010111100010010000110000101010010110011000010");
+  delay(4000);
+  runSimulation(208);
 }
 
 void playLife() {
@@ -98,16 +127,7 @@ void playLife() {
   delay(4000);
 
   // Play the simulation...
-  lcd.clear();
-  lcd.setCursor(0,0);
-  lcd.print("  Simulating... ");
-  for (int16_t i = 1; i <= years; i++) {
-    int changes = simulation->nextGeneration();
-    sprintf(msg, "     Year %d", i);
-    lcd.setCursor(0,1);
-    lcd.print(msg);
-    delay(500);
-  }
+  runSimulation(years);
 
   // Show the results to LCD and save
   if (years > gLongestLife) {
@@ -133,7 +153,7 @@ void playLife() {
 void showPrompt() {
   lcd.clear();
   lcd.setCursor(0,0);
-  lcd.print("Push any button");
+  lcd.print("Press Up button");
   lcd.setCursor(0,1);
   lcd.print("to search...");
 }
@@ -162,7 +182,12 @@ void setup() {
 void loop() {
   uint8_t buttons = lcd.readButtons();
   if (buttons) {
-    playLife();
+    if (buttons & BUTTON_SELECT) {
+      playLongestKnown();
+    }
+    else {
+      playLife();
+    }
     gNeedPrompt = true;
   }
   else {
