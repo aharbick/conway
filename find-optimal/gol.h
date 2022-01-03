@@ -142,7 +142,66 @@ __device__ int countGenerations(ulong64 pattern) {
   return ended ? generations : 0;
 }
 
+__device__ int countNextSix(ulong64 pattern) {
+  int generations = 6;
+  ulong64 g1, g2, g3, g4, g5, g6;
+  g1 = pattern;
+  g2 = computeNextGeneration(g1);
+  g3 = computeNextGeneration(g2);
+  g4 = computeNextGeneration(g3);
+  g5 = computeNextGeneration(g4);
+  g6 = computeNextGeneration(g5);
+  g1 = computeNextGeneration(g6);
+
+  if (g1 == 0) {
+    // Pattern ended Adjust the age
+    if (g2 == 0) {generations-=5;}
+    else if (g3 == 0) {generations-=4;}
+    else if (g4 == 0) {generations-=3;}
+    else if (g5 == 0) {generations-=2;}
+    else if (g6 == 0) {generations-=1;}
+  }
+
+  if ((g1 == g2) || (g1 == g3) || (g1 == g4)) {
+    // periodic
+    generations = 0;
+  }
+
+  return generations;
+}
+
 #ifdef __NVCC__
+__global__ void evaluateRange(ulong64 beginAt, ulong64 endAt,
+                              ulong64 *bestPattern, ulong64 *bestGenerations) {
+  ulong64 patternRange[1024] = {0};
+  for (ulong64 pattern = beginAt; pattern < endAt; pattern += 1024) {
+    int
+    int batchGens = 0;
+    bool active = false;
+    do {
+      for (int i = 0; i < 1024; i++) {
+        if (patternRange[i] >= batchGens) { // pattern hasn't ended
+          active = true; // we've got at least one pattern still running
+          if (patternRange[i] > 48 && threadIdx.x < 64) { // Save long-running patterns for first 64 threads
+            patternRange[i] += countNextSix(beginAt + i);
+          }
+          else {
+            patternRange[i] += countNextSix(beginAt + i);
+          }
+
+          // Save the new longest seen
+          ulong64 old = atomicMax(bestGenerations, patternRange[i]);
+          if (old < patternRange[i]) {
+            *bestPattern = beginAt + i;
+          }
+        }
+      }
+      batchGens += 6;
+    } while (active && genBatch < 50); // Look at 300 generations
+  }
+}
+
+/*
 __global__ void evaluateRange(ulong64 beginAt, ulong64 endAt,
                               ulong64 *bestPattern, ulong64 *bestGenerations) {
   for (ulong64 pattern = beginAt + (blockIdx.x * blockDim.x + threadIdx.x);
@@ -155,6 +214,7 @@ __global__ void evaluateRange(ulong64 beginAt, ulong64 endAt,
     }
   }
 }
+*/
 #endif
 
 __host__ void *search(void *args) {
