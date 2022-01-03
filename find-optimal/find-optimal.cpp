@@ -16,7 +16,7 @@ const char *prog_bug_email = "aharbick@aharbick.com";
 static char prog_doc[] = "Search for terminal and stable states in an 8x8 bounded Conway's Game of Life grid";
 static char prog_args_doc[] = "";
 static struct argp_option argp_options[] = {
-  { "cudaconfig", 'c', "config", 0, "CUDA kernel params numgpus:blocksize:threadsperblock (e.g. 1:4096:256)"},
+  { "cudaconfig", 'c', "config", 0, "CUDA kernel params numgpus:blocksize:threadsperblock (e.g. 1:1024:1024)"},
   { "threads", 't', "num", 0, "Number of CPU threads (if you use more than one GPU you should use matching threads)."},
   { "beginat", 'b', "num", 0, "Explicit beginAt."},
   { "endat", 'e', "num", 0, "Explicit endAt."},
@@ -35,15 +35,15 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
       a->blockSize = strtol(end+1, &end, 10);
     }
     else {
-      printf("[WARN] invalid cudaconfig '%s', using default (4096) for blockSize\n", arg);
-      a->blockSize = 4096;
+      printf("[WARN] invalid cudaconfig '%s', using default (1024) for blockSize\n", arg);
+      a->blockSize = 1024;
     }
     if (*end == ':') {
       a->threadsPerBlock = strtol(end+1, NULL, 10);
     }
     else {
-      printf("[WARN] invalid cudaconfig '%s', using default (256) for threadsPerBlock\n", arg);
-      a->threadsPerBlock = 256;
+      printf("[WARN] invalid cudaconfig '%s', using default (1024) for threadsPerBlock\n", arg);
+      a->threadsPerBlock = 1024;
     }
     break;
   case 't':
@@ -85,8 +85,8 @@ int main(int argc, char **argv) {
   prog_args *cli = (prog_args *) malloc(sizeof(prog_args));
   cli->cpuThreads = 1;
   cli->gpusToUse = 1;
-  cli->blockSize = 4096;
-  cli->threadsPerBlock = 256;
+  cli->blockSize = 1024;
+  cli->threadsPerBlock = 1024;
   cli->beginAt = 0;
   cli->endAt = 0;
   cli->random = false;

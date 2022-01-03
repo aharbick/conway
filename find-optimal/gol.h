@@ -82,10 +82,6 @@ __device__ ulong64 computeNextGeneration(ulong64 a) {
 }
 
 __device__ int countGenerations(ulong64 pattern) {
-  // Use Floyd's algorithm for cycle detection...  Perhaps slightly less
-  // efficient (if it's a long period cycle) than a map structure, but when
-  // implementing this on a GPU in CUDA those data structures are not readily
-  // available.
   bool ended = false;
   int generations = 0;
 
