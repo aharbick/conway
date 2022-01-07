@@ -58,19 +58,19 @@ void printPattern(ulong64 number) {
 pthread_mutex_t gMutex = PTHREAD_MUTEX_INITIALIZER;
 int gBestGenerations = 0;
 
-__host__ __device__ void add2(ulong64 a, ulong64 b, ulong64 &s0, ulong64 &s1) {
+__device__ void add2(ulong64 a, ulong64 b, ulong64 &s0, ulong64 &s1) {
   s0 = a ^ b ;
   s1 = a & b ;
 }
 
-__host__ __device__ void add3(ulong64 a, ulong64 b, ulong64 c, ulong64 &s0, ulong64 &s1) {
+__device__ void add3(ulong64 a, ulong64 b, ulong64 c, ulong64 &s0, ulong64 &s1) {
   ulong64 t0, t1, t2 ;
   add2(a, b, t0, t1) ;
   add2(t0, c, s0, t2) ;
   s1 = t1 ^ t2 ;
 }
 
-__host__ __device__ ulong64 computeNextGeneration(ulong64 a) {
+__device__ ulong64 computeNextGeneration(ulong64 a) {
   ulong64 s0, sh2, a0, a1, sll, slh ;
   add2((a & 0x7f7f7f7f7f7f7f7f)<<1, (a & 0xFEFEFEFEFEFEFEFE)>>1, s0, sh2) ;
   add2(s0, a, a0, a1) ;
@@ -81,7 +81,7 @@ __host__ __device__ ulong64 computeNextGeneration(ulong64 a) {
   return (x^y^sh2^slh)&((x|y)^(sh2|slh))&(sll|a) ;
 }
 
-__host__ __device__ int countGenerations(ulong64 pattern) {
+__device__ int countGenerations(ulong64 pattern) {
   bool ended = false;
   int generations = 0;
 
@@ -143,11 +143,14 @@ __host__ __device__ int countGenerations(ulong64 pattern) {
 }
 
 #ifdef __NVCC__
-__global__ void findPromisingPatterns(ulong64 beginAt, ulong64 endAt, ulong64 *promising, ulong64 *numPromising) {
+__device__ ulong64 promising[1024*1024];
+__device__ ulong64 numPromising = 0;
+__global__ void evaluateRange(ulong64 beginAt, ulong64 endAt, ulong64 *bestPattern, ulong64 *bestGenerations) {
+  numPromising = 0;
   ulong64 pattern = beginAt + (blockIdx.x * blockDim.x + threadIdx.x);
   ulong64 g1, g2, g3, g4, g5, g6;
   g1 = pattern;
-  int generations = 0;
+  ulong64 generations = 0;
   while (pattern < endAt) {
     generations += 6;
     g2 = computeNextGeneration(g1);
@@ -160,10 +163,9 @@ __global__ void findPromisingPatterns(ulong64 beginAt, ulong64 endAt, ulong64 *p
     if ((g1 == g2) || (g1 == g3) || (g1 == g4)) {
       // pattern is ended or is cyclical... reset counter ready to advance to next pattern.
       generations = 0;
-    } else if (generations >= 180) {
-      // Based on a sample of 10M random patterns 99.84% patterns end before 100 generations.
-      // Save longer patterns for further analysis.
-      ulong64 idx = atomicAdd(numPromising, 1);
+    }
+    else if (generations >= 180) {
+      ulong64 idx = atomicAdd(&numPromising, 1);
       promising[idx] = pattern;
       // reset counter ready to advance to next pattern:
       generations = 0;
@@ -175,6 +177,31 @@ __global__ void findPromisingPatterns(ulong64 beginAt, ulong64 endAt, ulong64 *p
       g1 = pattern;
     }
   }
+
+  // Do full evaluation of promising pattern
+  for (ulong64 i = (blockIdx.x * blockDim.x + threadIdx.x);
+       i < numPromising;
+       i += blockDim.x * gridDim.x) {
+    // Use Floyd's cycle detection algorithm for full evaluation
+    ulong64 generations = 0;
+    ulong64 slow = promising[i];
+    ulong64 fast = slow;
+    do {
+      generations++;
+      slow = computeNextGeneration(slow);
+      fast = computeNextGeneration(computeNextGeneration(fast));
+    }
+    while (slow != fast);
+
+    if (slow == 0) {
+printf("HERE");
+      ulong64 old = atomicMax(bestGenerations, generations);
+      if (old < generations) {
+        *bestPattern = pattern;
+      }
+    }
+  }
+  numPromising = 0;
 }
 
 #endif
@@ -201,13 +228,13 @@ __host__ void *search(void *args) {
 
 #ifdef __NVCC__
   // Allocate memory on CUDA device and locally on host
-  ulong64 *devPromising, *hostPromising;
-  hostPromising = (ulong64 *)malloc(sizeof(ulong64) * 1024 * 1024);
-  cudaMalloc((void**)&devPromising, sizeof(ulong64) * 1024 * 1024);
+  ulong64 *devBestPattern, *hostBestPattern;
+  hostBestPattern = (ulong64 *)malloc(sizeof(ulong64));
+  cudaMalloc((void**)&devBestPattern, sizeof(ulong64));
 
-  ulong64 *devNumPromising, *hostNumPromising;
-  hostNumPromising = (ulong64 *)malloc(sizeof(ulong64));
-  cudaMalloc((void**)&devNumPromising, sizeof(ulong64));
+  ulong64 *devBestGenerations, *hostBestGenerations;
+  hostBestGenerations = (ulong64 *)malloc(sizeof(ulong64));
+  cudaMalloc((void**)&devBestGenerations, sizeof(ulong64));
 
   ulong64 chunk = 1;
   ulong64 chunkSize = 1024*1024*1024; // 1B patterns (1024 per block per thread)
@@ -222,24 +249,18 @@ __host__ void *search(void *args) {
       end  = start + chunkSize;
     }
 
-    // We check ~1B patterns to find any that are longer than 100 generations without simple periods.
-    cudaMemset(devNumPromising, 0, sizeof(ulong64));
-    findPromisingPatterns<<<cli->blockSize, cli->threadsPerBlock>>>(start, end, devPromising, devNumPromising);
-    cudaMemcpy(hostNumPromising, devNumPromising, sizeof(ulong64), cudaMemcpyDeviceToHost);
-    cudaMemcpy(hostPromising, devPromising, sizeof(ulong64)*1024*1024, cudaMemcpyDeviceToHost);
+    evaluateRange<<<cli->blockSize, cli->threadsPerBlock>>>(start, end, devBestPattern, devBestGenerations);
+    cudaMemcpy(hostBestPattern, devBestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost);
+    cudaMemcpy(hostBestGenerations, devBestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost);
 
-    // Now iterate over the candidates doing full checks.
-    for (int i = 0; i < *hostNumPromising; i++) {
-      int generations = countGenerations(hostPromising[i]);
-      pthread_mutex_lock(&gMutex);
-      if (gBestGenerations < generations) {
-        char bin[65] = {'\0'};
-        asBinary(hostPromising[i], bin);
-        printf("[Thread %d] %d generations : %llu : %s\n", cli->threadId, generations, hostPromising[i], bin);
-        gBestGenerations = generations;
-      }
-      pthread_mutex_unlock(&gMutex);
+    pthread_mutex_lock(&gMutex);
+    if (gBestGenerations < *hostBestGenerations) {
+      char bin[65] = {'\0'};
+      asBinary(*hostBestPattern, bin);
+      printf("[Thread %d] %d generations : %llu : %s\n", cli->threadId, *hostBestGenerations, *hostBestPattern, bin);
+      gBestGenerations = *hostBestGenerations;
     }
+    pthread_mutex_unlock(&gMutex);
 
     chunk++;
     i += chunkSize;
