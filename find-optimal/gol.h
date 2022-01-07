@@ -157,10 +157,10 @@ __global__ void findPromisingPatterns(ulong64 beginAt, ulong64 endAt, ulong64 *p
     g6 = computeNextGeneration(g5);
     g1 = computeNextGeneration(g6);
 
-    if (g1 == 0 || (g1 == g2) || (g1 == g3) || (g1 == g4)) {
+    if ((g1 == g2) || (g1 == g3) || (g1 == g4)) {
       // pattern is ended or is cyclical... reset counter ready to advance to next pattern.
       generations = 0;
-    } else if (generations >= 100) {
+    } else if (generations >= 180) {
       // Based on a sample of 10M random patterns 99.84% patterns end before 100 generations.
       // Save longer patterns for further analysis.
       ulong64 idx = atomicAdd(numPromising, 1);
@@ -205,9 +205,9 @@ __host__ void *search(void *args) {
   hostPromising = (ulong64 *)malloc(sizeof(ulong64) * 1024 * 1024);
   cudaMalloc((void**)&devPromising, sizeof(ulong64) * 1024 * 1024);
 
-  int *devNumPromising, *hostNumPromising;
-  hostNumPromising = (int *)malloc(sizeof(int));
-  cudaMalloc((void**)&devNumPromising, sizeof(int));
+  ulong64 *devNumPromising, *hostNumPromising;
+  hostNumPromising = (ulong64 *)malloc(sizeof(ulong64));
+  cudaMalloc((void**)&devNumPromising, sizeof(ulong64));
 
   ulong64 chunk = 1;
   ulong64 chunkSize = 1024*1024*1024; // 1B patterns (1024 per block per thread)
@@ -223,15 +223,16 @@ __host__ void *search(void *args) {
     }
 
     // We check ~1B patterns to find any that are longer than 100 generations without simple periods.
+    cudaMemset(devNumPromising, 0, sizeof(ulong64));
     findPromisingPatterns<<<cli->blockSize, cli->threadsPerBlock>>>(start, end, devPromising, devNumPromising);
     cudaMemcpy(hostNumPromising, devNumPromising, sizeof(ulong64), cudaMemcpyDeviceToHost);
-    cudaMemcpy(hostPromising, devPromising, *devNumPromising * sizeof(ulong64), cudaMemcpyDeviceToHost);
+    cudaMemcpy(hostPromising, devPromising, sizeof(ulong64)*1024*1024, cudaMemcpyDeviceToHost);
 
     // Now iterate over the candidates doing full checks.
     for (int i = 0; i < *hostNumPromising; i++) {
       int generations = countGenerations(hostPromising[i]);
       pthread_mutex_lock(&gMutex);
-      if (gBestGenerations <= generations) {
+      if (gBestGenerations < generations) {
         char bin[65] = {'\0'};
         asBinary(hostPromising[i], bin);
         printf("[Thread %d] %d generations : %llu : %s\n", cli->threadId, generations, hostPromising[i], bin);
