@@ -224,7 +224,7 @@ __host__ void *search(void *args) {
   h_bestPattern = (ulong64 *)malloc(sizeof(ulong64));
   h_bestGenerations = (ulong64 *)malloc(sizeof(ulong64));
 
-  ulong64 chunkSize = 1024*1024*1024; // ~1BILLION
+  ulong64 chunkSize = 1000*1000*1000;
   ulong64 i = cli->beginAt;
   while (i < cli->endAt) {
     ulong64 start = i;
