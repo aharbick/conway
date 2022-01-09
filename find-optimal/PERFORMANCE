@@ -50,3 +50,9 @@ Either way...  Even with such massive performance it would take a LONG time to p
 If we were able to ignore rotations without incurring ANY overhead then the task would take a little over a year:
 
     2^61 patterns no rotations / 55,898,711,000 patterns per sec / 86,400 secs per day = 477.43 days (or about 1.3 years)
+
+For fun here's the new longest pattern I found while doing the above (in RLE format that you can simulate with Golly: https://sourceforge.net/projects/golly/files):
+
+#CXRLE Pos=-4,-4
+x = 8, y = 8, rule = B3/S23:P8,8
+o7b$o2bo2b2o$o2bobo2b$2bo3b2o$o5bob$b2ob2obo$o3b4o$2o2bobob!
