@@ -144,7 +144,7 @@ __host__ __device__ int countGenerations(ulong64 pattern) {
 
 #ifdef __NVCC__
 __global__ void processCandidates(ulong64 *candidates, ulong64 *numCandidates,
-                                  ulong64 *bestPattern, ulong64 *bestGenerations, ulong *histogram) {
+                                  ulong64 *bestPattern, ulong64 *bestGenerations, ulong64 *histogram) {
   for (ulong64 i = blockIdx.x * blockDim.x + threadIdx.x; i < *numCandidates; i += blockDim.x * gridDim.x) {
     ulong64 generations = countGenerations(candidates[i]);
     ulong64 old = atomicMax(bestGenerations, generations);
