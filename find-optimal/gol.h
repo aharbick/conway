@@ -224,16 +224,17 @@ __host__ void *search(void *args) {
   h_bestPattern = (ulong64 *)malloc(sizeof(ulong64));
   h_bestGenerations = (ulong64 *)malloc(sizeof(ulong64));
 
-  ulong64 chunksize = 1024*1024*1024; // ~1BILLION
-  ulong64 start = cli->beginAt;
-  ulong64 end;
-  while (start < cli->endAt) {
+  ulong64 chunkSize = 1024*1024*1024; // ~1BILLION
+  ulong64 i = cli->beginAt;
+  while (i < cli->endAt) {
+    ulong64 start = i;
+    ulong64 end = (start + chunkSize) > cli->endAt ? cli->endAt : start+chunkSize;
     if (cli->random) {
       // We're randomly searching..  I didn't get cuRAND to work so we randomize our batches. Each
       // call to findCandidates is sequential but we look at random locations across all possible.
       start = genrand64_int64() % ULONG_MAX;
+      end  = start + chunkSize;
     }
-    end = (start + chunksize) > cli->endAt ? cli->endAt : start + chunksize;
 
     // Clear Initialize dev memory and launch kernel to find candidates
     *h_numCandidates = 0;
@@ -255,8 +256,7 @@ __host__ void *search(void *args) {
     }
     pthread_mutex_unlock(&gMutex);
 
-    start = (end+1) > cli->endAt ? cli->endAt : end+1;
-
+    i += chunkSize;
     printf("."); // every billion patterns
   }
 #else
