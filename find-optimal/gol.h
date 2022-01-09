@@ -220,7 +220,8 @@ __host__ void *search(void *args) {
   cudaMalloc((void**)&d_bestGenerations, sizeof(ulong64));
 
   // Allocate memory on host
-  ulong64 *h_bestPattern, *h_bestGenerations;
+  ulong64 *h_numCandidates, *h_bestPattern, *h_bestGenerations;
+  h_numCandidates = (ulong64 *)malloc(sizeof(ulong64));
   h_bestPattern = (ulong64 *)malloc(sizeof(ulong64));
   h_bestGenerations = (ulong64 *)malloc(sizeof(ulong64));
 
@@ -237,7 +238,7 @@ __host__ void *search(void *args) {
 
     // Clear Initialize dev memory and launch kernel to find candidates
     *h_numCandidates = 0;
-    cudaMemcpy(d_numCandidates, h_numCandidates, sizeof(ulong64), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_bestGenerations, h_numCandidates, sizeof(ulong64), cudaMemcpyHostToDevice);
     findCandidates<<<cli->blockSize,cli->threadsPerBlock>>>(start, end, d_candidates, d_numCandidates);
 
     // Set d_bestGenerations and call kernel to process candidates
