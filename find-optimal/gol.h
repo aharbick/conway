@@ -173,7 +173,7 @@ __global__ void findCandidates(ulong64 beginAt, ulong64 endAt,
       // pattern is ended or is cyclical... reset counter ready to advance to next pattern.
       generations = 0;
     }
-    else if (generations == 144) { // Must be multiple of 6
+    else if (generations >= 180) { 
       ulong64 idx = atomicAdd(numCandidates, 1);
       candidates[idx] = pattern;
       // reset counter ready to advance to next pattern:
