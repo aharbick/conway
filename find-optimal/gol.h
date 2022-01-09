@@ -143,6 +143,19 @@ __host__ __device__ int countGenerations(ulong64 pattern) {
 }
 
 #ifdef __NVCC__
+__global__ void processCandidates(ulong64 *candidates, ulong64 *numCandidates,
+                                  ulong64 *bestPattern, ulong64 *bestGenerations) {
+  for (ulong64 pattern = blockIdx.x * blockDim.x + threadIdx.x;
+       pattern < *numCandidates;
+       pattern += blockDim.x * gridDim.x) {
+    ulong64 generations = countGenerations(pattern);
+    ulong64 old = atomicMax(bestGenerations, generations);
+    if (old < generations) {
+      *bestPattern = pattern;
+    }
+  }
+}
+
 __global__ void findCandidates(ulong64 beginAt, ulong64 endAt,
                                ulong64 *candidates, ulong64 *numCandidates) {
   ulong64 pattern = beginAt + (blockIdx.x * blockDim.x + threadIdx.x);
@@ -200,16 +213,18 @@ __host__ void *search(void *args) {
 
 #ifdef __NVCC__
   // Allocate memory on CUDA device
-  ulong64 *d_candidates, *d_numCandidates;
+  ulong64 *d_candidates, *d_numCandidates, *d_bestPattern, *d_bestGenerations;
   cudaMalloc((void**)&d_candidates, sizeof(ulong64) * 1<<20);
   cudaMalloc((void**)&d_numCandidates, sizeof(ulong64));
+  cudaMalloc((void**)&d_bestPattern, sizeof(ulong64));
+  cudaMalloc((void**)&d_bestGenerations, sizeof(ulong64));
 
   // Allocate memory on host
-  ulong64 *h_candidates, *h_numCandidates;
-  h_candidates = (ulong64 *)calloc(1<<20, sizeof(ulong64));
-  h_numCandidates = (ulong64 *)malloc(sizeof(ulong64));
+  ulong64 *h_bestPattern, *h_bestGenerations;
+  h_bestPattern = (ulong64 *)malloc(sizeof(ulong64));
+  h_bestGenerations = (ulong64 *)malloc(sizeof(ulong64));
 
-  ulong64 chunksize = 1024*1024; // ~100M
+  ulong64 chunksize = 1<<30; // ~1BILLION
   ulong64 start = cli->beginAt;
   ulong64 end;
   while (start < cli->endAt) {
@@ -220,32 +235,29 @@ __host__ void *search(void *args) {
     }
     end = (start + chunksize) > cli->endAt ? cli->endAt : start + chunksize;
 
-    // Clear Initialize dev memory and launch kernel
+    // Clear Initialize dev memory and launch kernel to find candidates
     *h_numCandidates = 0;
     cudaMemcpy(d_numCandidates, h_numCandidates, sizeof(ulong64), cudaMemcpyHostToDevice);
     findCandidates<<<cli->blockSize,cli->threadsPerBlock>>>(start, end, d_candidates, d_numCandidates);
 
+    // Set d_bestGenerations and call kernel to process candidates
+    cudaMemcpy(d_bestGenerations, &gBestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice);
+    processCandidates<<<cli->blockSize, cli->threadsPerBlock>>>(d_candidates, d_numCandidates, d_bestPattern, d_bestGenerations);
+
     // Copy down to host...
-    cudaMemcpy(h_numCandidates, d_numCandidates, sizeof(ulong64), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_candidates, d_candidates, sizeof(ulong64) * *h_numCandidates, cudaMemcpyDeviceToHost);
-    for (ulong64 i = 0; i < *h_numCandidates; i++) {
-      ulong64 generations = countGenerations(h_candidates[i]);
-      if (generations > 0) {
-        pthread_mutex_lock(&gMutex);
-        if (gBestGenerations < generations) {
-          char bin[65] = {'\0'};
-          asBinary(h_candidates[i], bin);
-          printf("[Thread %d] %d generations : %llu : %s\n", cli->threadId, generations, h_candidates[i], bin);
-          gBestGenerations = generations;
-        }
-        pthread_mutex_unlock(&gMutex);
-      }
+    cudaMemcpy(h_bestGenerations, d_bestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_bestPattern, d_bestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost);
+    pthread_mutex_lock(&gMutex);
+    if (gBestGenerations < *h_bestGenerations) {
+      char bin[65] = {'\0'};
+      asBinary(*h_bestPattern, bin);
+      printf("[Thread %d] %d generations : %llu : %s\n", cli->threadId, *h_bestGenerations, *h_bestPattern, bin);
+      gBestGenerations = *h_bestGenerations;
+      pthread_mutex_unlock(&gMutex);
     }
 
     start = (end+1) > cli->endAt ? cli->endAt : end+1;
-    if ((start - cli->beginAt) % 1<<30) {
-      printf("."); // every billion patterns
-    }
+    printf("."); // every billion patterns
   }
 #else
   for (ulong64 i = cli->beginAt; i <= cli->endAt; i++) {
