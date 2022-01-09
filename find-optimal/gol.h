@@ -144,12 +144,9 @@ __host__ __device__ int countGenerations(ulong64 pattern) {
 
 #ifdef __NVCC__
 __global__ void processCandidates(ulong64 *candidates, ulong64 *numCandidates,
-                                  ulong64 *bestPattern, ulong64 *bestGenerations, ulong64 *histogram) {
+                                  ulong64 *bestPattern, ulong64 *bestGenerations) {
   for (ulong64 i = blockIdx.x * blockDim.x + threadIdx.x; i < *numCandidates; i += blockDim.x * gridDim.x) {
     ulong64 generations = countGenerations(candidates[i]);
-    // Save to our histogram
-    atomicAdd(histogram, 1);
-
     // Check to see if it's higher and emit it in best(Pattern|Generations)
     ulong64 old = atomicMax(bestGenerations, generations);
     if (old < generations) {
@@ -215,20 +212,18 @@ __host__ void *search(void *args) {
 
 #ifdef __NVCC__
   // Allocate memory on CUDA device
-  ulong64 *d_candidates, *d_numCandidates, *d_bestPattern, *d_bestGenerations, *d_histogram;
+  ulong64 *d_candidates, *d_numCandidates, *d_bestPattern, *d_bestGenerations;
   cudaMalloc((void**)&d_candidates, sizeof(ulong64) * 1<<30);
   cudaMalloc((void**)&d_numCandidates, sizeof(ulong64));
   cudaMalloc((void**)&d_bestPattern, sizeof(ulong64));
   cudaMalloc((void**)&d_bestGenerations, sizeof(ulong64));
-  cudaMalloc((void**)&d_histogram, sizeof(ulong64));
 
   // Allocate memory on host
-  ulong64 *h_candidates, *h_numCandidates, *h_bestPattern, *h_bestGenerations, *h_histogram;
+  ulong64 *h_candidates, *h_numCandidates, *h_bestPattern, *h_bestGenerations;
   h_candidates = (ulong64 *)calloc(1<<30, sizeof(ulong64));
   h_numCandidates = (ulong64 *)malloc(sizeof(ulong64));
   h_bestPattern = (ulong64 *)malloc(sizeof(ulong64));
   h_bestGenerations = (ulong64 *)malloc(sizeof(ulong64));
-  h_histogram = (ulong64 *)calloc(1024, sizeof(ulong64));
 
   ulong64 chunkSize = 1000*1000*1000;
   ulong64 i = cli->beginAt;
@@ -248,7 +243,7 @@ __host__ void *search(void *args) {
     findCandidates<<<cli->blockSize,cli->threadsPerBlock>>>(start, end, d_candidates, d_numCandidates);
 
     // Initialized best generations and launch kernel to process candidates
-    processCandidates<<<cli->blockSize, cli->threadsPerBlock>>>(d_candidates, d_numCandidates, d_bestPattern, d_bestGenerations, d_histogram);
+    processCandidates<<<cli->blockSize, cli->threadsPerBlock>>>(d_candidates, d_numCandidates, d_bestPattern, d_bestGenerations);
 
     // Copy down to host...
     cudaMemcpy(h_bestPattern, d_bestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost);
@@ -266,15 +261,6 @@ __host__ void *search(void *args) {
     i += chunkSize;
     printf("."); // every billion patterns
   }
-
-  // Copy down our histogram and emit it
-  cudaMemcpy(h_histogram, d_histogram, sizeof(ulong64) * 1024, cudaMemcpyDeviceToHost);
-  printf("Distribution of observed generations (%llu total)\n", cli->endAt - cli->beginAt);
-  printf("\tGenerations\tCount\n");
-  for (ulong64 h = 0; h < 1024; h++) {
-    printf("\t%llu\t%llu\n", h, h_histogram[h]);
-  }
-
 #else
   for (ulong64 i = cli->beginAt; i <= cli->endAt; i++) {
     if (i % 10000000 == 0) {
