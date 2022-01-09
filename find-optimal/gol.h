@@ -147,6 +147,10 @@ __global__ void processCandidates(ulong64 *candidates, ulong64 *numCandidates,
                                   ulong64 *bestPattern, ulong64 *bestGenerations, ulong64 *histogram) {
   for (ulong64 i = blockIdx.x * blockDim.x + threadIdx.x; i < *numCandidates; i += blockDim.x * gridDim.x) {
     ulong64 generations = countGenerations(candidates[i]);
+    // Save to our histogram
+    atomicAdd(histogram, 1);
+
+    // Check to see if it's higher and emit it in best(Pattern|Generations)
     ulong64 old = atomicMax(bestGenerations, generations);
     if (old < generations) {
       *bestPattern = candidates[i];
