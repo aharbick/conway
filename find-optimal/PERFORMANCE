@@ -1,0 +1,52 @@
+The most recent code suffered warp divergence such that it was only getting about 25% efficiency. See code at: e3b2d4bdd2433db6cf673333d084d20679b31008
+
+[ec2-user@ip-172-31-18-82 find-optimal]$ for i in 1 2 3 4 5; do HOWMANY=10000000000; T1=`date +%s%N | cut -b1-13`;./build/find-optimal -b1 -e$HOWMANY > /dev/null;T2=`date +%s%N | cut -b1-13`; PERSEC=`echo "$(( $HOWMANY / ($T2-$T1) * 1000 ))"`; printf "%'d per second\n" $PERSEC; done
+1,117,318,000 per second
+1,132,118,000 per second
+1,132,246,000 per second
+1,131,861,000 per second
+1,131,733,000 per second
+AVG = 1,129,055,200 per second
+
+But Adam Goucher(https://gitlab.com/apgoucher) helped with some amazing suggestions for improvement which produce these results:
+
+[ec2-user@ip-172-31-18-82 find-optimal]$ for i in 1 2 3 4 5; do HOWMANY=10000000000; T1=`date +%s%N | cut -b1-13`;./build/find-optimal -b1 -e$HOWMANY > /dev/null;T2=`date +%s%N | cut -b1-13`; PERSEC=`echo "$(( $HOWMANY / ($T2-$T1) * 1000 ))"`; printf "%'d per second\n" $PERSEC; done
+5,390,835,000 per second
+5,643,340,000 per second
+5,617,977,000 per second
+5,599,104,000 per second
+5,614,823,000 per second
+AVG = 5,573,215,800 per second
+
+This represents a 4.9x improvement!!!
+
+Unfortunately, I didn't compare apples to apples, but I wrote a script that uses CUDA_VISIBLE_DEVICES=X and launches find-optimal 8 times processing 1TRILLION patterns on 8 GPUS.  Running on a g5.48xlarge on AWS you should be able to reproduce this result:
+
+[ec2-user@ip-172-31-18-82 find-optimal]$ ./run8gpu-perf.sh
+Launched: 83710
+Launched: 83733
+Launched: 83746
+Launched: 83760
+Launched: 83773
+Launched: 83786
+Launched: 83799
+Launched: 83812
+Waiting on 83710
+Waiting on 83733
+Waiting on 83746
+Waiting on 83760
+Waiting on 83773
+Waiting on 83786
+Waiting on 83799
+Waiting on 83812
+55,898,711,000 per second
+
+This represents and average of 6,987,338,875 per GPU or ~25% improvement per GPU over the tests above.  I can't come up with a good reason why the run8gpu-perf.sh test would be actually faster per GPU so I think it's likely that if I ran the tests above with 1TRILLION paterns instead of 10BILLION patterns that we would see similar numbers.
+
+Either way...  Even with such massive performance it would take a LONG time to process all possible patterns on the 8x8 grid:
+
+    2^64 total patterns / 55,898,711,000 patterns per sec / 86,400 secs per day = 3,819.48 days (or about 10.5 years)
+
+If we were able to ignore rotations without incurring ANY overhead then the task would take a little over a year:
+
+    2^61 patterns no rotations / 55,898,711,000 patterns per sec / 86,400 secs per day = 477.43 days (or about 1.3 years)
