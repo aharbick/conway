@@ -56,3 +56,127 @@ For fun here's the new longest pattern I found while doing the above (in RLE for
 #CXRLE Pos=-4,-4
 x = 8, y = 8, rule = B3/S23:P8,8
 o7b$o2bo2b2o$o2bobo2b$2bo3b2o$o5bob$b2ob2obo$o3b4o$2o2bobob!
+
+
+### Eliminating Rotations (thoughts from Adam Goucher)
+
+As for taking advantage of rotations/reflections, we'll define a 'frame' to be
+one of the 2^24 ways to assign 0s and 1s to the following 24 cells marked 'F'
+in the 8x8 grid below:
+
+   FFFooFFF
+   FFooooFF
+   FooooooF
+   oooooooo
+   oooooooo
+   FooooooF
+   FFooooFF
+   FFFooFFF
+
+Whilst there are 2^24 different frames in total, you can deduplicate the ones
+that are rotations/reflections of each other -- let's say by only considering
+those that are lexicographically minimal amongst all
+rotations/reflections. That should reduce the total number of frames to
+consider to 2102800 (slightly more than 2^21).
+
+The idea is to split the search into 2102800 tasks, one for each distinct
+frame, and then (within each task) brute-force the 2^40 different ways to
+assign 0s and 1s to the 40 cells in the octagon marked 'o'.
+
+There will still be a few patterns that we 'overcount' in multiple
+orientations, specifically certain patterns with symmetrical frames, but they
+constitute such a small proportion of the overall set of patterns that it's not
+worth any further optimisation.
+
+In particular, here are the numbers of patterns that you'd need to search with each of:
+
+   no deduplication: 18446744073709551616 (= 2^64)
+   frame deduplication: 2312053050887372800
+   full deduplication: 2305843028004192256
+
+That is to say, full deduplication would only reduce the number of patterns to
+search by a further 0.3% (beyond frame deduplication), but it's a lot more
+effort to implement than frame deduplication so it's not worthwhile. Frame
+deduplication has already reduced our workload by a factor of 7.9785.
+
+Anyway, 2^40 (the number of patterns per task) is quite a big number, so we'll split it as follows:
+
+  (2^4 kernel invocations per task) * (2^10 blocks per kernel) * (2^10 threads per block) * (2^16 patterns per thread)
+
+in specifically the following way:
+
+   FFFKKFFF
+   FFBBBBFF
+   FBBBBBBF
+   PPPPPPPP
+   PPPPPPPP
+   FTTTTTTF
+   FFTTTTFF
+   FFFKKFFF
+
+(Note that this enumeration strategy enforces the <<<1024, 1024>>> kernel
+parameters that you were using before; you can no longer adjust blockDim.x and
+gridDim.x.)
+
+The important property is that the 16 bits corresponding to the 'patterns per
+thread' occupy 16 consecutive bits in the 64-bit word, so you can advance to
+the next pattern using a single addition instruction:
+
+  pattern += 0x1000000;
+
+To determine your thread's starting pattern, you'll need to define your
+evaluateRange to accept a single 64-bit integer 'kernel_id' of the following
+shape, containing both the frame bits and the kernel bits:
+
+  FFFKKFFF
+  FF0000FF
+  F000000F
+  00000000
+  00000000
+  F000000F
+  FF0000FF
+  FFFKKFFF
+
+In other words, you'll have something like this in your host code which launches the 16 kernels for a given task:
+
+  for (int i = 0; i < 16; i++) {
+    ulong64 kernel_id = frame; // this contains the 24 'F' bits
+    kernel_id += ((ulong64) (i & 3)) << 3; // set the lower pair of 'K' bits
+    kernel_id += ((ulong64) (i >> 2)) << 59; // set the upper pair of 'K' bits
+    evaluateRange<<<1024, 1024>>>(kernel_id, other_parameters);
+  }
+
+(Each loop iteration processes 2^36 patterns, for a total of 2^40.)
+
+Then, at the beginning of your evaluateRange kernel you can incorporate the thread and block bits into the starting pattern:
+
+  ulong64 startingPattern = kernel_id;
+  startingPattern += ((ulong64) (threadIdx.x & 15)) << 10; // set the lower row of 4 'T' bits
+  startingPattern += ((ulong64) (threadIdx.x >> 4)) << 17; // set the upper row of 6 'T' bits
+  startingPattern += ((ulong64) (blockIdx.x & 63)) << 41; // set the lower row of 6 'B' bits
+  startingPattern += ((ulong64) (blockIdx.x >> 6)) << 50; // set the upper row of 4 'B' bits
+  ulong64 endAt = startingPattern + 0x10000000000ull;
+
+By counting from startingPattern to endAt (excluding the latter endpoint) in
+increments of 0x1000000 (2^24), you'll iterate over the 2^16 different choices
+of the middle 16 bits whilst holding the other 48 bits constant.
+
+Very importantly, your main loop condition needs to be:
+
+  while (pattern != endAt)
+
+and not:
+
+  while (pattern < endAt)
+
+because the following assignment can overflow the 64-bit integer (wrapping
+round modulo 2^64), thereby causing endAt to be numerically less than
+startingPattern:
+
+  ulong64 endAt = startingPattern + 0x10000000000ull;
+
+
+Before you do spend 1.3 years running this, I'd recommend writing a bunch of
+unit tests to make sure that all of your functions are implemented correctly
+(lest it would be a very expensive and time-consuming mistake!). Here's the
+unit-testing library that I use for C++ and CUDA: https://github.com/google/googletest
