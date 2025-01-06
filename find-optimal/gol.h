@@ -34,6 +34,16 @@ typedef struct prog_args {
   ulong64 perf_iterations;
 } prog_args;
 
+#ifdef __NVCC__
+#define cudaCheckError(ans) { cudaAssert((ans), __FILE__, __LINE__); }
+inline void cudaAssert(cudaError_t code, const char *file, int line) {
+  if (code != cudaSuccess) {
+    fprintf(stderr,"CUDA Error: %s %s %d\n", cudaGetErrorString(code), file, line);
+    exit(code);
+  }
+}
+#endif
+
 void asBinary(ulong64 number, char *buf) {
   for (int i = 63; i >= 0; i--) {
     buf[-i+63] = (number >> i) & 1 ? '1' : '0';
@@ -85,7 +95,7 @@ __host__ __device__ int countGenerations(ulong64 pattern) {
   bool ended = false;
   int generations = 0;
 
-  //  Run for up to  generations just checking if we cycle within 6
+  //  Run for up to 300 generations just checking if we cycle within 6
   //  generations or die out.
   ulong64 g1, g2, g3, g4, g5, g6;
   g1 = pattern;
@@ -143,14 +153,24 @@ __host__ __device__ int countGenerations(ulong64 pattern) {
 }
 
 #ifdef __NVCC__
+#ifdef JETSON_NANO
+#define MAX_CANDIDATES 1<<20ULL  // 1MB for Jetson Nano (1<<20)
+#define CHUNK_SIZE 1000*1000ULL  // Smaller chunks for Jetson Nano
+#else
+#define MAX_CANDIDATES 1<<30ULL  // 1GB for other devices (1<<30)
+#define CHUNK_SIZE 1000*1000*1000ULL
+#endif
+
 __global__ void processCandidates(ulong64 *candidates, ulong64 *numCandidates,
                                   ulong64 *bestPattern, ulong64 *bestGenerations) {
   for (ulong64 i = blockIdx.x * blockDim.x + threadIdx.x; i < *numCandidates; i += blockDim.x * gridDim.x) {
     ulong64 generations = countGenerations(candidates[i]);
-    // Check to see if it's higher and emit it in best(Pattern|Generations)
-    ulong64 old = atomicMax(bestGenerations, generations);
-    if (old < generations) {
-      *bestPattern = candidates[i];
+    if (generations > 0) {  // Only process if it actually ended
+      // Check to see if it's higher and emit it in best(Pattern|Generations)
+      ulong64 old = atomicMax(bestGenerations, generations);
+      if (old < generations) {
+        *bestPattern = candidates[i];
+      }
     }
   }
 }
@@ -168,21 +188,22 @@ __global__ void findCandidates(ulong64 beginAt, ulong64 endAt,
     g4 = computeNextGeneration(g3);
     g5 = computeNextGeneration(g4);
     g6 = computeNextGeneration(g5);
+    // Remove debug print to reduce memory pressure
     g1 = computeNextGeneration(g6);
 
+    // Reduce the generations threshold for candidates
     if ((g1 == g2) || (g1 == g3) || (g1 == g4)) {
-      // pattern is ended or is cyclical... reset counter ready to advance to next pattern.
       generations = 0;
     }
     else if (generations >= 180) {
       ulong64 idx = atomicAdd(numCandidates, 1);
-      candidates[idx] = pattern;
-      // reset counter ready to advance to next pattern:
+      if (idx < MAX_CANDIDATES) { // Add bounds check
+        candidates[idx] = pattern;
+      }
       generations = 0;
     }
 
     if (generations == 0) {
-      // we reset the generation counter, so load the next pattern:
       pattern += blockDim.x * gridDim.x;
       g1 = pattern;
     }
@@ -192,6 +213,12 @@ __global__ void findCandidates(ulong64 beginAt, ulong64 endAt,
 
 __host__ void *search(void *args) {
   prog_args *cli = (prog_args *)args;
+
+#ifdef __NVCC__
+  printf("[Thread %d] Running with CUDA enabled\n", cli->threadId);
+#else
+  printf("[Thread %d] Running CPU-only version\n", cli->threadId);
+#endif
 
   if (cli->random) {
     // Initialize Random number generator
@@ -213,19 +240,19 @@ __host__ void *search(void *args) {
 #ifdef __NVCC__
   // Allocate memory on CUDA device
   ulong64 *d_candidates, *d_numCandidates, *d_bestPattern, *d_bestGenerations;
-  cudaMalloc((void**)&d_candidates, sizeof(ulong64) * 1<<30);
-  cudaMalloc((void**)&d_numCandidates, sizeof(ulong64));
-  cudaMalloc((void**)&d_bestPattern, sizeof(ulong64));
-  cudaMalloc((void**)&d_bestGenerations, sizeof(ulong64));
+  cudaCheckError(cudaMalloc((void**)&d_candidates, sizeof(ulong64) * MAX_CANDIDATES));
+  cudaCheckError(cudaMalloc((void**)&d_numCandidates, sizeof(ulong64)));
+  cudaCheckError(cudaMalloc((void**)&d_bestPattern, sizeof(ulong64)));
+  cudaCheckError(cudaMalloc((void**)&d_bestGenerations, sizeof(ulong64)));
 
   // Allocate memory on host
   ulong64 *h_candidates, *h_numCandidates, *h_bestPattern, *h_bestGenerations;
-  h_candidates = (ulong64 *)calloc(1<<30, sizeof(ulong64));
+  h_candidates = (ulong64 *)calloc(MAX_CANDIDATES, sizeof(ulong64));
   h_numCandidates = (ulong64 *)malloc(sizeof(ulong64));
   h_bestPattern = (ulong64 *)malloc(sizeof(ulong64));
   h_bestGenerations = (ulong64 *)malloc(sizeof(ulong64));
 
-  ulong64 chunkSize = 1000*1000*1000;
+  ulong64 chunkSize = CHUNK_SIZE;
   ulong64 i = cli->beginAt;
   while (i < cli->endAt) {
     ulong64 start = i;
@@ -239,15 +266,26 @@ __host__ void *search(void *args) {
 
     // Clear Initialize dev memory and launch kernel to find candidates
     *h_numCandidates = 0;
-    cudaMemcpy(d_numCandidates, h_numCandidates, sizeof(ulong64), cudaMemcpyHostToDevice);
+    cudaCheckError(cudaMemcpy(d_numCandidates, h_numCandidates, sizeof(ulong64), cudaMemcpyHostToDevice));
     findCandidates<<<cli->blockSize,cli->threadsPerBlock>>>(start, end, d_candidates, d_numCandidates);
+    cudaCheckError(cudaGetLastError()); // Check for launch errors
+    cudaCheckError(cudaDeviceSynchronize()); // Wait for kernel to finish and check for errors
 
-    // Initialized best generations and launch kernel to process candidates
+    // Get the number of candidates found
+    cudaCheckError(cudaMemcpy(h_numCandidates, d_numCandidates, sizeof(ulong64), cudaMemcpyDeviceToHost));
+
+    // Initialize best generations and pattern to 0 before processing and launch kernel to process candidates
+    *h_bestGenerations = 0;
+    *h_bestPattern = 0;
+    cudaCheckError(cudaMemcpy(d_bestGenerations, h_bestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice));
+    cudaCheckError(cudaMemcpy(d_bestPattern, h_bestPattern, sizeof(ulong64), cudaMemcpyHostToDevice));
     processCandidates<<<cli->blockSize, cli->threadsPerBlock>>>(d_candidates, d_numCandidates, d_bestPattern, d_bestGenerations);
+    cudaCheckError(cudaGetLastError());
+    cudaCheckError(cudaDeviceSynchronize());
 
     // Copy down to host...
-    cudaMemcpy(h_bestPattern, d_bestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_bestGenerations, d_bestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost);
+    cudaCheckError(cudaMemcpy(h_bestPattern, d_bestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost));
+    cudaCheckError(cudaMemcpy(h_bestGenerations, d_bestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost));
 
     pthread_mutex_lock(&gMutex);
     if (gBestGenerations < *h_bestGenerations) {
@@ -259,14 +297,19 @@ __host__ void *search(void *args) {
     pthread_mutex_unlock(&gMutex);
 
     i += chunkSize;
-    printf("."); // every billion patterns
   }
+
+  // Add cleanup
+  cudaCheckError(cudaFree(d_candidates));
+  cudaCheckError(cudaFree(d_numCandidates));
+  cudaCheckError(cudaFree(d_bestPattern));
+  cudaCheckError(cudaFree(d_bestGenerations));
+  free(h_candidates);
+  free(h_numCandidates);
+  free(h_bestPattern);
+  free(h_bestGenerations);
 #else
   for (ulong64 i = cli->beginAt; i <= cli->endAt; i++) {
-    if (i % 10000000 == 0) {
-      printf("."); // every 10m patterns
-    }
-
     // Sequential or random pattern...
     ulong64 pattern = i;
     if (cli->random) {
@@ -292,3 +335,4 @@ __host__ void *search(void *args) {
 }
 
 #endif
+

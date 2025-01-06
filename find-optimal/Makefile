@@ -13,7 +13,10 @@ ifeq ($(OS),Darwin)
 else
 	ifneq (,$(HAS_CUDA))
 		NVCC=nvcc -x cu -arch=sm_53
-		NVCFLAGS=-w -O3 --ptxas-options=-v -lineinfo
+		NVCFLAGS=-w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
+		ifdef JETSON
+			NVCFLAGS += -DJETSON_NANO
+		endif
 		LIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda -lpthread
 	endif
 endif
