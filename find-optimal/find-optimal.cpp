@@ -21,7 +21,7 @@ static struct argp_option argp_options[] = {
   { "beginat", 'b', "num", 0, "Explicit beginAt."},
   { "endat", 'e', "num", 0, "Explicit endAt."},
   { "random", 'r', "ignorerange", OPTION_ARG_OPTIONAL, "Use random patterns. Default in [beginAt-endAt]. -r1 [1-ULONG_MAX]."},
-  { "perf", 'p', "iterations", OPTION_ARG_OPTIONAL, "Run a performance test"},
+  { "randomsamples", 's', "num", 1000000000, "How many random samples to run. Default is 1 billion."},
   { 0 }
 };
 
@@ -57,17 +57,9 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
     break;
   case 'r':
     a->random = true;
-    if (arg) {
-      a->unrestrictedRandom = true;
-    }
     break;
-  case 'p': {
-    if (arg) {
-      a->perf_iterations = strtoull(arg, NULL, 10);
-    }
-    else {
-      a->perf_iterations = 1 << 24;
-    }
+  case 'i': {
+    a->randomSamples = strtoull(arg, NULL, 10);
     break;
   }
   default: return ARGP_ERR_UNKNOWN;
@@ -90,8 +82,7 @@ int main(int argc, char **argv) {
   cli->beginAt = 0;
   cli->endAt = 0;
   cli->random = false;
-  cli->perf_iterations = 0;
-  cli->unrestrictedRandom = false;
+  cli->randomSamples = 0;
   argp_parse(&argp, argc, argv, 0, 0, cli);
 
   // Allocate an array of threads

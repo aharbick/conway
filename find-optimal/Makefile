@@ -23,7 +23,7 @@ endif
 
 all: setup explore-cachability find-optimal
 
-$(BUILDDIR)/find-optimal.o: find-optimal.cpp mt.h gol.h
+$(BUILDDIR)/find-optimal.o: find-optimal.cpp mt.h gol.h frame_utils.h types.h
 	$(NVCC) $(if $(NVCFLAGS), $(NVCFLAGS), $(CFLAGS)) -I. -c $< -o $@
 
 find-optimal: $(BUILDDIR)/find-optimal.o

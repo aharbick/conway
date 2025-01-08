@@ -1,3 +1,5 @@
+## Testing on AWS g5.48xlarge Instances
+
 The most recent code suffered warp divergence such that it was only getting about 25% efficiency. See code at: e3b2d4bdd2433db6cf673333d084d20679b31008
 
 [ec2-user@ip-172-31-18-82 find-optimal]$ for i in 1 2 3 4 5; do HOWMANY=10000000000; T1=`date +%s%N | cut -b1-13`;./build/find-optimal -b1 -e$HOWMANY > /dev/null;T2=`date +%s%N | cut -b1-13`; PERSEC=`echo "$(( $HOWMANY / ($T2-$T1) * 1000 ))"`; printf "%'d per second\n" $PERSEC; done
@@ -57,6 +59,15 @@ For fun here's the new longest pattern I found while doing the above (in RLE for
 x = 8, y = 8, rule = B3/S23:P8,8
 o7b$o2bo2b2o$o2bobo2b$2bo3b2o$o5bob$b2ob2obo$o3b4o$2o2bobob!
 
+## Testing on Jetson Nano
+
+aharbick@aharbick-jetson:~/Projects/conway/find-optimal$ for i in 1 2 3 4 5; do HOWMANY=1000000000; T1=`date +%s%N | cut -b1-13`;./build/find-optimal -c 1:32:128 -b1 -e$HOWMANY > /dev/null;T2=`date +%s%N | cut -b1-13`; PERSEC=`echo "$(( $HOWMANY / ($T2-$T1) * 1000 ))"`; printf "%'d per second\n" $PERSEC; done
+84,054,000 per second
+84,882,000 per second
+84,868,000 per second
+84,774,000 per second
+84,882,000 per second
+AVG = 84,558,800 per second
 
 ### Eliminating Rotations (thoughts from Adam Goucher)
 

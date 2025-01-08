@@ -1,0 +1,8 @@
+name: conway
+channels:
+    - conda-forge
+dependencies:
+    - python
+    - pip
+    - pip:
+        - jupyter
