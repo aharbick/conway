@@ -20,8 +20,8 @@ static struct argp_option argp_options[] = {
   { "threads", 't', "num", 0, "Number of CPU threads (if you use more than one GPU you should use matching threads)."},
   { "beginat", 'b', "num", 0, "Explicit beginAt."},
   { "endat", 'e', "num", 0, "Explicit endAt."},
-  { "random", 'r', "ignorerange", OPTION_ARG_OPTIONAL, "Use random patterns. Default in [beginAt-endAt]. -r1 [1-ULONG_MAX]."},
-  { "randomsamples", 's', "num", 1000000000, "How many random samples to run. Default is 1 billion."},
+  { "random", 'r', NULL, 0, "Use random patterns."},
+  { "randomsamples", 's', "num", 0, "How many random samples to run. Default is 1 billion."},
   { 0 }
 };
 
@@ -58,7 +58,7 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
   case 'r':
     a->random = true;
     break;
-  case 'i': {
+  case 's': {
     a->randomSamples = strtoull(arg, NULL, 10);
     break;
   }
@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
   cli->beginAt = 0;
   cli->endAt = 0;
   cli->random = false;
-  cli->randomSamples = 0;
+  cli->randomSamples = 1ULL << 30; // 1 billion
   argp_parse(&argp, argc, argv, 0, 0, cli);
 
   // Allocate an array of threads
