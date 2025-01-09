@@ -263,7 +263,8 @@ __host__ void searchRandom(prog_args *cli) {
 
   // We're randomly searching..  I didn't get cuRAND to work so we randomize our batches. Each
   // call to findCandidates is sequential but we look at random locations across all possible.
-  for (ulong64 i = 0; i < cli->randomSamples; i++) {
+  ulong64 iterations = cli->randomSamples / CHUNK_SIZE;
+  for (ulong64 i = 0; i < iterations; i++) {
     ulong64 start = genrand64_int64();
     ulong64 end = start + CHUNK_SIZE;
 
