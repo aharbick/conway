@@ -332,7 +332,7 @@ __host__ void searchAll(prog_args *cli) {
         cudaCheckError(cudaMemcpy(d_bestGenerations, &h_bestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice));
 
         // Launch kernel
-        searchKernel<<<1024, 1024>>>(kernel_id, d_bestPattern, d_bestGenerations);
+        searchKernel<<<cli->blockSize, cli->threadsPerBlock>>>(kernel_id, d_bestPattern, d_bestGenerations);
         cudaCheckError(cudaGetLastError());
         cudaCheckError(cudaDeviceSynchronize());
 
