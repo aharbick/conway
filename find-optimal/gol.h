@@ -312,6 +312,9 @@ __host__ void searchAll(prog_args *cli) {
   cudaCheckError(cudaMalloc((void**)&d_bestPattern, sizeof(ulong64)));
   cudaCheckError(cudaMalloc((void**)&d_bestGenerations, sizeof(ulong64)));
 
+  // Host variables for results
+  ulong64 h_bestPattern, h_bestGenerations;
+
   // Iterate all possible 24-bit numbers and use spreadBitsToFrame to cover all 64-bit "frames"
   // see frame_util.h for more details.
   for (ulong64 i = 0; i < (1 << 24); i++) {
@@ -324,7 +327,7 @@ __host__ void searchAll(prog_args *cli) {
         kernel_id += ((ulong64)(i >> 2)) << 59;   // upper pair of K bits
 
         // Reset best generations for this kernel
-        ulong64 h_bestGenerations = 0;
+        h_bestGenerations = 0;
         cudaCheckError(cudaMemcpy(d_bestGenerations, &h_bestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice));
 
         // Launch kernel
@@ -333,7 +336,6 @@ __host__ void searchAll(prog_args *cli) {
         cudaCheckError(cudaDeviceSynchronize());
 
         // Check results
-        ulong64 h_bestPattern, h_bestGenerations;
         cudaCheckError(cudaMemcpy(&h_bestPattern, d_bestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost));
         cudaCheckError(cudaMemcpy(&h_bestGenerations, d_bestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost));
 
@@ -341,11 +343,11 @@ __host__ void searchAll(prog_args *cli) {
         updateBestGenerations(cli->threadId, h_bestGenerations, h_bestPattern);
       }
     }
-
-    // Cleanup
-    cudaCheckError(cudaFree(d_bestPattern));
-    cudaCheckError(cudaFree(d_bestGenerations));
   }
+
+  // Cleanup
+  cudaCheckError(cudaFree(d_bestPattern));
+  cudaCheckError(cudaFree(d_bestGenerations));
 }
 #else
 // CPU version
