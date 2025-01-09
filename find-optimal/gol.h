@@ -19,8 +19,9 @@
 #endif
 
 #include "mt.h" // For mersenne twister random numbers
+#include "types.h"
+#include "frame_utils.h"
 
-typedef unsigned long long ulong64;
 typedef struct prog_args {
   int threadId;
   int cpuThreads;
