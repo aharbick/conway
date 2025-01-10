@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
   cli->beginAt = 0;
   cli->endAt = 0;
   cli->random = false;
-  cli->randomSamples = 1ULL << 30; // 1 billion
+  cli->randomSamples = ULONG_MAX;
   argp_parse(&argp, argc, argv, 0, 0, cli);
 
   // Allocate an array of threads
