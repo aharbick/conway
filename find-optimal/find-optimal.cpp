@@ -23,6 +23,7 @@ static struct argp_option argp_options[] = {
   { "endat", 'e', "num", 0, "Explicit endAt."},
   { "random", 'r', NULL, 0, "Use random patterns."},
   { "randomsamples", 's', "num", 0, "How many random samples to run. Default is 1 billion."},
+  { "perfcount", 'p', "num", 0, "Number of patterns to search before terminating."},
   { 0 }
 };
 
@@ -32,8 +33,16 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
   switch(key) {
   case 'c':
     a->gpusToUse = strtol(arg, &end, 10);
+    if (a->gpusToUse <= 0) {
+      printf("[WARN] invalid gpusToUse '%s', must be greater than 0\n", arg);
+      return ARGP_ERR_UNKNOWN;
+    }
     if (*end == ':') {
       a->blockSize = strtol(end+1, &end, 10);
+      if (a->blockSize <= 0) {
+        printf("[WARN] invalid blockSize '%s', must be greater than 0\n", end+1);
+        return ARGP_ERR_UNKNOWN;
+      }
     }
     else {
       printf("[WARN] invalid cudaconfig '%s', using default (1024) for blockSize\n", arg);
@@ -66,6 +75,14 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
     a->randomSamples = strtoull(arg, NULL, 10);
     break;
   }
+  case 'p': {
+    a->perfCount = strtoull(arg, NULL, 10);
+    if (a->perfCount == 0) {
+      printf("[WARN] invalid perfcount '%s', must be greater than 0\n", arg);
+      return ARGP_ERR_UNKNOWN;
+    }
+    break;
+  }
   default: return ARGP_ERR_UNKNOWN;
   }
   return 0;
@@ -88,6 +105,7 @@ int main(int argc, char **argv) {
   cli->endAt = 0;
   cli->random = false;
   cli->randomSamples = ULONG_MAX;
+  cli->perfCount = 0;
   argp_parse(&argp, argc, argv, 0, 0, cli);
 
   // Allocate an array of threads

@@ -31,6 +31,7 @@ typedef struct prog_args {
   bool kernelBatches;
   bool random;
   ulong64 randomSamples;
+  ulong64 perfCount;
   ulong64 beginAt;
   ulong64 endAt;
 } prog_args;
@@ -317,9 +318,15 @@ __host__ void searchAll(prog_args *cli) {
   // Host variables for results
   ulong64 h_bestPattern, h_bestGenerations;
 
+  // Keep track of how many patterns we've processed
+  ulong64 processed = 0;
+
   // Iterate all possible 24-bit numbers and use spreadBitsToFrame to cover all 64-bit "frames"
   // see frame_util.h for more details.
   for (ulong64 i = 0; i < (1 << 24); i++) {
+    if (cli->perfCount > 0 && processed >= cli->perfCount) {
+      break;  // Exit early if we've processed enough patterns
+    }
     ulong64 frame = spreadBitsToFrame(i);
     if (isMinimalFrame(frame)) {
       // Launch 16 kernels for this frame
@@ -343,6 +350,10 @@ __host__ void searchAll(prog_args *cli) {
           searchKernel<<<cli->blockSize, cli->threadsPerBlock>>>(kernel_id, batchNum, batchSize, d_bestPattern, d_bestGenerations);
           cudaCheckError(cudaGetLastError());
           cudaCheckError(cudaDeviceSynchronize());
+          processed += batchSize;
+          if (processed >= cli->perfCount) {
+            break;
+          }
         }
 
         // Check results
@@ -393,15 +404,22 @@ __host__ void *search(void *args) {
     printf("[Thread %d] searching RANDOMLY %llu candidates\n", cli->threadId, cli->randomSamples);
     searchRandom(cli);
   }
+  else if (cli->perfCount > 0) {
+    printf("[Thread %d] searching %llu patterns\n", cli->threadId, cli->perfCount);
+    searchAll(cli);
+  }
   else {
     char searchRangeMessage[64] = {'\0'};
-    if (cli->endAt == 0) {
-      snprintf(searchRangeMessage, sizeof(searchRangeMessage), "(%llu - ULONG_MAX)", cli->beginAt);
+    if (cli->beginAt > 0 && cli->endAt > 0) {
+      snprintf(searchRangeMessage, sizeof(searchRangeMessage), "ALL in range (%llu - %llu)", cli->beginAt, cli->endAt);
+    }
+    else if (cli->beginAt == 0 && cli->endAt > 0) {
+      snprintf(searchRangeMessage, sizeof(searchRangeMessage), "ALL in range (0 - %llu)", cli->endAt);
     }
     else {
-      snprintf(searchRangeMessage, sizeof(searchRangeMessage), "(%llu - %llu)", cli->beginAt, cli->endAt);
+      snprintf(searchRangeMessage, sizeof(searchRangeMessage), "ALL");
     }
-    printf("[Thread %d] searching ALL in range %s\n", cli->threadId, searchRangeMessage);
+    printf("[Thread %d] searching %s\n", cli->threadId, searchRangeMessage);
     searchAll(cli);
   }
 
