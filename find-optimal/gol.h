@@ -21,6 +21,7 @@
 #include "mt.h" // For mersenne twister random numbers
 #include "types.h"
 #include "frame_utils.h"
+#include "display_utils.h"
 
 typedef struct prog_args {
   int threadId;
@@ -45,24 +46,6 @@ inline void cudaAssert(cudaError_t code, const char *file, int line) {
   }
 }
 #endif
-
-void asBinary(ulong64 number, char *buf) {
-  for (int i = 63; i >= 0; i--) {
-    buf[-i+63] = (number >> i) & 1 ? '1' : '0';
-  }
-}
-
-void printPattern(ulong64 number) {
-  char pat[65] = {'\0'};
-  asBinary(number, pat);
-  for (int i = 0; i < 64; i++) {
-    printf(" %c ", pat[i]);
-    if ((i+1) % 8 == 0) {
-      printf("\n");
-    }
-  }
-  printf("\n");
-}
 
 ///////////////////////////////////////////////////////////////////////////
 // GLOBAL variables updated across threads
@@ -324,9 +307,6 @@ __host__ void searchAll(prog_args *cli) {
   // Iterate all possible 24-bit numbers and use spreadBitsToFrame to cover all 64-bit "frames"
   // see frame_util.h for more details.
   for (ulong64 i = 0; i < (1 << 24); i++) {
-    if (cli->perfCount > 0 && processed >= cli->perfCount) {
-      break;  // Exit early if we've processed enough patterns
-    }
     ulong64 frame = spreadBitsToFrame(i);
     if (isMinimalFrame(frame)) {
       // Launch 16 kernels for this frame
