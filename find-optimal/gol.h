@@ -332,7 +332,7 @@ __host__ void searchAll(prog_args *cli) {
           cudaCheckError(cudaDeviceSynchronize());
           processed += batchSize;
           if (processed >= cli->perfCount) {
-            break;
+            goto cleanup;
           }
         }
 
@@ -346,6 +346,7 @@ __host__ void searchAll(prog_args *cli) {
     }
   }
 
+cleanup:
   // Cleanup
   cudaCheckError(cudaFree(d_bestPattern));
   cudaCheckError(cudaFree(d_bestGenerations));
