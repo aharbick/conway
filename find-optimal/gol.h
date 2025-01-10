@@ -32,7 +32,6 @@ typedef struct prog_args {
   bool kernelBatches;
   bool random;
   ulong64 randomSamples;
-  ulong64 perfCount;
   ulong64 beginAt;
   ulong64 endAt;
 } prog_args;
@@ -301,9 +300,6 @@ __host__ void searchAll(prog_args *cli) {
   // Host variables for results
   ulong64 h_bestPattern, h_bestGenerations;
 
-  // Keep track of how many patterns we've processed
-  ulong64 processed = 0;
-
   // Iterate all possible 24-bit numbers and use spreadBitsToFrame to cover all 64-bit "frames"
   // see frame_util.h for more details.
   for (ulong64 i = 0; i < (1 << 24); i++) {
@@ -330,10 +326,6 @@ __host__ void searchAll(prog_args *cli) {
           searchKernel<<<cli->blockSize, cli->threadsPerBlock>>>(kernel_id, batchNum, batchSize, d_bestPattern, d_bestGenerations);
           cudaCheckError(cudaGetLastError());
           cudaCheckError(cudaDeviceSynchronize());
-          processed += batchSize;
-          if (processed >= cli->perfCount) {
-            goto cleanup;
-          }
         }
 
         // Check results
@@ -346,7 +338,6 @@ __host__ void searchAll(prog_args *cli) {
     }
   }
 
-cleanup:
   // Cleanup
   cudaCheckError(cudaFree(d_bestPattern));
   cudaCheckError(cudaFree(d_bestGenerations));
@@ -384,10 +375,6 @@ __host__ void *search(void *args) {
   if (cli->random) {
     printf("[Thread %d] searching RANDOMLY %llu candidates\n", cli->threadId, cli->randomSamples);
     searchRandom(cli);
-  }
-  else if (cli->perfCount > 0) {
-    printf("[Thread %d] searching %llu patterns\n", cli->threadId, cli->perfCount);
-    searchAll(cli);
   }
   else {
     char searchRangeMessage[64] = {'\0'};
