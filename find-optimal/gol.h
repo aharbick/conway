@@ -174,20 +174,21 @@ __global__ void findCandidates(ulong64 beginAt, ulong64 endAt,
     g4 = computeNextGeneration(g3);
     g5 = computeNextGeneration(g4);
     g6 = computeNextGeneration(g5);
-    // Remove debug print to reduce memory pressure
     g1 = computeNextGeneration(g6);
 
-    // Reduce the generations threshold for candidates
     if ((g1 == g2) || (g1 == g3) || (g1 == g4)) {
+      // pattern is ended or is cyclical... reset counter ready to advance to next pattern.
       generations = 0;
     }
     else if (generations >= 180) {
       ulong64 idx = atomicAdd(numCandidates, 1);
       candidates[idx] = pattern;
+      // reset counter ready to advance to next pattern:
       generations = 0;
     }
 
     if (generations == 0) {
+      // generations counter was reset, so load the next pattern
       pattern += blockDim.x * gridDim.x;
       g1 = pattern;
     }
