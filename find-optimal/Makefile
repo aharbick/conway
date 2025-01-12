@@ -12,10 +12,11 @@ ifeq ($(OS),Darwin)
 	LIBS = -L/opt/homebrew/lib -largp -lpthread
 else
 	ifneq (,$(HAS_CUDA))
-		NVCC=nvcc -x cu -arch=sm_53
-		NVCFLAGS=-w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
+		NVCC=nvcc -x cu
 		ifdef JETSON_NANO
-			NVCFLAGS += -DJETSON_NANO
+			NVCFLAGS=-arch=sm_53 -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread -DJETSON_NANO
+		else
+			NVCFLAGS=-arch=sm_87 -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
 		endif
 		LIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda -lpthread
 	endif
