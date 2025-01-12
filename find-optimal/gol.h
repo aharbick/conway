@@ -29,7 +29,6 @@ typedef struct prog_args {
   int gpusToUse;
   int blockSize;
   int threadsPerBlock;
-  bool kernelBatches;
   bool random;
   ulong64 randomSamples;
   ulong64 beginAt;
@@ -205,16 +204,16 @@ __global__ void findCandidates(ulong64 beginAt, ulong64 endAt,
   }
 }
 
-__global__ void searchKernel(ulong64 kernel_id, ulong64 batch, ulong64 batchSize, ulong64 *bestPattern, ulong64 *bestGenerations) {
+__global__ void searchKernel(ulong64 kernel_id, ulong64 *bestPattern, ulong64 *bestGenerations) {
   // Construct the starting pattern for this thread
   ulong64 pattern = kernel_id;
   pattern += ((ulong64)(threadIdx.x & 15)) << 10;  // lower row of T bits
   pattern += ((ulong64)(threadIdx.x >> 4)) << 17;  // upper row of T bits
   pattern += ((ulong64)(blockIdx.x & 63)) << 41;   // lower row of B bits
   pattern += ((ulong64)(blockIdx.x >> 6)) << 50;   // upper row of B bits
-  pattern += batch * 0x1000000;                    // Batch is 0-based... start at this offset.
+  ulong64 endAt = pattern + 0x10000000000ULL;
 
-  for (ulong64 i = 0; i < batchSize; i++) {
+  while (pattern != endAt) {
     int generations = countGenerations(pattern);
     if (generations > 0) {  // Only process if it actually ended
       ulong64 old = atomicMax(bestGenerations, generations);
@@ -301,7 +300,25 @@ __host__ void searchAll(prog_args *cli) {
   ulong64 h_bestPattern, h_bestGenerations;
 
   // Iterate all possible 24-bit numbers and use spreadBitsToFrame to cover all 64-bit "frames"
-  // see frame_util.h for more details.
+  // Frames in the 8x8 grid are the 24 corner bits marked with F.
+
+  //    FFFKKFFF
+  //    FFBBBBFF
+  //    FBBBBBBF
+  //    PPPPPPPP
+  //    PPPPPPPP
+  //    FTTTTTTF
+  //    FFTTTTFF
+  //    FFFKKFFF
+
+  // The 4 bits marked with K represent 16 starting patterns for 16 kernels.
+  // Each kernel will have 1024 blocks and 1024 threads.  The given block/thread
+  // will process the pattern with the matching B and P bits set.  Each thread
+  // will process the 2^16 patterns marked with P bits.
+  //
+  // Because of this representation the kernel must be invoked with 1024 blocks
+  // and 1024 threads otherwise we will not process all of the 2^40 patterns inside
+  // the 2^24 frames.
   for (ulong64 i = 0; i < (1 << 24); i++) {
     ulong64 frame = spreadBitsToFrame(i);
     if (isMinimalFrame(frame)) {
@@ -315,18 +332,10 @@ __host__ void searchAll(prog_args *cli) {
         h_bestGenerations = 0;
         cudaCheckError(cudaMemcpy(d_bestGenerations, &h_bestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice));
 
-        // On a powerful GPU we can process 2^16 patterns per kernel invocation.
-        // If kernelBatches is set, we'll process batches of 1024 for 64 iterations instead.
-        //
-        // This gives us the same total number of patterns (65536) but with smaller 
-        // kernel invocations that are less likely to trigger the watchdog timer.
-        ulong64 batchSize = cli->kernelBatches ? 1024 : 1<<16ULL;
-        int batches = (1<<16ULL) / batchSize;
-        for (int batchNum = 0; batchNum < batches; batchNum++) {
-          searchKernel<<<cli->blockSize, cli->threadsPerBlock>>>(kernel_id, batchNum, batchSize, d_bestPattern, d_bestGenerations);
-          cudaCheckError(cudaGetLastError());
-          cudaCheckError(cudaDeviceSynchronize());
-        }
+        // Process all 2^16 patterns for this kernel
+        searchKernel<<<1024,1024>>>(kernel_id, d_bestPattern, d_bestGenerations);
+        cudaCheckError(cudaGetLastError());
+        cudaCheckError(cudaDeviceSynchronize());
 
         // Check results
         cudaCheckError(cudaMemcpy(&h_bestPattern, d_bestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost));
@@ -367,7 +376,6 @@ __host__ void *search(void *args) {
 
 #ifdef __NVCC__
   printf("[Thread %d] Running with CUDA enabled\n", cli->threadId);
-  printf("[Thread %d] Kernel batches %s\n", cli->threadId, cli->kernelBatches ? "enabled" : "disabled");
 #else
   printf("[Thread %d] Running CPU-only version\n", cli->threadId);
 #endif

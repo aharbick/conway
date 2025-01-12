@@ -4,15 +4,7 @@
 #include <stdbool.h>
 #include "types.h"
 
-// Frame bit positions (F) in the 8x8 grid:
-//   FFFooFFF
-//   FFooooFF 
-//   FooooooF
-//   oooooooo
-//   oooooooo
-//   FooooooF
-//   FFooooFF
-//   FFFooFFF
+// See the algorithm described in PERFORMANCE under "Eliminating Rotations"
 
 // Rotates a pattern 90 degrees clockwise
 __host__ __device__ inline ulong64 rotate90(ulong64 pattern) {

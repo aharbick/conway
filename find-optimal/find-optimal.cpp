@@ -17,7 +17,6 @@ static char prog_doc[] = "Search for terminal and stable states in an 8x8 bounde
 static char prog_args_doc[] = "";
 static struct argp_option argp_options[] = {
   { "cudaconfig", 'c', "config", 0, "CUDA kernel params numgpus:blocksize:threadsperblock (e.g. 1:1024:1024)"},
-  { "kernelbatches", 'k', NULL, 0, "Use kernel batches (for less powerful GPUs)."},
   { "threads", 't', "num", 0, "Number of CPU threads (if you use more than one GPU you should use matching threads)."},
   { "beginat", 'b', "num", 0, "Explicit beginAt."},
   { "endat", 'e', "num", 0, "Explicit endAt."},
@@ -55,9 +54,6 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
       a->threadsPerBlock = 1024;
     }
     break;
-  case 'k':
-    a->kernelBatches = true;
-    break;
   case 't':
     a->cpuThreads = strtol(arg, NULL, 10);
     break;
@@ -91,7 +87,6 @@ int main(int argc, char **argv) {
   cli->gpusToUse = 1;
   cli->blockSize = 1024;
   cli->threadsPerBlock = 1024;
-  cli->kernelBatches = false;
   cli->beginAt = 0;
   cli->endAt = 0;
   cli->random = false;
