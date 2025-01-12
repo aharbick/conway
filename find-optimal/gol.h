@@ -225,7 +225,6 @@ __global__ void searchKernel(ulong64 kernel_id, ulong64 *bestPattern, ulong64 *b
   }
 }
 
-// CUDA version
 __host__ void searchRandom(prog_args *cli) {
   init_genrand64((ulong64) time(NULL));
 
