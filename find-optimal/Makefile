@@ -14,7 +14,7 @@ else
 	ifneq (,$(HAS_CUDA))
 		NVCC=nvcc -x cu
 		ifdef JETSON_NANO
-			NVCFLAGS=-arch=sm_53 -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread -DJETSON_NANO
+			NVCFLAGS=-arch=sm_53 -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
 		else
 			NVCFLAGS=-arch=sm_87 -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
 		endif

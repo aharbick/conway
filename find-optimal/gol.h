@@ -147,14 +147,6 @@ __host__ __device__ int countGenerations(ulong64 pattern) {
 }
 
 #ifdef __NVCC__
-#ifdef JETSON_NANO
-#define MAX_CANDIDATES 1<<20ULL  // 1MB for Jetson Nano (1<<20)
-#define CHUNK_SIZE 1000*1000ULL  // Smaller chunks for Jetson Nano
-#else
-#define MAX_CANDIDATES 1<<30ULL  // 1GB for other devices (1<<30)
-#define CHUNK_SIZE 1000*1000*1000ULL
-#endif
-
 __global__ void processCandidates(ulong64 *candidates, ulong64 *numCandidates,
                                   ulong64 *bestPattern, ulong64 *bestGenerations) {
   for (ulong64 i = blockIdx.x * blockDim.x + threadIdx.x; i < *numCandidates; i += blockDim.x * gridDim.x) {
@@ -191,9 +183,7 @@ __global__ void findCandidates(ulong64 beginAt, ulong64 endAt,
     }
     else if (generations >= 180) {
       ulong64 idx = atomicAdd(numCandidates, 1);
-      if (idx < MAX_CANDIDATES) { // Add bounds check
-        candidates[idx] = pattern;
-      }
+      candidates[idx] = pattern;
       generations = 0;
     }
 
@@ -230,21 +220,21 @@ __host__ void searchRandom(prog_args *cli) {
 
   // Allocate memory on CUDA device
   ulong64 *d_candidates, *d_numCandidates, *d_bestPattern, *d_bestGenerations;
-  cudaCheckError(cudaMalloc((void**)&d_candidates, sizeof(ulong64) * MAX_CANDIDATES));
+  cudaCheckError(cudaMalloc((void**)&d_candidates, sizeof(ulong64) * 1<<20));
   cudaCheckError(cudaMalloc((void**)&d_numCandidates, sizeof(ulong64)));
   cudaCheckError(cudaMalloc((void**)&d_bestPattern, sizeof(ulong64)));
   cudaCheckError(cudaMalloc((void**)&d_bestGenerations, sizeof(ulong64)));
 
   // Allocate memory on host
   ulong64 *h_candidates, *h_numCandidates, *h_bestPattern, *h_bestGenerations;
-  h_candidates = (ulong64 *)calloc(MAX_CANDIDATES, sizeof(ulong64));
+  h_candidates = (ulong64 *)calloc(1<<20, sizeof(ulong64));
   h_numCandidates = (ulong64 *)malloc(sizeof(ulong64));
   h_bestPattern = (ulong64 *)malloc(sizeof(ulong64));
   h_bestGenerations = (ulong64 *)malloc(sizeof(ulong64));
 
   // We're randomly searching..  I didn't get cuRAND to work so we randomize our batches. Each
   // call to findCandidates is sequential but we look at random locations across all possible.
-  ulong64 chunkSize = CHUNK_SIZE;
+  ulong64 chunkSize = 1<<20;
   ulong64 iterations = cli->randomSamples / chunkSize;
   for (ulong64 i = 0; i < iterations; i++) {
     ulong64 start = genrand64_int64();
