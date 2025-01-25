@@ -53,7 +53,7 @@ __host__ __device__ inline ulong64 extractFrame(ulong64 pattern) {
 __host__ __device__ inline ulong64 spreadBitsToFrame(ulong64 bits) {
     ulong64 result = 0;
     int bitPos = 0;
-    
+
     // Row offsets and patterns
     static const int offsets[] = {56, 48, 40, 16, 8, 0};  // Row bit offsets
     static const ulong64 patterns[] = {
@@ -64,12 +64,12 @@ __host__ __device__ inline ulong64 spreadBitsToFrame(ulong64 bits) {
         0xC3,  // FFooooFF - 11000011
         0xE7   // FFFooFFF - 11100111
     };
-    
+
     // Process each row
     for (int row = 0; row < 6; row++) {
         ulong64 pattern = patterns[row];
         int offset = offsets[row];
-        
+
         // Process each bit in the pattern
         for (int pos = 7; pos >= 0; pos--) {
             if (pattern & (1ULL << pos)) {
@@ -77,7 +77,7 @@ __host__ __device__ inline ulong64 spreadBitsToFrame(ulong64 bits) {
             }
         }
     }
-    
+
     return result;
 }
 
@@ -85,24 +85,24 @@ __host__ __device__ inline ulong64 spreadBitsToFrame(ulong64 bits) {
 // among all its rotations and reflections
 __host__ __device__ inline bool isMinimalFrame(ulong64 frame) {
     ulong64 min = frame;
-    
+
     // Check all rotations
     ulong64 rotated = frame;
     for (int i = 0; i < 3; i++) {
         rotated = rotate90(rotated);
         if (rotated < min) return false;
     }
-    
+
     // Check horizontal reflection and its rotations
     ulong64 reflected = reflectHorizontal(frame);
     if (reflected < min) return false;
-    
+
     rotated = reflected;
     for (int i = 0; i < 3; i++) {
         rotated = rotate90(rotated);
         if (rotated < min) return false;
     }
-    
+
     return true;
 }
 
