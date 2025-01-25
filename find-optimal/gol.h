@@ -241,6 +241,10 @@ __host__ void *search(void *args) {
     *h_numCandidates = 0;
     cudaMemcpy(d_numCandidates, h_numCandidates, sizeof(ulong64), cudaMemcpyHostToDevice);
     findCandidates<<<cli->blockSize,cli->threadsPerBlock>>>(start, end, d_candidates, d_numCandidates);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+      printf("CUDA Error: %s\n", cudaGetErrorString(err));
+    }
 
     // Initialized best generations and launch kernel to process candidates
     processCandidates<<<cli->blockSize, cli->threadsPerBlock>>>(d_candidates, d_numCandidates, d_bestPattern, d_bestGenerations);

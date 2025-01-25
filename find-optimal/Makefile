@@ -12,7 +12,7 @@ ifeq ($(OS),Darwin)
 	LIBS = -L/opt/homebrew/lib -largp -lpthread
 else
 	ifneq (,$(HAS_CUDA))
-		NVCC=nvcc -x cu -arch=sm_53
+		NVCC=nvcc -x cu -arch=sm_87
 		NVCFLAGS=-w -O3 --ptxas-options=-v -lineinfo
 		LIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda -lpthread
 	endif

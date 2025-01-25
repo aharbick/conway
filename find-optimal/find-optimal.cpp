@@ -94,6 +94,16 @@ int main(int argc, char **argv) {
   cli->unrestrictedRandom = false;
   argp_parse(&argp, argc, argv, 0, 0, cli);
 
+#ifdef __NVCC__
+  cudaDeviceProp prop;
+  cudaGetDeviceProperties(&prop, 0);
+  printf("Running on GPU: %s\n", prop.name);
+  printf("Compute capability: %d.%d\n", prop.major, prop.minor);
+  printf("Max threads per block: %d\n", prop.maxThreadsPerBlock);
+  printf("Max thread dimensions: [%d, %d, %d]\n", prop.maxThreadsDim[0], prop.maxThreadsDim[1], prop.maxThreadsDim[2]);
+  printf("Using %d blocks with %d threads per block\n", cli->blockSize, cli->threadsPerBlock);
+#endif
+
   // Allocate an array of threads
   ulong64 patternsPerThread = ((cli->endAt > 0) ? cli->endAt - cli->beginAt : ULONG_MAX) / cli->cpuThreads;
   pthread_t *threads = (pthread_t *) malloc(sizeof(pthread_t) * cli->cpuThreads);
@@ -110,6 +120,6 @@ int main(int argc, char **argv) {
 
   for (int t = 0; t < cli->cpuThreads; t++) {
     pthread_join(threads[t], NULL);
-    printf("[Thread %d] COMPLETE\n", t);
+    printf("\n[Thread %d] COMPLETE\n", t);
   }
 }
