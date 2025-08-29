@@ -303,7 +303,7 @@ __host__ void searchAll(prog_args *cli) {
 
   // The 4 bits marked with K represent 16 starting patterns for 16 kernels.
   // Each kernel will have 1024 blocks and 1024 threads.  The given block/thread
-  // will process the pattern with the matching B and P bits set.  Each thread
+  // will process the pattern with the matching B and T bits set.  Each thread
   // will process the 2^16 patterns marked with P bits.
   //
   // Because of this representation the kernel must be invoked with 1024 blocks
