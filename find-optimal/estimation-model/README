@@ -1,0 +1,17 @@
+* Setup conda environment
+
+conda env create --file=conway.yml
+conda activate
+
+* Install Julia
+
+brew install julia
+
+* Build IJulia... Run julia shell then:
+
+using Pkg
+Pkg.add("IJulia")
+
+* Run notebook
+
+jupyter notebook

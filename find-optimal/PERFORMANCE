@@ -1,3 +1,5 @@
+## Testing on AWS g5.48xlarge Instances
+
 The most recent code suffered warp divergence such that it was only getting about 25% efficiency. See code at: e3b2d4bdd2433db6cf673333d084d20679b31008
 
 [ec2-user@ip-172-31-18-82 find-optimal]$ for i in 1 2 3 4 5; do HOWMANY=10000000000; T1=`date +%s%N | cut -b1-13`;./build/find-optimal -b1 -e$HOWMANY > /dev/null;T2=`date +%s%N | cut -b1-13`; PERSEC=`echo "$(( $HOWMANY / ($T2-$T1) * 1000 ))"`; printf "%'d per second\n" $PERSEC; done
@@ -57,8 +59,33 @@ For fun here's the new longest pattern I found while doing the above (in RLE for
 x = 8, y = 8, rule = B3/S23:P8,8
 o7b$o2bo2b2o$o2bobo2b$2bo3b2o$o5bob$b2ob2obo$o3b4o$2o2bobob!
 
+## Testing on Jetson Nano
 
-### Eliminating Rotations (thoughts from Adam Goucher)
+Before the implementation of Adam's suggestions below
+aharbick@aharbick-jetson:~/Projects/conway/find-optimal$ for i in 1 2 3 4 5; do HOWMANY=10000000000; T1=`date +%s%N | cut -b1-13`;./
+build/find-optimal -b1 -e$HOWMANY > /dev/null;T2=`date +%s%N | cut -b1-13`; PERSEC=`echo "$(( $HOWMANY / ($T2-$T1) * 1000 ))"`; prin
+tf "%'d per second\n" $PERSEC; done
+32,434,000 per second
+32,339,000 per second
+32,233,000 per second
+32,229,000 per second
+32,189,000 per second
+AVG = 32,284,800 per second
+
+## Test in Jeton Orin
+
+Before the implementation of Adam's suggestions below
+aharbick@jetson-agx-orin:~/Projects/conway/find-optimal$ for i in 1 2 3 4 5; do HOWMANY=10000000000; T1=`date +%s%N | cut -b1-13`;./
+build/find-optimal -b1 -e$HOWMANY > /dev/null;T2=`date +%s%N | cut -b1-13`; PERSEC=`echo "$(( $HOWMANY / ($T2-$T1) * 1000 ))"`; prin
+tf "%'d per second\n" $PERSEC; done
+265,681,000 per second
+266,865,000 per second
+270,431,000 per second
+266,752,000 per second
+270,460,000 per second
+AVG = 268,037,800 per second
+
+## Eliminating Rotations (thoughts from Adam Goucher)
 
 As for taking advantage of rotations/reflections, we'll define a 'frame' to be
 one of the 2^24 ways to assign 0s and 1s to the following 24 cells marked 'F'

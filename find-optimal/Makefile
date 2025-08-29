@@ -12,10 +12,11 @@ ifeq ($(OS),Darwin)
 	LIBS = -L/opt/homebrew/lib -largp -lpthread
 else
 	ifneq (,$(HAS_CUDA))
-		NVCC=nvcc -x cu -arch=sm_53
-		NVCFLAGS=-w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
-		ifdef JETSON
-			NVCFLAGS += -DJETSON_NANO
+		NVCC=nvcc -x cu
+		ifdef JETSON_NANO
+			NVCFLAGS=-arch=sm_53 -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
+		else
+			NVCFLAGS=-arch=sm_87 -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
 		endif
 		LIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda -lpthread
 	endif
@@ -23,7 +24,7 @@ endif
 
 all: setup explore-cachability find-optimal
 
-$(BUILDDIR)/find-optimal.o: find-optimal.cpp mt.h gol.h
+$(BUILDDIR)/find-optimal.o: find-optimal.cpp mt.h gol.h frame_utils.h types.h display_utils.h
 	$(NVCC) $(if $(NVCFLAGS), $(NVCFLAGS), $(CFLAGS)) -I. -c $< -o $@
 
 find-optimal: $(BUILDDIR)/find-optimal.o
