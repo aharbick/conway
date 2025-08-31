@@ -23,6 +23,7 @@
 #include "types.h"
 #include "frame_utils.h"
 #include "display_utils.h"
+#include "airtable_client.h"
 #include <stdarg.h>
 
 // User-configurable defaults (can be overridden via command line)
@@ -77,6 +78,8 @@ typedef struct prog_args {
   int threadsPerBlock;
   bool random;
   bool verbose;
+  bool testAirtable;
+  bool resumeFromDatabase;
   ulong64 randomSamples;
   ulong64 beginAt;
   ulong64 endAt;
@@ -95,13 +98,16 @@ __host__ void printThreadStatus(int threadId, const char* format, ...) {
 }
 
 __host__ void printChunkStats(prog_args* cli, double startTime, ulong64 processedFrames,
-                             ulong64 startFrame, int kernelIndex, int chunk) {
+                             ulong64 startFrame, int kernelId, int chunk, bool is_frame_complete) {
   double chunkEndTime = getCurrentTime();
   double chunkTime = chunkEndTime - startTime;
   double rate = (FRAME_SEARCH_TOTAL_THREADS * cli->chunkSize) / chunkTime;
+  ulong64 frameId = startFrame + processedFrames;
   printThreadStatus(cli->threadId,
       "Processed frame=%llu, kernel=%d, chunk=%d (%'llu patterns/sec)",
-      startFrame + processedFrames, kernelIndex, chunk, (ulong64)rate);
+      frameId, kernelId, chunk, (ulong64)rate);
+
+  airtable_send_progress(frameId, kernelId, chunk, rate, is_frame_complete, false);
 }
 
 #ifdef __NVCC__
@@ -163,12 +169,21 @@ int gBestGenerations = 0;
 
 __host__ void updateBestGenerations(int threadId, int generations, ulong64 pattern) {
   pthread_mutex_lock(&gMutex);
-  if (gBestGenerations < generations) {
-    char bin[BINARY_STRING_BUFFER_SIZE] = {'\0'};
-    asBinary(pattern, bin);
-    printf("[Thread %d - %llu] %d generations : %llu : %s\n", threadId, (ulong64)time(NULL), generations, pattern, bin);
+
+  char bin[BINARY_STRING_BUFFER_SIZE] = {'\0'};
+  asBinary(pattern, bin);
+
+  bool isNewGlobalBest = (gBestGenerations < generations);
+  if (isNewGlobalBest) {
+    // Update our new best.
     gBestGenerations = generations;
   }
+
+  // Print out result and sent to airbase
+  printf("[Thread %d - %llu] %s%d generations : %llu : %s\n",
+         threadId, (ulong64)time(NULL), isNewGlobalBest ? "NEW HIGH " : "", generations, pattern, bin);
+  airtable_send_result(generations, pattern, bin, false);
+
   pthread_mutex_unlock(&gMutex);
 }
 
@@ -316,9 +331,9 @@ __global__ void findCandidates(ulong64 beginAt, ulong64 endAt,
   }
 }
 
-__global__ void findCandidatesInKernel(ulong64 kernel_id, int chunk, ulong64 chunkSize, ulong64 *candidates, ulong64 *numCandidates) {
+__global__ void findCandidatesInKernel(ulong64 kernel, int chunk, ulong64 chunkSize, ulong64 *candidates, ulong64 *numCandidates) {
   // Construct the starting pattern for this thread
-  ulong64 pattern = kernel_id;
+  ulong64 pattern = kernel;
   pattern += ((ulong64)(threadIdx.x & 15)) << 10;  // lower row of T bits
   pattern += ((ulong64)(threadIdx.x >> 4)) << 17;  // upper row of T bits
   pattern += ((ulong64)(blockIdx.x & 63)) << 41;   // lower row of B bits
@@ -340,11 +355,11 @@ __global__ void findCandidatesInKernel(ulong64 kernel_id, int chunk, ulong64 chu
   }
 }
 
-__host__ ulong64 constructKernelId(ulong64 frame, int kernelIndex) {
-  ulong64 kernel_id = frame;
-  kernel_id += ((ulong64)(kernelIndex & 3)) << 3;      // lower pair of K bits
-  kernel_id += ((ulong64)(kernelIndex >> 2)) << 59;    // upper pair of K bits
-  return kernel_id;
+__host__ ulong64 constructKernel(ulong64 frame, int kernelIndex) {
+  ulong64 kernel = frame;
+  kernel += ((ulong64)(kernelIndex & 3)) << 3;      // lower pair of K bits
+  kernel += ((ulong64)(kernelIndex >> 2)) << 59;    // upper pair of K bits
+  return kernel;
 }
 
 __host__ void executeCandidateSearch(SearchMemory* mem, prog_args* cli, ulong64 start, ulong64 end) {
@@ -372,11 +387,11 @@ __host__ void executeCandidateSearch(SearchMemory* mem, prog_args* cli, ulong64 
   }
 }
 
-__host__ void executeKernelSearch(SearchMemory* mem, prog_args* cli, ulong64 kernel_id, int chunk) {
+__host__ void executeKernelSearch(SearchMemory* mem, prog_args* cli, ulong64 kernel, int chunk) {
   // Phase 1: Find candidates in kernel
   *mem->h_numCandidates = 0;
   cudaCheckError(cudaMemcpy(mem->d_numCandidates, mem->h_numCandidates, sizeof(ulong64), cudaMemcpyHostToDevice));
-  findCandidatesInKernel<<<FRAME_SEARCH_GRID_SIZE,FRAME_SEARCH_THREADS_PER_BLOCK>>>(kernel_id, chunk, cli->chunkSize, mem->d_candidates, mem->d_numCandidates);
+  findCandidatesInKernel<<<FRAME_SEARCH_GRID_SIZE,FRAME_SEARCH_THREADS_PER_BLOCK>>>(kernel, chunk, cli->chunkSize, mem->d_candidates, mem->d_numCandidates);
   cudaCheckError(cudaGetLastError());
   cudaCheckError(cudaDeviceSynchronize());
   cudaCheckError(cudaMemcpy(mem->h_numCandidates, mem->d_numCandidates, sizeof(ulong64), cudaMemcpyDeviceToHost));
@@ -397,15 +412,16 @@ __host__ void executeKernelSearch(SearchMemory* mem, prog_args* cli, ulong64 ker
   }
 }
 
-__host__ void processKernelChunks(SearchMemory* mem, prog_args* cli, ulong64 kernel_id,
-                                 int kernelIndex, ulong64 processedFrames, ulong64 startFrame) {
+__host__ void processKernelChunks(SearchMemory* mem, prog_args* cli, ulong64 kernel,
+                                 int kernelId, ulong64 processedFrames, ulong64 startFrame) {
   int numChunks = FRAME_SEARCH_MAX_CHUNK_SIZE / cli->chunkSize;
   for (int chunk = 0; chunk < numChunks; chunk++) {
     double chunkStartTime = getCurrentTime();
-    executeKernelSearch(mem, cli, kernel_id, chunk);
+    executeKernelSearch(mem, cli, kernel, chunk);
 
     if (cli->verbose && *mem->h_numCandidates > 0) {
-      printChunkStats(cli, chunkStartTime, processedFrames, startFrame, kernelIndex, chunk);
+      bool is_frame_complete = (kernelId == FRAME_SEARCH_NUM_KERNELS - 1) && (chunk == numChunks - 1);
+      printChunkStats(cli, chunkStartTime, processedFrames, startFrame, kernelId, chunk, is_frame_complete);
     }
   }
 }
@@ -413,12 +429,8 @@ __host__ void processKernelChunks(SearchMemory* mem, prog_args* cli, ulong64 ker
 __host__ void processFrameKernels(SearchMemory* mem, prog_args* cli, ulong64 frame,
                                  ulong64 processedFrames, ulong64 startFrame) {
   for (int i = 0; i < FRAME_SEARCH_NUM_KERNELS; i++) {
-    ulong64 kernel_id = constructKernelId(frame, i);
-    processKernelChunks(mem, cli, kernel_id, i, processedFrames, startFrame);
-  }
-
-  if (cli->verbose) {
-    printThreadStatus(cli->threadId, "Finished frame=%llu", startFrame + processedFrames);
+    ulong64 kernel = constructKernel(frame, i);
+    processKernelChunks(mem, cli, kernel, i, processedFrames, startFrame);
   }
 }
 

@@ -9,7 +9,7 @@ HAS_CUDA := $(shell which nvcc)
 
 ifeq ($(OS),Darwin)
 	CFLAGS = -I/opt/homebrew/include
-	LIBS = -L/opt/homebrew/lib -largp -lpthread
+	LIBS = -L/opt/homebrew/lib -largp -lpthread -lcurl
 else
 	ifneq (,$(HAS_CUDA))
 		NVCC=nvcc -x cu
@@ -18,13 +18,15 @@ else
 		else
 			NVCFLAGS=-arch=sm_87 -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
 		endif
-		LIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda -lpthread
+		LIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda -lpthread -lcurl
+	else
+		LIBS=-lpthread -lcurl
 	endif
 endif
 
 all: setup explore-cachability find-optimal
 
-$(BUILDDIR)/find-optimal.o: find-optimal.cpp mt.h gol.h frame_utils.h types.h display_utils.h
+$(BUILDDIR)/find-optimal.o: find-optimal.cpp mt.h gol.h frame_utils.h types.h display_utils.h airtable_client.h
 	$(NVCC) $(if $(NVCFLAGS), $(NVCFLAGS), $(CFLAGS)) -I. -c $< -o $@
 
 find-optimal: $(BUILDDIR)/find-optimal.o

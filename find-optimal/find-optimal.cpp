@@ -24,11 +24,12 @@ static struct argp_option argp_options[] = {
 #ifndef __NVCC__
   { "range", 'r', "BEGIN[:END]", 0, "Range to search (e.g., 1: or 1:1012415). Default end is ULONG_MAX."},
 #endif
-  { "frame-range", 'f', "BEGIN[:END]", 0, "Frame range to search (e.g., 1: or 1:12515). Default end is " STRINGIFY_CONSTANT(FRAME_SEARCH_TOTAL_FRAMES) "."},
+  { "frame-range", 'f', "BEGIN[:END]", 0, "Frame range to search (e.g., 1: or 1:12515 or 'resume'). Use 'resume' to start from last completed frame in database. Default end is " STRINGIFY_CONSTANT(FRAME_SEARCH_TOTAL_FRAMES) "."},
   { "chunk-size", 'k', "size", 0, "Chunk size for pattern processing (default: 32768)."},
   { "verbose", 'v', NULL, 0, "Enable verbose output."},
   { "random", 'R', NULL, 0, "Use random patterns."},
   { "randomsamples", 's', "num", 0, "How many random samples to run. Default is 1 billion."},
+  { "test-airtable", 'a', NULL, 0, "Test Airtable API with fake data and exit."},
   { 0 }
 };
 
@@ -175,6 +176,8 @@ static void initializeDefaultArgs(prog_args* cli) {
   cli->verbose = false;
   cli->randomSamples = ULONG_MAX;
   cli->chunkSize = FRAME_SEARCH_DEFAULT_CHUNK_SIZE;
+  cli->testAirtable = false;
+  cli->resumeFromDatabase = false;
 }
 
 #ifdef __NVCC__
@@ -247,6 +250,15 @@ static bool parseRange(char *arg, ulong64 *begin, ulong64 *end, ulong64 defaultE
     return false;
   }
 
+  // Check for special "resume" value
+  if (strcmp(arg, "resume") == 0) {
+    // Set flag to handle resume logic later, after GPU info is printed
+    // We'll use a special marker value for now
+    *begin = ULLONG_MAX;  // Special marker that will be replaced later
+    *end = defaultEnd;
+    return true;
+  }
+
   char *argCopy = strdup(arg);  // Make a copy to avoid modifying original
   if (!argCopy) {
     printf("[ERROR] Memory allocation failed\n");
@@ -255,7 +267,7 @@ static bool parseRange(char *arg, ulong64 *begin, ulong64 *end, ulong64 defaultE
 
   char *colon = strchr(argCopy, ':');
   if (colon == NULL) {
-    printf("[ERROR] invalid range format '%s', expected BEGIN: or BEGIN:END\n", arg);
+    printf("[ERROR] invalid range format '%s', expected BEGIN: or BEGIN:END or 'resume'\n", arg);
     free(argCopy);
     return false;
   }
@@ -352,6 +364,10 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
     }
     break;
 
+  case 'a':
+    a->testAirtable = true;
+    break;
+
   default:
     return ARGP_ERR_UNKNOWN;
   }
@@ -368,19 +384,108 @@ int main(int argc, char **argv) {
   // Change stdout to not buffered
   setvbuf(stdout, NULL, _IONBF, 0);
 
+  // Initialize Airtable client
+  airtable_init();
+
   // Process the arguments
   prog_args *cli = (prog_args *) malloc(sizeof(prog_args));
   initializeDefaultArgs(cli);
   argp_parse(&argp, argc, argv, 0, 0, cli);
 
+  // Handle test-airtable flag
+  if (cli->testAirtable) {
+    printf("Testing Airtable API with fake data...\n");
+
+    // Generate realistic but varying test data based on current time
+    time_t now = time(NULL);
+    srand(now);  // Seed random number generator with current time
+
+    // Generate realistic progress data
+    ulong64 test_frame_id = 1000000 + (rand() % 1000000);  // Frame IDs in realistic range
+    int test_kernel_id = rand() % 16;  // Kernel IDs 0-15
+    int test_chunk_id = rand() % 100;  // Chunk IDs 0-99
+    double test_rate = 500000.0 + (rand() % 1000000);  // Realistic patterns/sec rate
+
+    // Test progress upload
+    printf("Testing progress upload (frame=%llu, kernel=%d, chunk=%d, rate=%.0f)...\n",
+           test_frame_id, test_kernel_id, test_chunk_id, test_rate);
+    bool progressResult = airtable_send_progress(test_frame_id, test_kernel_id, test_chunk_id, test_rate, false, true);
+    printf("Progress upload %s\n", progressResult ? "succeeded" : "failed");
+
+    // Generate realistic result data
+    int test_generations = 180 + (rand() % 200);  // Generations 180-379 (realistic range)
+    ulong64 test_pattern = ((ulong64)rand() << 32) | rand();  // Random 64-bit pattern
+
+    // Generate a realistic 64-bit binary pattern string
+    char test_pattern_bin[65];
+    for (int i = 0; i < 64; i++) {
+      test_pattern_bin[i] = ((test_pattern >> (63 - i)) & 1) ? '1' : '0';
+    }
+    test_pattern_bin[64] = '\0';
+
+    // Test result upload
+    printf("Testing result upload (generations=%d, pattern=%llX)...\n",
+           test_generations, test_pattern);
+    bool resultResult = airtable_send_result(test_generations, test_pattern, test_pattern_bin, true);
+    printf("Result upload %s\n", resultResult ? "succeeded" : "failed");
+
+    // Test querying best result
+    printf("Testing best result query...\n");
+    int bestResult = airtable_get_best_result();
+    if (bestResult >= 0) {
+        printf("Best result query succeeded: %d generations\n", bestResult);
+    } else {
+        printf("Best result query failed\n");
+    }
+
+    // Test querying best complete frame
+    printf("Testing best complete frame query...\n");
+    ulong64 bestFrame = airtable_get_best_complete_frame();
+    if (bestFrame == ULLONG_MAX) {
+        printf("Best complete frame query: no completed frames found\n");
+    } else {
+        printf("Best complete frame query result: %llu\n", bestFrame);
+    }
+
+    // Cleanup and exit
+    cleanupProgArgs(cli);
+    airtable_cleanup();
+    return (progressResult && resultResult && bestResult >= 0) ? 0 : 1;
+  }
+
 #ifdef __NVCC__
   printCudaDeviceInfo(cli);
 #endif
+
+  // Handle resume from database if requested
+  if (cli->frameBeginAt == ULLONG_MAX) {
+    // User specified "resume" - query database for last completed frame
+    ulong64 resumeFrame = airtable_get_best_complete_frame();
+    if (resumeFrame == ULLONG_MAX) {
+      // No completed frames found in database or error occurred
+      cli->frameBeginAt = 0;
+      printf("Starting from frame 0\n");
+    } else {
+      // Found a completed frame, start from the next frame
+      cli->frameBeginAt = resumeFrame + 1;
+      printf("Resuming from frame: %llu\n", cli->frameBeginAt);
+    }
+  }
+
+  // Initialize global best generations from Airtable database
+  int dbBestGenerations = airtable_get_best_result();
+  if (dbBestGenerations > 0) {
+    gBestGenerations = dbBestGenerations;
+    printf("Best generations so far: %d\n", gBestGenerations);
+  }
 
   // Create and start threads, then wait for completion
   thread_context_t *context = createAndStartThreads(cli);
   joinAndCleanupThreads(context);
   cleanupProgArgs(cli);
+
+  // Cleanup Airtable client
+  airtable_cleanup();
 
   return 0;
 }
