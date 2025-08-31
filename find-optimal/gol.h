@@ -94,12 +94,12 @@ __host__ void printThreadStatus(int threadId, const char* format, ...) {
   va_end(args);
 }
 
-__host__ void printChunkStats(prog_args* cli, double startTime, ulong64 processedFrames, 
+__host__ void printChunkStats(prog_args* cli, double startTime, ulong64 processedFrames,
                              ulong64 startFrame, int kernelIndex, int chunk) {
   double chunkEndTime = getCurrentTime();
   double chunkTime = chunkEndTime - startTime;
   double rate = (FRAME_SEARCH_TOTAL_THREADS * cli->chunkSize) / chunkTime;
-  printThreadStatus(cli->threadId, 
+  printThreadStatus(cli->threadId,
       "Processed frame=%llu, kernel=%d, chunk=%d (%'llu patterns/sec)",
       startFrame + processedFrames, kernelIndex, chunk, (ulong64)rate);
 }
@@ -205,7 +205,7 @@ __host__ __device__ int adjustGenerationsForDeadout(int generations, ulong64 g2,
 }
 
 #ifdef __NVCC__
-__device__ bool step6GenerationsAndCheck(ulong64* g1, ulong64 pattern, ulong64* generations, 
+__device__ bool step6GenerationsAndCheck(ulong64* g1, ulong64 pattern, ulong64* generations,
                                         ulong64* candidates, ulong64* numCandidates) {
   *generations += 6;
   ulong64 g2 = computeNextGeneration(*g1);
@@ -214,19 +214,19 @@ __device__ bool step6GenerationsAndCheck(ulong64* g1, ulong64 pattern, ulong64* 
   ulong64 g5 = computeNextGeneration(g4);
   ulong64 g6 = computeNextGeneration(g5);
   *g1 = computeNextGeneration(g6);
-  
+
   if ((*g1 == g2) || (*g1 == g3) || (*g1 == g4)) {
     *generations = 0;
     return true; // Pattern ended/cyclical, advance to next
   }
-  
+
   if (*generations >= MIN_CANDIDATE_GENERATIONS) {
     ulong64 idx = atomicAdd(numCandidates, 1);
     candidates[idx] = pattern;
     *generations = 0;
     return true; // Candidate found, advance to next
   }
-  
+
   return false; // Continue with current pattern
 }
 
@@ -306,7 +306,7 @@ __global__ void findCandidates(ulong64 beginAt, ulong64 endAt,
   ulong64 pattern = beginAt + (blockIdx.x * blockDim.x + threadIdx.x);
   ulong64 g1 = pattern;
   ulong64 generations = 0;
-  
+
   while (pattern < endAt) {
     if (step6GenerationsAndCheck(&g1, pattern, &generations, candidates, numCandidates)) {
       // Pattern ended/cyclical or candidate found, advance to next pattern
@@ -355,7 +355,7 @@ __host__ void executeCandidateSearch(SearchMemory* mem, prog_args* cli, ulong64 
   cudaCheckError(cudaGetLastError());
   cudaCheckError(cudaDeviceSynchronize());
   cudaCheckError(cudaMemcpy(mem->h_numCandidates, mem->d_numCandidates, sizeof(ulong64), cudaMemcpyDeviceToHost));
-  
+
   // Phase 2: Process candidates if found
   if (*mem->h_numCandidates > 0) {
     *mem->h_bestGenerations = 0;
@@ -365,7 +365,7 @@ __host__ void executeCandidateSearch(SearchMemory* mem, prog_args* cli, ulong64 
     processCandidates<<<cli->blockSize, cli->threadsPerBlock>>>(mem->d_candidates, mem->d_numCandidates, mem->d_bestPattern, mem->d_bestGenerations);
     cudaCheckError(cudaGetLastError());
     cudaCheckError(cudaDeviceSynchronize());
-    
+
     cudaCheckError(cudaMemcpy(mem->h_bestPattern, mem->d_bestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost));
     cudaCheckError(cudaMemcpy(mem->h_bestGenerations, mem->d_bestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost));
     updateBestGenerations(cli->threadId, *mem->h_bestGenerations, *mem->h_bestPattern);
@@ -380,7 +380,7 @@ __host__ void executeKernelSearch(SearchMemory* mem, prog_args* cli, ulong64 ker
   cudaCheckError(cudaGetLastError());
   cudaCheckError(cudaDeviceSynchronize());
   cudaCheckError(cudaMemcpy(mem->h_numCandidates, mem->d_numCandidates, sizeof(ulong64), cudaMemcpyDeviceToHost));
-  
+
   // Phase 2: Process candidates if found
   if (*mem->h_numCandidates > 0) {
     *mem->h_bestGenerations = 0;
@@ -390,33 +390,33 @@ __host__ void executeKernelSearch(SearchMemory* mem, prog_args* cli, ulong64 ker
     processCandidates<<<FRAME_SEARCH_GRID_SIZE,FRAME_SEARCH_THREADS_PER_BLOCK>>>(mem->d_candidates, mem->d_numCandidates, mem->d_bestPattern, mem->d_bestGenerations);
     cudaCheckError(cudaGetLastError());
     cudaCheckError(cudaDeviceSynchronize());
-    
+
     cudaCheckError(cudaMemcpy(mem->h_bestPattern, mem->d_bestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost));
     cudaCheckError(cudaMemcpy(mem->h_bestGenerations, mem->d_bestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost));
     updateBestGenerations(cli->threadId, *mem->h_bestGenerations, *mem->h_bestPattern);
   }
 }
 
-__host__ void processKernelChunks(SearchMemory* mem, prog_args* cli, ulong64 kernel_id, 
+__host__ void processKernelChunks(SearchMemory* mem, prog_args* cli, ulong64 kernel_id,
                                  int kernelIndex, ulong64 processedFrames, ulong64 startFrame) {
   int numChunks = FRAME_SEARCH_MAX_CHUNK_SIZE / cli->chunkSize;
   for (int chunk = 0; chunk < numChunks; chunk++) {
     double chunkStartTime = getCurrentTime();
     executeKernelSearch(mem, cli, kernel_id, chunk);
-    
+
     if (cli->verbose && *mem->h_numCandidates > 0) {
       printChunkStats(cli, chunkStartTime, processedFrames, startFrame, kernelIndex, chunk);
     }
   }
 }
 
-__host__ void processFrameKernels(SearchMemory* mem, prog_args* cli, ulong64 frame, 
+__host__ void processFrameKernels(SearchMemory* mem, prog_args* cli, ulong64 frame,
                                  ulong64 processedFrames, ulong64 startFrame) {
   for (int i = 0; i < FRAME_SEARCH_NUM_KERNELS; i++) {
     ulong64 kernel_id = constructKernelId(frame, i);
     processKernelChunks(mem, cli, kernel_id, i, processedFrames, startFrame);
   }
-  
+
   if (cli->verbose) {
     printThreadStatus(cli->threadId, "Finished frame=%llu", startFrame + processedFrames);
   }

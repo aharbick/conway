@@ -6,9 +6,10 @@
 
 // Convert a 64-bit number to its binary string representation
 void asBinary(ulong64 number, char *buf) {
-  for (int i = 63; i >= 0; i--) {
-    buf[-i+63] = (number >> i) & 1 ? '1' : '0';
+  for (int i = 0; i < 64; i++) {
+    buf[i] = (number >> (63 - i)) & 1 ? '1' : '0';
   }
+  buf[64] = '\0';  // Ensure null termination
 }
 
 // Print a 64-bit pattern as an 8x8 grid

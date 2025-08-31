@@ -8,6 +8,7 @@
 #include <argp.h>
 #include <sys/time.h>
 #include <locale.h>
+#include <errno.h>
 
 #include "gol.h"
 
@@ -33,9 +34,55 @@ static struct argp_option argp_options[] = {
 
 static bool validatePositiveInteger(long value, const char* name, const char* input) {
   if (value <= 0) {
-    printf("[WARN] invalid %s '%s', must be greater than 0\n", name, input);
+    printf("[ERROR] invalid %s '%s', must be greater than 0\n", name, input);
     return false;
   }
+  return true;
+}
+
+static bool validateIntegerString(const char* str, const char* name) {
+  if (!str || *str == '\0') {
+    printf("[ERROR] %s cannot be empty\n", name);
+    return false;
+  }
+
+  char* end;
+  errno = 0;
+  long value = strtol(str, &end, 10);
+
+  if (errno == ERANGE || value == LONG_MAX || value == LONG_MIN) {
+    printf("[ERROR] %s '%s' is out of range\n", name, str);
+    return false;
+  }
+
+  if (*end != '\0') {
+    printf("[ERROR] %s '%s' contains invalid characters\n", name, str);
+    return false;
+  }
+
+  return true;
+}
+
+static bool validateUnsignedLongString(const char* str, const char* name) {
+  if (!str || *str == '\0') {
+    printf("[ERROR] %s cannot be empty\n", name);
+    return false;
+  }
+
+  char* end;
+  errno = 0;
+  unsigned long long value = strtoull(str, &end, 10);
+
+  if (errno == ERANGE || value == ULLONG_MAX) {
+    printf("[ERROR] %s '%s' is out of range\n", name, str);
+    return false;
+  }
+
+  if (*end != '\0') {
+    printf("[ERROR] %s '%s' contains invalid characters\n", name, str);
+    return false;
+  }
+
   return true;
 }
 
@@ -48,32 +95,70 @@ static bool validateRange(ulong64 begin, ulong64 end, const char* beginStr, cons
 }
 
 static bool parseCudaConfig(const char *arg, prog_args *a) {
-  char *end;
-  a->gpusToUse = strtol(arg, &end, 10);
-  if (!validatePositiveInteger(a->gpusToUse, "gpusToUse", arg)) {
+  if (!arg || *arg == '\0') {
+    printf("[ERROR] CUDA config cannot be empty\n");
     return false;
   }
 
-  if (*end == ':') {
-    a->blockSize = strtol(end+1, &end, 10);
-    if (!validatePositiveInteger(a->blockSize, "blockSize", "")) {
+  char *argCopy = strdup(arg);  // Make a copy to avoid modifying original
+  if (!argCopy) {
+    printf("[ERROR] Memory allocation failed\n");
+    return false;
+  }
+
+  char *saveptr;
+  char *gpuStr = strtok_r(argCopy, ":", &saveptr);
+
+  if (!gpuStr) {
+    printf("[ERROR] Invalid CUDA config format '%s', expected numgpus:blocksize:threadsperblock\n", arg);
+    free(argCopy);
+    return false;
+  }
+
+  if (!validateIntegerString(gpuStr, "gpusToUse")) {
+    free(argCopy);
+    return false;
+  }
+
+  a->gpusToUse = strtol(gpuStr, NULL, 10);
+  if (!validatePositiveInteger(a->gpusToUse, "gpusToUse", gpuStr)) {
+    free(argCopy);
+    return false;
+  }
+
+  char *blockStr = strtok_r(NULL, ":", &saveptr);
+  if (blockStr) {
+    if (!validateIntegerString(blockStr, "blockSize")) {
+      free(argCopy);
+      return false;
+    }
+    a->blockSize = strtol(blockStr, NULL, 10);
+    if (!validatePositiveInteger(a->blockSize, "blockSize", blockStr)) {
+      free(argCopy);
       return false;
     }
   } else {
-    printf("[WARN] invalid cudaconfig '%s', using default (%d) for blockSize\n", arg, DEFAULT_CUDA_GRID_SIZE);
+    printf("[WARN] blockSize not specified in '%s', using default (%d)\n", arg, DEFAULT_CUDA_GRID_SIZE);
     a->blockSize = DEFAULT_CUDA_GRID_SIZE;
   }
 
-  if (*end == ':') {
-    a->threadsPerBlock = strtol(end+1, NULL, 10);
-    if (!validatePositiveInteger(a->threadsPerBlock, "threadsPerBlock", "")) {
+  char *threadsStr = strtok_r(NULL, ":", &saveptr);
+  if (threadsStr) {
+    if (!validateIntegerString(threadsStr, "threadsPerBlock")) {
+      free(argCopy);
+      return false;
+    }
+    a->threadsPerBlock = strtol(threadsStr, NULL, 10);
+    if (!validatePositiveInteger(a->threadsPerBlock, "threadsPerBlock", threadsStr)) {
+      free(argCopy);
       return false;
     }
   } else {
-    printf("[WARN] invalid cudaconfig '%s', using default (%d) for threadsPerBlock\n", arg, DEFAULT_CUDA_THREADS_PER_BLOCK);
+    printf("[WARN] threadsPerBlock not specified in '%s', using default (%d)\n", arg, DEFAULT_CUDA_THREADS_PER_BLOCK);
     a->threadsPerBlock = DEFAULT_CUDA_THREADS_PER_BLOCK;
   }
 
+  free(argCopy);
   return true;
 }
 
@@ -123,17 +208,17 @@ typedef struct {
 
 static thread_context_t* createAndStartThreads(prog_args* cli) {
   ulong64 patternsPerThread = ((cli->endAt > 0) ? cli->endAt - cli->beginAt : ULONG_MAX) / cli->cpuThreads;
-  
+
   thread_context_t* context = (thread_context_t*)malloc(sizeof(thread_context_t));
   context->threads = (pthread_t*)malloc(sizeof(pthread_t) * cli->cpuThreads);
   context->threadArgs = (prog_args**)malloc(sizeof(prog_args*) * cli->cpuThreads);
   context->numThreads = cli->cpuThreads;
-  
+
   for (int t = 0; t < cli->cpuThreads; t++) {
     context->threadArgs[t] = createThreadArgs(cli, t, patternsPerThread);
     pthread_create(&context->threads[t], NULL, search, (void*)context->threadArgs[t]);
   }
-  
+
   return context;
 }
 
@@ -157,37 +242,72 @@ static void cleanupProgArgs(prog_args* cli) {
 }
 
 static bool parseRange(char *arg, ulong64 *begin, ulong64 *end, ulong64 defaultEnd) {
-  char *colon = strchr(arg, ':');
+  if (!arg || *arg == '\0') {
+    printf("[ERROR] range cannot be empty\n");
+    return false;
+  }
+
+  char *argCopy = strdup(arg);  // Make a copy to avoid modifying original
+  if (!argCopy) {
+    printf("[ERROR] Memory allocation failed\n");
+    return false;
+  }
+
+  char *colon = strchr(argCopy, ':');
   if (colon == NULL) {
-    printf("[WARN] invalid range format '%s', expected BEGIN: or BEGIN:END\n", arg);
+    printf("[ERROR] invalid range format '%s', expected BEGIN: or BEGIN:END\n", arg);
+    free(argCopy);
     return false;
   }
 
   *colon = '\0';
-  *begin = strtoull(arg, NULL, 10);
+
+  // Validate begin value
+  if (!validateUnsignedLongString(argCopy, "range begin")) {
+    free(argCopy);
+    return false;
+  }
+  *begin = strtoull(argCopy, NULL, 10);
+
+  // Handle end value
   if (*(colon + 1) == '\0') {
     *end = defaultEnd;
   } else {
+    if (!validateUnsignedLongString(colon + 1, "range end")) {
+      free(argCopy);
+      return false;
+    }
     *end = strtoull(colon + 1, NULL, 10);
-    if (!validateRange(*begin, *end, arg, colon + 1)) {
+    if (!validateRange(*begin, *end, argCopy, colon + 1)) {
+      free(argCopy);
       return false;
     }
   }
+
+  free(argCopy);
   return true;
 }
 
 static error_t parse_argp_options(int key, char *arg, struct argp_state *state) {
   prog_args *a = (prog_args *)state->input;
-  char *end;
+
   switch(key) {
   case 'c':
     if (!parseCudaConfig(arg, a)) {
       return ARGP_ERR_UNKNOWN;
     }
     break;
+
   case 't':
+    if (!validateIntegerString(arg, "threads")) {
+      return ARGP_ERR_UNKNOWN;
+    }
     a->cpuThreads = strtol(arg, NULL, 10);
+    if (!validatePositiveInteger(a->cpuThreads, "threads", arg)) {
+      return ARGP_ERR_UNKNOWN;
+    }
     break;
+
 #ifndef __NVCC__
   case 'r':
     if (!parseRange(arg, &a->beginAt, &a->endAt, ULONG_MAX)) {
@@ -195,30 +315,45 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
     }
     break;
 #endif
+
   case 'f':
     if (!parseRange(arg, &a->frameBeginAt, &a->frameEndAt, FRAME_SEARCH_TOTAL_FRAMES)) {
       return ARGP_ERR_UNKNOWN;
     }
     break;
+
   case 'v':
     a->verbose = true;
     break;
+
   case 'R':
     a->random = true;
     break;
-  case 's': {
+
+  case 's':
+    if (!validateUnsignedLongString(arg, "randomsamples")) {
+      return ARGP_ERR_UNKNOWN;
+    }
     a->randomSamples = strtoull(arg, NULL, 10);
-    break;
-  }
-  case 'k': {
-    a->chunkSize = strtoull(arg, NULL, 10);
-    if (a->chunkSize == 0 || a->chunkSize > FRAME_SEARCH_MAX_CHUNK_SIZE) {
-      printf("[WARN] invalid chunk-size '%s', must be between 1 and %d\n", arg, FRAME_SEARCH_MAX_CHUNK_SIZE);
+    if (a->randomSamples == 0) {
+      printf("[ERROR] randomsamples must be greater than 0\n");
       return ARGP_ERR_UNKNOWN;
     }
     break;
-  }
-  default: return ARGP_ERR_UNKNOWN;
+
+  case 'k':
+    if (!validateUnsignedLongString(arg, "chunk-size")) {
+      return ARGP_ERR_UNKNOWN;
+    }
+    a->chunkSize = strtoull(arg, NULL, 10);
+    if (a->chunkSize == 0 || a->chunkSize > FRAME_SEARCH_MAX_CHUNK_SIZE) {
+      printf("[ERROR] invalid chunk-size '%s', must be between 1 and %d\n", arg, FRAME_SEARCH_MAX_CHUNK_SIZE);
+      return ARGP_ERR_UNKNOWN;
+    }
+    break;
+
+  default:
+    return ARGP_ERR_UNKNOWN;
   }
   return 0;
 }
@@ -246,7 +381,7 @@ int main(int argc, char **argv) {
   thread_context_t *context = createAndStartThreads(cli);
   joinAndCleanupThreads(context);
   cleanupProgArgs(cli);
-  
+
   return 0;
 }
 
