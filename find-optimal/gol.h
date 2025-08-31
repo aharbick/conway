@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <limits.h>
+#include <locale.h>
 
 #ifdef __NVCC__
 #include <cuda.h>
@@ -23,6 +24,12 @@
 #include "frame_utils.h"
 #include "display_utils.h"
 
+__host__ double getCurrentTime() {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return ts.tv_sec + ts.tv_nsec / 1000000000.0;
+}
+
 typedef struct prog_args {
   int threadId;
   int cpuThreads;
@@ -30,9 +37,12 @@ typedef struct prog_args {
   int blockSize;
   int threadsPerBlock;
   bool random;
+  bool verbose;
   ulong64 randomSamples;
   ulong64 beginAt;
   ulong64 endAt;
+  ulong64 frameBeginAt;
+  ulong64 frameEndAt;
 } prog_args;
 
 #ifdef __NVCC__
@@ -289,7 +299,7 @@ __host__ void searchAll(prog_args *cli) {
   // Host variables for results
   ulong64 h_bestPattern, h_bestGenerations;
 
-  // Iterate all possible 24-bit numbers and use spreadBitsToFrame to cover all 64-bit "frames"
+  // Iterate through frame range or all possible 24-bit numbers and use spreadBitsToFrame to cover all 64-bit "frames"
   // Frames in the 8x8 grid are the 24 corner bits marked with F.
 
   //    FFFKKFFF
@@ -309,10 +319,26 @@ __host__ void searchAll(prog_args *cli) {
   // Because of this representation the kernel must be invoked with 1024 blocks
   // and 1024 threads otherwise we will not process all of the 2^40 patterns inside
   // the 2^24 frames.
-  for (ulong64 i = 0; i < (1 << 24); i++) {
+
+  ulong64 startFrame = (cli->frameBeginAt > 0) ? cli->frameBeginAt : 0;
+  ulong64 endFrame = (cli->frameEndAt > 0) ? cli->frameEndAt : (1 << 24);
+  ulong64 totalFrames = endFrame - startFrame;
+  ulong64 skippedFrames = 0;
+  ulong64 processedFrames = 0;
+
+  for (ulong64 i = 0; i < (1 << 24) && processedFrames < totalFrames; i++) {
     ulong64 frame = spreadBitsToFrame(i);
     if (isMinimalFrame(frame)) {
-      // Launch 16 kernels for this frame
+      // Skip until the start
+      if (skippedFrames < startFrame) {
+	skippedFrames++;
+	continue;
+      }
+
+      // Then start processing... 16 kernels per frame.
+      printf("[Thread %d] Processing frame %llu of %llu, frame=%llu\n",
+             cli->threadId, processedFrames + 1, totalFrames, frame);
+      double frameStartTime = getCurrentTime();
       for (int i = 0; i < 16; i++) {
         ulong64 kernel_id = frame;
         kernel_id += ((ulong64)(i & 3)) << 3;     // lower pair of K bits
@@ -323,6 +349,9 @@ __host__ void searchAll(prog_args *cli) {
         cudaCheckError(cudaMemcpy(d_bestGenerations, &h_bestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice));
 
         // Process all 2^16 patterns for this kernel
+        if (cli->verbose) {
+          printf("[Thread %d] Launching searchKernel<<<1024,1024>>>(kernel_id=%llu)\n", cli->threadId, kernel_id);
+          }
         searchKernel<<<1024,1024>>>(kernel_id, d_bestPattern, d_bestGenerations);
         cudaCheckError(cudaGetLastError());
         cudaCheckError(cudaDeviceSynchronize());
@@ -334,8 +363,18 @@ __host__ void searchAll(prog_args *cli) {
         // Update global best and print pattern
         updateBestGenerations(cli->threadId, h_bestGenerations, h_bestPattern);
       }
+      double frameEndTime = getCurrentTime();
+      double frameTime = frameEndTime - frameStartTime;
+      ulong64 possibilitiesProcessed = 1ULL << 36; // 2^36
+      double rate = possibilitiesProcessed / frameTime;
+
+      processedFrames++;
+      printf("[Thread %d] Processed frame=%llu, %.1f%% complete, %'llu per second\n",
+           cli->threadId, frame, ((double) processedFrames / totalFrames) * 100.0, (ulong64)rate);
     }
   }
+
+  printf("[Thread %d] Completed processing %llu frames\n", cli->threadId, totalFrames);
 
   // Cleanup
   cudaCheckError(cudaFree(d_bestPattern));
@@ -376,11 +415,11 @@ __host__ void *search(void *args) {
   }
   else {
     char searchRangeMessage[64] = {'\0'};
-    if (cli->beginAt > 0 && cli->endAt > 0) {
+    if (cli->beginAt > 0 || cli->endAt > 0) {
       snprintf(searchRangeMessage, sizeof(searchRangeMessage), "ALL in range (%llu - %llu)", cli->beginAt, cli->endAt);
     }
-    else if (cli->beginAt == 0 && cli->endAt > 0) {
-      snprintf(searchRangeMessage, sizeof(searchRangeMessage), "ALL in range (0 - %llu)", cli->endAt);
+    else if (cli->frameBeginAt > 0 || cli->frameEndAt > 0) {
+      snprintf(searchRangeMessage, sizeof(searchRangeMessage), "ALL in frames (%llu - %llu)", cli->frameBeginAt, cli->frameEndAt);
     }
     else {
       snprintf(searchRangeMessage, sizeof(searchRangeMessage), "ALL");

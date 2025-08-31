@@ -18,9 +18,12 @@ static char prog_args_doc[] = "";
 static struct argp_option argp_options[] = {
   { "cudaconfig", 'c', "config", 0, "CUDA kernel params numgpus:blocksize:threadsperblock (e.g. 1:1024:1024)"},
   { "threads", 't', "num", 0, "Number of CPU threads (if you use more than one GPU you should use matching threads)."},
-  { "beginat", 'b', "num", 0, "Explicit beginAt."},
-  { "endat", 'e', "num", 0, "Explicit endAt."},
-  { "random", 'r', NULL, 0, "Use random patterns."},
+#ifndef __NVCC__
+  { "range", 'r', "BEGIN[:END]", 0, "Range to search (e.g., 1: or 1:1012415). Default end is ULONG_MAX."},
+#endif
+  { "frame-range", 'f', "BEGIN[:END]", 0, "Frame range to search (e.g., 1: or 1:12515). Default end is 2102800."},
+  { "verbose", 'v', NULL, 0, "Enable verbose output."},
+  { "random", 'R', NULL, 0, "Use random patterns."},
   { "randomsamples", 's', "num", 0, "How many random samples to run. Default is 1 billion."},
   { 0 }
 };
@@ -57,13 +60,52 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
   case 't':
     a->cpuThreads = strtol(arg, NULL, 10);
     break;
-  case 'b':
+#ifndef __NVCC__
+  case 'r': {
+    char *colon = strchr(arg, ':');
+    if (colon == NULL) {
+      printf("[WARN] invalid range format '%s', expected BEGIN: or BEGIN:END\n", arg);
+      return ARGP_ERR_UNKNOWN;
+    }
+    *colon = '\0';
     a->beginAt = strtoull(arg, NULL, 10);
+    if (*(colon + 1) == '\0') {
+      // End not specified, use default
+      a->endAt = ULONG_MAX;
+    } else {
+      a->endAt = strtoull(colon + 1, NULL, 10);
+      if (a->endAt <= a->beginAt) {
+        printf("[WARN] invalid range '%s:%s', end must be greater than begin\n", arg, colon + 1);
+        return ARGP_ERR_UNKNOWN;
+      }
+    }
     break;
-  case 'e':
-    a->endAt = strtoull(arg, NULL, 10);
+  }
+#endif
+  case 'f': {
+    char *colon = strchr(arg, ':');
+    if (colon == NULL) {
+      printf("[WARN] invalid frame-range format '%s', expected BEGIN: or BEGIN:END\n", arg);
+      return ARGP_ERR_UNKNOWN;
+    }
+    *colon = '\0';
+    a->frameBeginAt = strtoull(arg, NULL, 10);
+    if (*(colon + 1) == '\0') {
+      // End not specified, use default
+      a->frameEndAt = 2102800;
+    } else {
+      a->frameEndAt = strtoull(colon + 1, NULL, 10);
+      if (a->frameEndAt <= a->frameBeginAt) {
+        printf("[WARN] invalid frame-range '%s:%s', end must be greater than begin\n", arg, colon + 1);
+        return ARGP_ERR_UNKNOWN;
+      }
+    }
     break;
-  case 'r':
+  }
+  case 'v':
+    a->verbose = true;
+    break;
+  case 'R':
     a->random = true;
     break;
   case 's': {
@@ -78,6 +120,9 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
 struct argp argp = {argp_options, parse_argp_options, prog_args_doc, prog_doc, 0, 0};
 
 int main(int argc, char **argv) {
+  // Set locale for number formatting with thousands separators
+  setlocale(LC_NUMERIC, "");
+  
   // Change stdout to not buffered
   setvbuf(stdout, NULL, _IONBF, 0);
 
@@ -89,7 +134,10 @@ int main(int argc, char **argv) {
   cli->threadsPerBlock = 1024;
   cli->beginAt = 0;
   cli->endAt = 0;
+  cli->frameBeginAt = 0;
+  cli->frameEndAt = 0;
   cli->random = false;
+  cli->verbose = false;
   cli->randomSamples = ULONG_MAX;
   argp_parse(&argp, argc, argv, 0, 0, cli);
 
@@ -112,8 +160,10 @@ int main(int argc, char **argv) {
     prog_args *targs = (prog_args *) malloc(sizeof(prog_args));
     memcpy(targs, cli, sizeof(prog_args));
     targs->threadId = t;
+#ifndef __NVCC__
     targs->beginAt = (cli->beginAt > 0) ? cli->beginAt : t * patternsPerThread + 1;
     targs->endAt = targs->beginAt + patternsPerThread -1;
+#endif
     pthread_create(&threads[t], NULL, search, (void*) targs);
   }
 
