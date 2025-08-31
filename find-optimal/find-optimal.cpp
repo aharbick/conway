@@ -29,80 +29,162 @@ static struct argp_option argp_options[] = {
   { 0 }
 };
 
+static bool validatePositiveInteger(long value, const char* name, const char* input) {
+  if (value <= 0) {
+    printf("[WARN] invalid %s '%s', must be greater than 0\n", name, input);
+    return false;
+  }
+  return true;
+}
+
+static bool validateRange(ulong64 begin, ulong64 end, const char* beginStr, const char* endStr) {
+  if (end <= begin) {
+    printf("[WARN] invalid range '%s:%s', end must be greater than begin\n", beginStr, endStr);
+    return false;
+  }
+  return true;
+}
+
+static bool parseCudaConfig(const char *arg, prog_args *a) {
+  char *end;
+  a->gpusToUse = strtol(arg, &end, 10);
+  if (!validatePositiveInteger(a->gpusToUse, "gpusToUse", arg)) {
+    return false;
+  }
+
+  if (*end == ':') {
+    a->blockSize = strtol(end+1, &end, 10);
+    if (!validatePositiveInteger(a->blockSize, "blockSize", "")) {
+      return false;
+    }
+  } else {
+    printf("[WARN] invalid cudaconfig '%s', using default (%d) for blockSize\n", arg, DEFAULT_CUDA_GRID_SIZE);
+    a->blockSize = DEFAULT_CUDA_GRID_SIZE;
+  }
+
+  if (*end == ':') {
+    a->threadsPerBlock = strtol(end+1, NULL, 10);
+    if (!validatePositiveInteger(a->threadsPerBlock, "threadsPerBlock", "")) {
+      return false;
+    }
+  } else {
+    printf("[WARN] invalid cudaconfig '%s', using default (%d) for threadsPerBlock\n", arg, DEFAULT_CUDA_THREADS_PER_BLOCK);
+    a->threadsPerBlock = DEFAULT_CUDA_THREADS_PER_BLOCK;
+  }
+
+  return true;
+}
+
+static void initializeDefaultArgs(prog_args* cli) {
+  cli->cpuThreads = 1;
+  cli->gpusToUse = 1;
+  cli->blockSize = DEFAULT_CUDA_GRID_SIZE;
+  cli->threadsPerBlock = DEFAULT_CUDA_THREADS_PER_BLOCK;
+  cli->beginAt = 0;
+  cli->endAt = 0;
+  cli->frameBeginAt = 0;
+  cli->frameEndAt = 0;
+  cli->random = false;
+  cli->verbose = false;
+  cli->randomSamples = ULONG_MAX;
+  cli->chunkSize = FRAME_SEARCH_DEFAULT_CHUNK_SIZE;
+}
+
+#ifdef __NVCC__
+static void printCudaDeviceInfo(prog_args* cli) {
+  cudaDeviceProp prop;
+  cudaGetDeviceProperties(&prop, 0);
+  printf("Running on GPU: %s\n", prop.name);
+  printf("Compute capability: %d.%d\n", prop.major, prop.minor);
+  printf("Max threads per block: %d\n", prop.maxThreadsPerBlock);
+  printf("Max thread dimensions: [%d, %d, %d]\n", prop.maxThreadsDim[0], prop.maxThreadsDim[1], prop.maxThreadsDim[2]);
+  printf("Using %d blocks with %d threads per block\n", cli->blockSize, cli->threadsPerBlock);
+}
+#endif
+
+static prog_args* createThreadArgs(prog_args* cli, int threadId, ulong64 patternsPerThread) {
+  prog_args* targs = (prog_args*)malloc(sizeof(prog_args));
+  memcpy(targs, cli, sizeof(prog_args));
+  targs->threadId = threadId;
+#ifndef __NVCC__
+  targs->beginAt = (cli->beginAt > 0) ? cli->beginAt : threadId * patternsPerThread + 1;
+  targs->endAt = targs->beginAt + patternsPerThread - 1;
+#endif
+  return targs;
+}
+
+static pthread_t* createAndStartThreads(prog_args* cli) {
+  ulong64 patternsPerThread = ((cli->endAt > 0) ? cli->endAt - cli->beginAt : ULONG_MAX) / cli->cpuThreads;
+  pthread_t* threads = (pthread_t*)malloc(sizeof(pthread_t) * cli->cpuThreads);
+  
+  for (int t = 0; t < cli->cpuThreads; t++) {
+    prog_args* targs = createThreadArgs(cli, t, patternsPerThread);
+    pthread_create(&threads[t], NULL, search, (void*)targs);
+  }
+  
+  return threads;
+}
+
+static void printThreadCompletion(int threadId, const char* status) {
+  printf("\n[Thread %d - %llu] %s\n", threadId, (ulong64)time(NULL), status);
+}
+
+static void joinAndCleanupThreads(pthread_t* threads, int numThreads) {
+  for (int t = 0; t < numThreads; t++) {
+    pthread_join(threads[t], NULL);
+    printThreadCompletion(t, "COMPLETE");
+  }
+  free(threads);
+}
+
+static void cleanupProgArgs(prog_args* cli) {
+  free(cli);
+}
+
+static bool parseRange(char *arg, ulong64 *begin, ulong64 *end, ulong64 defaultEnd) {
+  char *colon = strchr(arg, ':');
+  if (colon == NULL) {
+    printf("[WARN] invalid range format '%s', expected BEGIN: or BEGIN:END\n", arg);
+    return false;
+  }
+
+  *colon = '\0';
+  *begin = strtoull(arg, NULL, 10);
+  if (*(colon + 1) == '\0') {
+    *end = defaultEnd;
+  } else {
+    *end = strtoull(colon + 1, NULL, 10);
+    if (!validateRange(*begin, *end, arg, colon + 1)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 static error_t parse_argp_options(int key, char *arg, struct argp_state *state) {
   prog_args *a = (prog_args *)state->input;
   char *end;
   switch(key) {
   case 'c':
-    a->gpusToUse = strtol(arg, &end, 10);
-    if (a->gpusToUse <= 0) {
-      printf("[WARN] invalid gpusToUse '%s', must be greater than 0\n", arg);
+    if (!parseCudaConfig(arg, a)) {
       return ARGP_ERR_UNKNOWN;
-    }
-    if (*end == ':') {
-      a->blockSize = strtol(end+1, &end, 10);
-      if (a->blockSize <= 0) {
-        printf("[WARN] invalid blockSize '%s', must be greater than 0\n", end+1);
-        return ARGP_ERR_UNKNOWN;
-      }
-    }
-    else {
-      printf("[WARN] invalid cudaconfig '%s', using default (1024) for blockSize\n", arg);
-      a->blockSize = 1024;
-    }
-    if (*end == ':') {
-      a->threadsPerBlock = strtol(end+1, NULL, 10);
-    }
-    else {
-      printf("[WARN] invalid cudaconfig '%s', using default (1024) for threadsPerBlock\n", arg);
-      a->threadsPerBlock = 1024;
     }
     break;
   case 't':
     a->cpuThreads = strtol(arg, NULL, 10);
     break;
 #ifndef __NVCC__
-  case 'r': {
-    char *colon = strchr(arg, ':');
-    if (colon == NULL) {
-      printf("[WARN] invalid range format '%s', expected BEGIN: or BEGIN:END\n", arg);
+  case 'r':
+    if (!parseRange(arg, &a->beginAt, &a->endAt, ULONG_MAX)) {
       return ARGP_ERR_UNKNOWN;
     }
-    *colon = '\0';
-    a->beginAt = strtoull(arg, NULL, 10);
-    if (*(colon + 1) == '\0') {
-      // End not specified, use default
-      a->endAt = ULONG_MAX;
-    } else {
-      a->endAt = strtoull(colon + 1, NULL, 10);
-      if (a->endAt <= a->beginAt) {
-        printf("[WARN] invalid range '%s:%s', end must be greater than begin\n", arg, colon + 1);
-        return ARGP_ERR_UNKNOWN;
-      }
-    }
     break;
-  }
 #endif
-  case 'f': {
-    char *colon = strchr(arg, ':');
-    if (colon == NULL) {
-      printf("[WARN] invalid frame-range format '%s', expected BEGIN: or BEGIN:END\n", arg);
+  case 'f':
+    if (!parseRange(arg, &a->frameBeginAt, &a->frameEndAt, 2102800)) {
       return ARGP_ERR_UNKNOWN;
     }
-    *colon = '\0';
-    a->frameBeginAt = strtoull(arg, NULL, 10);
-    if (*(colon + 1) == '\0') {
-      // End not specified, use default
-      a->frameEndAt = 2102800;
-    } else {
-      a->frameEndAt = strtoull(colon + 1, NULL, 10);
-      if (a->frameEndAt <= a->frameBeginAt) {
-        printf("[WARN] invalid frame-range '%s:%s', end must be greater than begin\n", arg, colon + 1);
-        return ARGP_ERR_UNKNOWN;
-      }
-    }
     break;
-  }
   case 'v':
     a->verbose = true;
     break;
@@ -115,7 +197,7 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
   }
   case 'k': {
     a->chunkSize = strtoull(arg, NULL, 10);
-    if (a->chunkSize == 0 || a->chunkSize > 65536) {
+    if (a->chunkSize == 0 || a->chunkSize > FRAME_SEARCH_MAX_CHUNK_SIZE) {
       printf("[WARN] invalid chunk-size '%s', must be between 1 and 65536\n", arg);
       return ARGP_ERR_UNKNOWN;
     }
@@ -126,60 +208,30 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
   return 0;
 }
 
+
 struct argp argp = {argp_options, parse_argp_options, prog_args_doc, prog_doc, 0, 0};
 
 int main(int argc, char **argv) {
   // Set locale for number formatting with thousands separators
   setlocale(LC_NUMERIC, "");
-  
+
   // Change stdout to not buffered
   setvbuf(stdout, NULL, _IONBF, 0);
 
   // Process the arguments
   prog_args *cli = (prog_args *) malloc(sizeof(prog_args));
-  cli->cpuThreads = 1;
-  cli->gpusToUse = 1;
-  cli->blockSize = 1024;
-  cli->threadsPerBlock = 1024;
-  cli->beginAt = 0;
-  cli->endAt = 0;
-  cli->frameBeginAt = 0;
-  cli->frameEndAt = 0;
-  cli->random = false;
-  cli->verbose = false;
-  cli->randomSamples = ULONG_MAX;
-  cli->chunkSize = 32768;
+  initializeDefaultArgs(cli);
   argp_parse(&argp, argc, argv, 0, 0, cli);
 
 #ifdef __NVCC__
-  cudaDeviceProp prop;
-  cudaGetDeviceProperties(&prop, 0);
-  printf("Running on GPU: %s\n", prop.name);
-  printf("Compute capability: %d.%d\n", prop.major, prop.minor);
-  printf("Max threads per block: %d\n", prop.maxThreadsPerBlock);
-  printf("Max thread dimensions: [%d, %d, %d]\n", prop.maxThreadsDim[0], prop.maxThreadsDim[1], prop.maxThreadsDim[2]);
-  printf("Using %d blocks with %d threads per block\n", cli->blockSize, cli->threadsPerBlock);
+  printCudaDeviceInfo(cli);
 #endif
 
-  // Allocate an array of threads
-  ulong64 patternsPerThread = ((cli->endAt > 0) ? cli->endAt - cli->beginAt : ULONG_MAX) / cli->cpuThreads;
-  pthread_t *threads = (pthread_t *) malloc(sizeof(pthread_t) * cli->cpuThreads);
-
-  for (int t = 0; t < cli->cpuThreads; t++) {
-    // Spin up a thread per gpu
-    prog_args *targs = (prog_args *) malloc(sizeof(prog_args));
-    memcpy(targs, cli, sizeof(prog_args));
-    targs->threadId = t;
-#ifndef __NVCC__
-    targs->beginAt = (cli->beginAt > 0) ? cli->beginAt : t * patternsPerThread + 1;
-    targs->endAt = targs->beginAt + patternsPerThread -1;
-#endif
-    pthread_create(&threads[t], NULL, search, (void*) targs);
-  }
-
-  for (int t = 0; t < cli->cpuThreads; t++) {
-    pthread_join(threads[t], NULL);
-    printf("\n[Thread %d - %llu] COMPLETE\n", t, (ulong64)time(NULL));
-  }
+  // Create and start threads, then wait for completion
+  pthread_t *threads = createAndStartThreads(cli);
+  joinAndCleanupThreads(threads, cli->cpuThreads);
+  cleanupProgArgs(cli);
+  
+  return 0;
 }
 
