@@ -7,131 +7,115 @@
 #include <time.h>
 #include <string.h>
 #include "mt.h"
+#include "types.h"
+#include "display_utils.h"
 
 #include <set>
 using namespace std;
 
-static const unsigned long gNeighborFilters[64] = {
+static const ulong64 gNeighborFilters[64] = {
   // Row 0 pixels
-  (unsigned long) 770,
-  (unsigned long) 1797 << 0,
-  (unsigned long) 1797 << 1,
-  (unsigned long) 1797 << 2,
-  (unsigned long) 1797 << 3,
-  (unsigned long) 1797 << 4,
-  (unsigned long) 1797 << 5,
-  (unsigned long) 49216,
+  (ulong64) 770,
+  (ulong64) 1797 << 0,
+  (ulong64) 1797 << 1,
+  (ulong64) 1797 << 2,
+  (ulong64) 1797 << 3,
+  (ulong64) 1797 << 4,
+  (ulong64) 1797 << 5,
+  (ulong64) 49216,
 
   // Row 1 pixels
-  (unsigned long) 197123,
-  (unsigned long) 460039 << 0,
-  (unsigned long) 460039 << 1,
-  (unsigned long) 460039 << 2,
-  (unsigned long) 460039 << 3,
-  (unsigned long) 460039 << 4,
-  (unsigned long) 460039 << 5,
-  (unsigned long) 12599488,
+  (ulong64) 197123,
+  (ulong64) 460039 << 0,
+  (ulong64) 460039 << 1,
+  (ulong64) 460039 << 2,
+  (ulong64) 460039 << 3,
+  (ulong64) 460039 << 4,
+  (ulong64) 460039 << 5,
+  (ulong64) 12599488,
 
 
   // Row 2 pixels
-  (unsigned long) 197123 << 8,
-  (unsigned long) 460039 << 8 << 0,
-  (unsigned long) 460039 << 8 << 1,
-  (unsigned long) 460039 << 8 << 2,
-  (unsigned long) 460039 << 8 << 3,
-  (unsigned long) 460039 << 8 << 4,
-  (unsigned long) 460039 << 8 << 5,
-  (unsigned long) 12599488 << 8,
+  (ulong64) 197123 << 8,
+  (ulong64) 460039 << 8 << 0,
+  (ulong64) 460039 << 8 << 1,
+  (ulong64) 460039 << 8 << 2,
+  (ulong64) 460039 << 8 << 3,
+  (ulong64) 460039 << 8 << 4,
+  (ulong64) 460039 << 8 << 5,
+  (ulong64) 12599488 << 8,
 
   // Row 3 pixels
-  (unsigned long) 197123 << 16,
-  (unsigned long) 460039 << 16 << 0,
-  (unsigned long) 460039 << 16 << 1,
-  (unsigned long) 460039 << 16 << 2,
-  (unsigned long) 460039 << 16 << 3,
-  (unsigned long) 460039 << 16 << 4,
-  (unsigned long) 460039 << 16 << 5,
-  (unsigned long) 12599488 << 16,
+  (ulong64) 197123 << 16,
+  (ulong64) 460039 << 16 << 0,
+  (ulong64) 460039 << 16 << 1,
+  (ulong64) 460039 << 16 << 2,
+  (ulong64) 460039 << 16 << 3,
+  (ulong64) 460039 << 16 << 4,
+  (ulong64) 460039 << 16 << 5,
+  (ulong64) 12599488 << 16,
 
   // Row 4 pixels
-  (unsigned long) 197123 << 24,
-  (unsigned long) 460039 << 24 << 0,
-  (unsigned long) 460039 << 24 << 1,
-  (unsigned long) 460039 << 24 << 2,
-  (unsigned long) 460039 << 24 << 3,
-  (unsigned long) 460039 << 24 << 4,
-  (unsigned long) 460039 << 24 << 5,
-  (unsigned long) 12599488 << 24,
+  (ulong64) 197123 << 24,
+  (ulong64) 460039 << 24 << 0,
+  (ulong64) 460039 << 24 << 1,
+  (ulong64) 460039 << 24 << 2,
+  (ulong64) 460039 << 24 << 3,
+  (ulong64) 460039 << 24 << 4,
+  (ulong64) 460039 << 24 << 5,
+  (ulong64) 12599488 << 24,
 
   // Row 5 pixels
-  (unsigned long) 197123 << 32,
-  (unsigned long) 460039 << 32 << 0,
-  (unsigned long) 460039 << 32 << 1,
-  (unsigned long) 460039 << 32 << 2,
-  (unsigned long) 460039 << 32 << 3,
-  (unsigned long) 460039 << 32 << 4,
-  (unsigned long) 460039 << 32 << 5,
-  (unsigned long) 12599488 << 32,
+  (ulong64) 197123 << 32,
+  (ulong64) 460039 << 32 << 0,
+  (ulong64) 460039 << 32 << 1,
+  (ulong64) 460039 << 32 << 2,
+  (ulong64) 460039 << 32 << 3,
+  (ulong64) 460039 << 32 << 4,
+  (ulong64) 460039 << 32 << 5,
+  (ulong64) 12599488 << 32,
 
   // Row 6 pixels
-  (unsigned long) 197123 << 40,
-  (unsigned long) 460039 << 40 << 0,
-  (unsigned long) 460039 << 40 << 1,
-  (unsigned long) 460039 << 40 << 2,
-  (unsigned long) 460039 << 40 << 3,
-  (unsigned long) 460039 << 40 << 4,
-  (unsigned long) 460039 << 40 << 5,
-  (unsigned long) 12599488 << 40,
+  (ulong64) 197123 << 40,
+  (ulong64) 460039 << 40 << 0,
+  (ulong64) 460039 << 40 << 1,
+  (ulong64) 460039 << 40 << 2,
+  (ulong64) 460039 << 40 << 3,
+  (ulong64) 460039 << 40 << 4,
+  (ulong64) 460039 << 40 << 5,
+  (ulong64) 12599488 << 40,
 
   // Row 7 pixels
-  (unsigned long) 515 << 48,
-  (unsigned long) 1287 << 48 << 0,
-  (unsigned long) 1287 << 48 << 1,
-  (unsigned long) 1287 << 48 << 2,
-  (unsigned long) 1287 << 48 << 3,
-  (unsigned long) 1287 << 48 << 4,
-  (unsigned long) 1287 << 48 << 5,
-  (unsigned long) 16576 << 48
+  (ulong64) 515 << 48,
+  (ulong64) 1287 << 48 << 0,
+  (ulong64) 1287 << 48 << 1,
+  (ulong64) 1287 << 48 << 2,
+  (ulong64) 1287 << 48 << 3,
+  (ulong64) 1287 << 48 << 4,
+  (ulong64) 1287 << 48 << 5,
+  (ulong64) 16576 << 48
 };
 
-void asBinary(unsigned long number, char *buf) {
-  for (int i = 63; i >= 0; i--) {
-    buf[-i+63] = (number >> i) & 1 ? '1' : '0';
-  }
-}
-
-void printPattern(unsigned long number) {
-  char pat[65] = {'\0'};
-  asBinary(number, pat);
+ulong64 computeNextGeneration(ulong64 currentGeneration) {
+  ulong64 nextGeneration = currentGeneration;
   for (int i = 0; i < 64; i++) {
-    printf(" %c ", pat[i]);
-    if ((i+1) % 8 == 0) {
-      printf("\n");
-    }
-  }
-  printf("\n");
-}
-
-unsigned long computeNextGeneration(unsigned long currentGeneration) {
-  unsigned long nextGeneration = currentGeneration;
-  for (int i = 0; i < 64; i++) {
-    unsigned long neighbors = __builtin_popcountll(currentGeneration & gNeighborFilters[i]);
-    if (currentGeneration & (1UL << i)) {
+    ulong64 neighbors = __builtin_popcountll(currentGeneration & gNeighborFilters[i]);
+    if (currentGeneration & (1ULL << i)) {
       // Currently alive...
       if (neighbors <= 1) {
         // DIE - lonely
-        nextGeneration &= ~(1UL << i);
+        nextGeneration &= ~(1ULL << i);
       }
       else if (neighbors >= 4) {
         // DIE - too crowded
-        nextGeneration &= ~(1UL << i);
+        nextGeneration &= ~(1ULL << i);
       }
     }
     else {
       // Currently dead
       if (neighbors == 3) {
         // BIRTH - perfect number of neighbors
-        nextGeneration |= 1UL << i;
+        nextGeneration |= 1ULL << i;
       }
     }
   }
@@ -205,8 +189,8 @@ unsigned long computeNextGeneration(unsigned long currentGeneration) {
    Adding against both our mask and ~mask can be used to know if we've
    covered all the bits in our 8x8 grid.
 */
-bool coverableByXxY(unsigned long pattern, int x, int y) {
-  static unsigned long masks[64] = {0};
+bool coverableByXxY(ulong64 pattern, int x, int y) {
+  static ulong64 masks[64] = {0};
   static int convolutions[64] = {0};
   if (masks[x*y] == 0) {
     convolutions[x*y] = (8-x+1) * (8-y+1);
@@ -216,7 +200,7 @@ bool coverableByXxY(unsigned long pattern, int x, int y) {
     }
   }
 
-  unsigned long mask = masks[x*y];
+  ulong64 mask = masks[x*y];
   int iters = convolutions[x*y];
   for (int i = 0; i < iters; i++) {
     if ((pattern & mask) > 0 && (pattern & ~mask) == 0) {
@@ -238,7 +222,7 @@ int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
 
   // Initialize Random number generator
-  init_genrand64((unsigned long) time(NULL));
+  init_genrand64((ulong64) time(NULL));
 
   int x = 7;
   int y = 5;
@@ -247,17 +231,17 @@ int main(int argc, char **argv) {
     x = atoi(argv[2]);
   }
 
-  unsigned long totalGenerations = 0;
-  unsigned long savedGenerations = 0;
+  ulong64 totalGenerations = 0;
+  ulong64 savedGenerations = 0;
 
   // Check 1m random numbers
-  for (unsigned long i = 0; i < 1000*1000; i++) {
-    unsigned long pattern = genrand64_int64() % ULONG_MAX;
+  for (ulong64 i = 0; i < 1000*1000; i++) {
+    ulong64 pattern = genrand64_int64() % ULONG_MAX;
 
-    unsigned long generations = 0;
-    unsigned long shortcutGenerations = 0;
-    unsigned long currentGen = pattern;
-    set<unsigned long> visitedPatterns;
+    ulong64 generations = 0;
+    ulong64 shortcutGenerations = 0;
+    ulong64 currentGen = pattern;
+    set<ulong64> visitedPatterns;
 
     // Loop until we cycle to a number we've already visited
     do {
@@ -268,7 +252,7 @@ int main(int argc, char **argv) {
       // Mark the pattern as seen, keep track of the number of generations, and compute the next generation
       visitedPatterns.insert(currentGen);
       generations++;
-      unsigned long nextGen = computeNextGeneration(currentGen);
+      ulong64 nextGen = computeNextGeneration(currentGen);
 
       // We found a terminal pattern if we found a pattern that doesn't change with computeNextGeneration()
       if (nextGen == 0 || currentGen == nextGen)  {
@@ -285,6 +269,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  printf("Total generations: %lu, saved generations: %lu (%2.2f%%)\n",
+  printf("Total generations: %llu, saved generations: %llu (%2.2f%%)\n",
          totalGenerations, savedGenerations, (float) savedGenerations/totalGenerations * 100);
 }

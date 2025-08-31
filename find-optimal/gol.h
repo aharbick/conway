@@ -39,6 +39,11 @@
 #define FRAME_SEARCH_MAX_CANDIDATES (1<<30)
 #define FRAME_SEARCH_MAX_FRAMES (1 << 24)
 #define FRAME_SEARCH_KERNEL_PATTERN_INCREMENT 0x1000000ULL
+#define FRAME_SEARCH_TOTAL_FRAMES 2102800
+
+// Conway's Game of Life bit manipulation masks
+#define GOL_HORIZONTAL_SHIFT_MASK 0x7f7f7f7f7f7f7f7f
+#define GOL_VERTICAL_SHIFT_MASK 0xFEFEFEFEFEFEFEFE
 
 // Random search constants
 #define RANDOM_SEARCH_CHUNK_SIZE (1<<20)
@@ -181,7 +186,7 @@ __host__ __device__ void add3(ulong64 a, ulong64 b, ulong64 c, ulong64 &s0, ulon
 
 __host__ __device__ ulong64 computeNextGeneration(ulong64 a) {
   ulong64 s0, sh2, a0, a1, sll, slh ;
-  add2((a & 0x7f7f7f7f7f7f7f7f)<<1, (a & 0xFEFEFEFEFEFEFEFE)>>1, s0, sh2) ;
+  add2((a & GOL_HORIZONTAL_SHIFT_MASK)<<1, (a & GOL_VERTICAL_SHIFT_MASK)>>1, s0, sh2) ;
   add2(s0, a, a0, a1) ;
   a1 |= sh2 ;
   add3(a0>>8, a0<<8, s0, sll, slh) ;

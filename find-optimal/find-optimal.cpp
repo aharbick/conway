@@ -11,6 +11,8 @@
 
 #include "gol.h"
 
+#define STRINGIFY_CONSTANT(x) #x
+
 const char *prog = "find-optimal v0.1";
 const char *prog_bug_email = "aharbick@aharbick.com";
 static char prog_doc[] = "Search for terminal and stable states in an 8x8 bounded Conway's Game of Life grid";
@@ -21,7 +23,7 @@ static struct argp_option argp_options[] = {
 #ifndef __NVCC__
   { "range", 'r', "BEGIN[:END]", 0, "Range to search (e.g., 1: or 1:1012415). Default end is ULONG_MAX."},
 #endif
-  { "frame-range", 'f', "BEGIN[:END]", 0, "Frame range to search (e.g., 1: or 1:12515). Default end is 2102800."},
+  { "frame-range", 'f', "BEGIN[:END]", 0, "Frame range to search (e.g., 1: or 1:12515). Default end is " STRINGIFY_CONSTANT(FRAME_SEARCH_TOTAL_FRAMES) "."},
   { "chunk-size", 'k', "size", 0, "Chunk size for pattern processing (default: 32768)."},
   { "verbose", 'v', NULL, 0, "Enable verbose output."},
   { "random", 'R', NULL, 0, "Use random patterns."},
@@ -113,28 +115,41 @@ static prog_args* createThreadArgs(prog_args* cli, int threadId, ulong64 pattern
   return targs;
 }
 
-static pthread_t* createAndStartThreads(prog_args* cli) {
+typedef struct {
+  pthread_t* threads;
+  prog_args** threadArgs;
+  int numThreads;
+} thread_context_t;
+
+static thread_context_t* createAndStartThreads(prog_args* cli) {
   ulong64 patternsPerThread = ((cli->endAt > 0) ? cli->endAt - cli->beginAt : ULONG_MAX) / cli->cpuThreads;
-  pthread_t* threads = (pthread_t*)malloc(sizeof(pthread_t) * cli->cpuThreads);
+  
+  thread_context_t* context = (thread_context_t*)malloc(sizeof(thread_context_t));
+  context->threads = (pthread_t*)malloc(sizeof(pthread_t) * cli->cpuThreads);
+  context->threadArgs = (prog_args**)malloc(sizeof(prog_args*) * cli->cpuThreads);
+  context->numThreads = cli->cpuThreads;
   
   for (int t = 0; t < cli->cpuThreads; t++) {
-    prog_args* targs = createThreadArgs(cli, t, patternsPerThread);
-    pthread_create(&threads[t], NULL, search, (void*)targs);
+    context->threadArgs[t] = createThreadArgs(cli, t, patternsPerThread);
+    pthread_create(&context->threads[t], NULL, search, (void*)context->threadArgs[t]);
   }
   
-  return threads;
+  return context;
 }
 
 static void printThreadCompletion(int threadId, const char* status) {
   printf("\n[Thread %d - %llu] %s\n", threadId, (ulong64)time(NULL), status);
 }
 
-static void joinAndCleanupThreads(pthread_t* threads, int numThreads) {
-  for (int t = 0; t < numThreads; t++) {
-    pthread_join(threads[t], NULL);
+static void joinAndCleanupThreads(thread_context_t* context) {
+  for (int t = 0; t < context->numThreads; t++) {
+    pthread_join(context->threads[t], NULL);
     printThreadCompletion(t, "COMPLETE");
+    free(context->threadArgs[t]);
   }
-  free(threads);
+  free(context->threads);
+  free(context->threadArgs);
+  free(context);
 }
 
 static void cleanupProgArgs(prog_args* cli) {
@@ -181,7 +196,7 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
     break;
 #endif
   case 'f':
-    if (!parseRange(arg, &a->frameBeginAt, &a->frameEndAt, 2102800)) {
+    if (!parseRange(arg, &a->frameBeginAt, &a->frameEndAt, FRAME_SEARCH_TOTAL_FRAMES)) {
       return ARGP_ERR_UNKNOWN;
     }
     break;
@@ -198,7 +213,7 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
   case 'k': {
     a->chunkSize = strtoull(arg, NULL, 10);
     if (a->chunkSize == 0 || a->chunkSize > FRAME_SEARCH_MAX_CHUNK_SIZE) {
-      printf("[WARN] invalid chunk-size '%s', must be between 1 and 65536\n", arg);
+      printf("[WARN] invalid chunk-size '%s', must be between 1 and %d\n", arg, FRAME_SEARCH_MAX_CHUNK_SIZE);
       return ARGP_ERR_UNKNOWN;
     }
     break;
@@ -228,8 +243,8 @@ int main(int argc, char **argv) {
 #endif
 
   // Create and start threads, then wait for completion
-  pthread_t *threads = createAndStartThreads(cli);
-  joinAndCleanupThreads(threads, cli->cpuThreads);
+  thread_context_t *context = createAndStartThreads(cli);
+  joinAndCleanupThreads(context);
   cleanupProgArgs(cli);
   
   return 0;
