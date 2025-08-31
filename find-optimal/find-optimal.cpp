@@ -22,6 +22,7 @@ static struct argp_option argp_options[] = {
   { "range", 'r', "BEGIN[:END]", 0, "Range to search (e.g., 1: or 1:1012415). Default end is ULONG_MAX."},
 #endif
   { "frame-range", 'f', "BEGIN[:END]", 0, "Frame range to search (e.g., 1: or 1:12515). Default end is 2102800."},
+  { "chunk-size", 'k', "size", 0, "Chunk size for pattern processing (default: 32768)."},
   { "verbose", 'v', NULL, 0, "Enable verbose output."},
   { "random", 'R', NULL, 0, "Use random patterns."},
   { "randomsamples", 's', "num", 0, "How many random samples to run. Default is 1 billion."},
@@ -112,6 +113,14 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
     a->randomSamples = strtoull(arg, NULL, 10);
     break;
   }
+  case 'k': {
+    a->chunkSize = strtoull(arg, NULL, 10);
+    if (a->chunkSize == 0 || a->chunkSize > 65536) {
+      printf("[WARN] invalid chunk-size '%s', must be between 1 and 65536\n", arg);
+      return ARGP_ERR_UNKNOWN;
+    }
+    break;
+  }
   default: return ARGP_ERR_UNKNOWN;
   }
   return 0;
@@ -139,6 +148,7 @@ int main(int argc, char **argv) {
   cli->random = false;
   cli->verbose = false;
   cli->randomSamples = ULONG_MAX;
+  cli->chunkSize = 32768;
   argp_parse(&argp, argc, argv, 0, 0, cli);
 
 #ifdef __NVCC__
@@ -169,7 +179,7 @@ int main(int argc, char **argv) {
 
   for (int t = 0; t < cli->cpuThreads; t++) {
     pthread_join(threads[t], NULL);
-    printf("\n[Thread %d] COMPLETE\n", t);
+    printf("\n[Thread %d - %llu] COMPLETE\n", t, (ulong64)time(NULL));
   }
 }
 
