@@ -274,12 +274,6 @@ __global__ void findCandidatesInKernel(ulong64 kernel, int chunk, ulong64 chunkS
   }
 }
 
-__host__ ulong64 constructKernel(ulong64 frame, int kernelIndex) {
-  ulong64 kernel = frame;
-  kernel += ((ulong64)(kernelIndex & 3)) << 3;      // lower pair of K bits
-  kernel += ((ulong64)(kernelIndex >> 2)) << 59;    // upper pair of K bits
-  return kernel;
-}
 
 __host__ void executeCandidateSearch(SearchMemory* mem, prog_args* cli, ulong64 start, ulong64 end) {
   // Phase 1: Find candidates

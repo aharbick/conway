@@ -107,4 +107,12 @@ __host__ __device__ static inline int countGenerations(ulong64 pattern) {
   return ended ? generations : 0;
 }
 
+// CUDA kernel construction function
+__host__ __device__ static inline ulong64 constructKernel(ulong64 frame, int kernelIndex) {
+  ulong64 kernel = frame;
+  kernel += ((ulong64)(kernelIndex & 3)) << 3;      // lower pair of K bits
+  kernel += ((ulong64)(kernelIndex >> 2)) << 59;    // upper pair of K bits
+  return kernel;
+}
+
 #endif
