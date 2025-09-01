@@ -105,7 +105,6 @@ which then immediately triggers the following conditional block:
 
 which moves on to the next pattern allocated to the thread. (Did you add a 'continue' or something which caused this to be skipped? Otherwise I can't see why it would save the same pattern more than once.) In any case, saving the pattern multiple times is indicative of a bug, so you should determine why that's happening before proceeding.
 
-
 As for taking advantage of rotations/reflections, we'll define a 'frame' to be one of the 2^24 ways to assign 0s and 1s to the following 24 cells marked 'F' in the 8x8 grid below:
 
 FFFooFFF
