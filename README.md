@@ -15,6 +15,8 @@ The hardware:
 * 4 Servo sheilds: https://www.adafruit.com/product/1411
 * 4 sets of header pins: https://www.adafruit.com/product/85
 * 4 sets of angled pins: https://www.adafruit.com/product/816
+* 64 servos (or more they die a lot): https://www.amazon.com/dp/B0925TDT2D
+* Bunches of cabling like this: https://www.amazon.com/dp/B08BF4C6S2 (I bought it 3 times)
 
 The 3D printed part designs can be found here:
 
