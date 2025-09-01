@@ -1,8 +1,28 @@
 # Conway's Game of Life art project
 
-## Arduino
+## 3D-Printed / Arduino Project
 
-TODO documentation
+Here's the fully assembled and working project:
+https://www.youtube.com/watch?v=GUKUeunvB_Y
+
+###
+The code in the root of the project powers the arduino.
+
+The hardware:
+
+* Arduino UNO starter kit: https://store-usa.arduino.cc/products/arduino-starter-kit-multi-language
+* LCD shield: https://www.adafruit.com/product/772
+* 4 Servo sheilds: https://www.adafruit.com/product/1411
+* 4 sets of header pins: https://www.adafruit.com/product/85
+* 4 sets of angled pins: https://www.adafruit.com/product/816
+
+The 3D printed part designs can be found here:
+
+* https://www.tinkercad.com/dashboard/collections/hJs3EecuwYQ/3d
+
+Here an in-progress video:
+
+https://www.youtube.com/watch?v=tJrgmwz3HJU
 
 ## Find Optimal
 
