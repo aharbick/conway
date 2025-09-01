@@ -31,6 +31,9 @@
 *.out
 *.app
 
+# Env files
+.envrc
+
 # Directories
 logs
 analysis

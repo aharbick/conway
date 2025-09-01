@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import sys
+
+HEADER = [
+    "#CXRLE Pos=-4,-4",
+    "x = 8, y = 8, rule = B3/S23:P8,8"
+]
+
+def rle_to_bin(rle_lines):
+    """Convert RLE body (list of row strings) into a flattened 64-bit binary string."""
+    rows = []
+    for line in rle_lines:
+        row = []
+        i = 0
+        while i < len(line):
+            if line[i].isdigit():
+                j = i
+                while j < len(line) and line[j].isdigit():
+                    j += 1
+                count = int(line[i:j])
+                if j >= len(line):
+                    break
+                char = line[j]
+                if char == 'o':
+                    row.extend('1' * count)
+                elif char == 'b':
+                    row.extend('0' * count)
+                i = j + 1
+            elif line[i] == 'o':
+                row.append('1'); i += 1
+            elif line[i] == 'b':
+                row.append('0'); i += 1
+            elif line[i] in ('$','!'):
+                i += 1
+            else:
+                i += 1
+        # pad/truncate to width 8
+        row = (row + ['0'] * 8)[:8]
+        rows.append("".join(row))
+    # pad/truncate to exactly 8 rows
+    rows = (rows + ["0"*8]*8)[:8]
+    return "".join(rows)
+
+def bin_to_rle(binstring):
+    """Convert a 64-bit binary string (8x8) into compact RLE (no trailing 'b' on rows)."""
+    if len(binstring) != 64 or any(c not in '01' for c in binstring):
+        raise ValueError("Binary string must be exactly 64 characters of 0/1 (8x8).")
+
+    rows = [binstring[i*8:(i+1)*8] for i in range(8)]
+    rle_rows = []
+    for row in rows:
+        # Trim trailing zeros so we don't emit trailing 'b' runs
+        last_one = row.rfind('1')
+        if last_one == -1:
+            # Entire row is blank → empty line; the '$' separator will represent it
+            rle_rows.append("")
+            continue
+
+        segment = row[:last_one+1]
+        out = []
+        i = 0
+        while i < len(segment):
+            ch = segment[i]
+            j = i
+            while j < len(segment) and segment[j] == ch:
+                j += 1
+            runlen = j - i
+            if runlen > 1:
+                out.append(str(runlen))
+            out.append('o' if ch == '1' else 'b')
+            i = j
+        rle_rows.append("".join(out))
+
+    return "$".join(rle_rows) + "!"
+
+def main():
+    parser = argparse.ArgumentParser(description="Convert between RLE and binary patterns (8x8).")
+    parser.add_argument("-f", "--file", required=True, help="Path to RLE file (read or write)")
+    parser.add_argument("-b", "--binary", help="64-bit binary string to write as RLE")
+    args = parser.parse_args()
+
+    if args.binary:
+        # Binary → RLE file
+        rle_body = bin_to_rle(args.binary)
+        with open(args.file, "w") as f:
+            f.write("\n".join(HEADER) + "\n")
+            f.write(rle_body + "\n")
+        print(f"Wrote RLE file to {args.file}")
+    else:
+        # RLE file → binary
+        if not os.path.exists(args.file):
+            print(f"Error: file {args.file} does not exist", file=sys.stderr)
+            sys.exit(1)
+        with open(args.file) as f:
+            lines = f.read().splitlines()
+
+        # Ignore the two header lines
+        body_lines = []
+        for line in lines:
+            if line.startswith("#") or line.startswith("x ="):
+                continue
+            body_lines.append(line)
+
+        # Collapse to rows by splitting on '$' (ignore trailing '!')
+        rle_str = "".join(body_lines).replace("!", "")
+        rle_rows = rle_str.split("$") if rle_str else []
+        binstring = rle_to_bin(rle_rows)
+        print(binstring)
+
+if __name__ == "__main__":
+    main()
