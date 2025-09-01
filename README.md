@@ -2,8 +2,7 @@
 
 ## 3D-Printed / Arduino Project
 
-Here's the fully assembled and working project:
-https://www.youtube.com/watch?v=GUKUeunvB_Y
+[![Fully assembled and working project](https://img.youtube.com/vi/GUKUeunvB_Y/maxresdefault.jpg)](https://www.youtube.com/watch?v=GUKUeunvB_Y)
 
 ###
 The code in the root of the project powers the arduino.
