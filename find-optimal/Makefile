@@ -3,6 +3,13 @@ NVCC=g++
 CFLAGS=
 LIBS=
 BUILDDIR=build
+TESTDIR=tests
+
+# Test-specific variables
+TEST_LIBS=$(shell pkg-config --cflags --libs gtest) -lgtest_main -lpthread -lcurl
+TEST_SOURCES=$(wildcard $(TESTDIR)/*.cpp)
+TEST_OBJECTS=$(TEST_SOURCES:$(TESTDIR)/%.cpp=$(BUILDDIR)/%.o)
+TEST_EXECUTABLE=$(BUILDDIR)/run_tests
 
 OS := $(shell uname -s)
 HAS_CUDA := $(shell which nvcc)
@@ -43,3 +50,15 @@ setup:
 
 clean:
 	rm -rf build *~ core
+
+# Test targets
+test: setup $(TEST_EXECUTABLE)
+	$(TEST_EXECUTABLE)
+
+$(TEST_EXECUTABLE): $(TEST_OBJECTS)
+	$(CC) $^ -o $@ $(TEST_LIBS)
+
+$(BUILDDIR)/%.o: $(TESTDIR)/%.cpp
+	$(CC) $(CFLAGS) -I. -c $< -o $@ $(shell pkg-config --cflags gtest)
+
+.PHONY: test

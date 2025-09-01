@@ -24,6 +24,7 @@
 #include "frame_utils.h"
 #include "display_utils.h"
 #include "airtable_client.h"
+#include "gol_core.h" // Core GOL computation functions
 #include <stdarg.h>
 
 // User-configurable defaults (can be overridden via command line)
@@ -187,37 +188,7 @@ __host__ void updateBestGenerations(int threadId, int generations, ulong64 patte
   pthread_mutex_unlock(&gMutex);
 }
 
-__host__ __device__ void add2(ulong64 a, ulong64 b, ulong64 &s0, ulong64 &s1) {
-  s0 = a ^ b ;
-  s1 = a & b ;
-}
-
-__host__ __device__ void add3(ulong64 a, ulong64 b, ulong64 c, ulong64 &s0, ulong64 &s1) {
-  ulong64 t0, t1, t2 ;
-  add2(a, b, t0, t1) ;
-  add2(t0, c, s0, t2) ;
-  s1 = t1 ^ t2 ;
-}
-
-__host__ __device__ ulong64 computeNextGeneration(ulong64 a) {
-  ulong64 s0, sh2, a0, a1, sll, slh ;
-  add2((a & GOL_HORIZONTAL_SHIFT_MASK)<<1, (a & GOL_VERTICAL_SHIFT_MASK)>>1, s0, sh2) ;
-  add2(s0, a, a0, a1) ;
-  a1 |= sh2 ;
-  add3(a0>>8, a0<<8, s0, sll, slh) ;
-  ulong64 y = a1 >> 8 ;
-  ulong64 x = a1 << 8 ;
-  return (x^y^sh2^slh)&((x|y)^(sh2|slh))&(sll|a) ;
-}
-
-__host__ __device__ int adjustGenerationsForDeadout(int generations, ulong64 g2, ulong64 g3, ulong64 g4, ulong64 g5, ulong64 g6) {
-  if (g2 == 0) return generations - 5;
-  if (g3 == 0) return generations - 4;
-  if (g4 == 0) return generations - 3;
-  if (g5 == 0) return generations - 2;
-  if (g6 == 0) return generations - 1;
-  return generations;
-}
+// Core GOL functions now included from gol_core.h
 
 #ifdef __NVCC__
 __device__ bool step6GenerationsAndCheck(ulong64* g1, ulong64 pattern, ulong64* generations,
@@ -247,59 +218,7 @@ __device__ bool step6GenerationsAndCheck(ulong64* g1, ulong64 pattern, ulong64* 
 
 #endif
 
-__host__ __device__ int countGenerations(ulong64 pattern) {
-  bool ended = false;
-  int generations = 0;
-
-  //  Run for up to 300 generations just checking if we cycle within 6
-  //  generations or die out.
-  ulong64 g1, g2, g3, g4, g5, g6;
-  g1 = pattern;
-  do {
-    generations+=6;
-    g2 = computeNextGeneration(g1);
-    g3 = computeNextGeneration(g2);
-    g4 = computeNextGeneration(g3);
-    g5 = computeNextGeneration(g4);
-    g6 = computeNextGeneration(g5);
-    g1 = computeNextGeneration(g6);
-
-    if (g1 == 0) {
-      ended = true; // died out
-      generations = adjustGenerationsForDeadout(generations, g2, g3, g4, g5, g6);
-      break;
-    }
-
-    if ((g1 == g2) || (g1 == g3) || (g1 == g4)) {
-      // periodic
-      break;
-    }
-
-  }
-  while (generations < FAST_SEARCH_MAX_GENERATIONS);
-
-  // Fall back to Floyd's cycle detection algorithm if we haven't
-  // we didn't exit the previous loop because of die out or cycle.
-  if (!ended && generations >= FAST_SEARCH_MAX_GENERATIONS) {
-    ulong64 slow = g1;
-    ulong64 fast = computeNextGeneration(slow);
-    do {
-      generations++;
-      ulong64 nextSlow = computeNextGeneration(slow);
-
-      if (slow == nextSlow) {
-        ended = true; // If we didn't change then we ended
-        break;
-      }
-      slow = nextSlow;
-      fast = computeNextGeneration(computeNextGeneration(fast));
-    }
-    while (slow != fast);
-    ended = slow == 0; // If we died out then we ended
-  }
-
-  return ended ? generations : 0;
-}
+// countGenerations function now included from gol_core.h
 
 #ifdef __NVCC__
 __global__ void processCandidates(ulong64 *candidates, ulong64 *numCandidates,

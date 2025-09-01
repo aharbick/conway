@@ -183,7 +183,7 @@ static bool airtable_send_result(int generations, ulong64 pattern, const char* p
         "{"
         "\"fields\": {"
         "\"generations\": %d,"
-        "\"pattern\": %llu,"
+        "\"pattern\": \"%llu\","
         "\"pattern_bin\": \"%s\","
         "\"test\": %s"
         "}"
