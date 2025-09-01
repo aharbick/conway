@@ -191,36 +191,6 @@ __host__ void updateBestGenerations(int threadId, int generations, ulong64 patte
 // Core GOL functions now included from gol_core.h
 
 #ifdef __NVCC__
-__device__ bool step6GenerationsAndCheck(ulong64* g1, ulong64 pattern, ulong64* generations,
-                                        ulong64* candidates, ulong64* numCandidates) {
-  *generations += 6;
-  ulong64 g2 = computeNextGeneration(*g1);
-  ulong64 g3 = computeNextGeneration(g2);
-  ulong64 g4 = computeNextGeneration(g3);
-  ulong64 g5 = computeNextGeneration(g4);
-  ulong64 g6 = computeNextGeneration(g5);
-  *g1 = computeNextGeneration(g6);
-
-  if ((*g1 == g2) || (*g1 == g3) || (*g1 == g4)) {
-    *generations = 0;
-    return true; // Pattern ended/cyclical, advance to next
-  }
-
-  if (*generations >= MIN_CANDIDATE_GENERATIONS) {
-    ulong64 idx = atomicAdd(numCandidates, 1);
-    candidates[idx] = pattern;
-    *generations = 0;
-    return true; // Candidate found, advance to next
-  }
-
-  return false; // Continue with current pattern
-}
-
-#endif
-
-// countGenerations function now included from gol_core.h
-
-#ifdef __NVCC__
 __global__ void processCandidates(ulong64 *candidates, ulong64 *numCandidates,
                                   ulong64 *bestPattern, ulong64 *bestGenerations) {
   for (ulong64 i = blockIdx.x * blockDim.x + threadIdx.x; i < *numCandidates; i += blockDim.x * gridDim.x) {

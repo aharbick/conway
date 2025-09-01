@@ -452,7 +452,7 @@ TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern209a) {
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern209b) {
-    // Another pattern that runs for exactly 209 generations  
+    // Another pattern that runs for exactly 209 generations
     // 1000000010010011100101000010001110000010011011011000111111001010
     ulong64 pattern = 9264911738664226762ULL;
     EXPECT_EQ(countGenerations(pattern), 209);
@@ -484,6 +484,144 @@ TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern193) {
     // 1010110110011101001110101101100100001001010101010011011001000100
     ulong64 pattern = 12510220043743999556ULL;
     EXPECT_EQ(countGenerations(pattern), 193);
+}
+
+// Test step6GenerationsAndCheck function - critical CUDA kernel logic
+class GOLStep6Test : public GOLComputationTest {
+    // Inherits createPattern helper from GOLComputationTest
+};
+
+TEST_F(GOLStep6Test, Step6GenerationsAndCheckCycleDetection) {
+    // Test cycle detection after 6 generations
+    ulong64 candidates[100];
+    ulong64 numCandidates = 0;
+    ulong64 generations = 0;
+
+    // Use a blinker pattern that cycles every 2 generations
+    // After 6 generations (g1), it should detect g1 == g3 (both vertical)
+    const char blinker[8][8] = {
+        {'0','0','0','0','0','0','0','0'},
+        {'0','0','0','0','0','0','0','0'},
+        {'0','0','0','0','0','0','0','0'},
+        {'0','0','1','1','1','0','0','0'},
+        {'0','0','0','0','0','0','0','0'},
+        {'0','0','0','0','0','0','0','0'},
+        {'0','0','0','0','0','0','0','0'},
+        {'0','0','0','0','0','0','0','0'}
+    };
+
+    ulong64 pattern = createPattern(blinker);
+    ulong64 g1 = pattern;
+
+    bool shouldAdvance = step6GenerationsAndCheck(&g1, pattern, &generations, candidates, &numCandidates);
+
+    EXPECT_TRUE(shouldAdvance) << "Blinker should be detected as cyclical";
+    EXPECT_EQ(generations, 0) << "Generations should be reset to 0 for cyclical pattern";
+    EXPECT_EQ(numCandidates, 0) << "Cyclical patterns should not be added as candidates";
+}
+
+TEST_F(GOLStep6Test, Step6GenerationsAndCheckCandidateGeneration) {
+    // Test candidate generation when reaching MIN_CANDIDATE_GENERATIONS
+    ulong64 candidates[100];
+    ulong64 numCandidates = 0;
+    ulong64 generations = MIN_CANDIDATE_GENERATIONS - 6; // Will reach exactly MIN_CANDIDATE_GENERATIONS
+
+    // Use a pattern we know runs for 193+ generations
+    ulong64 pattern = 12510220043743999556ULL; // Known 193-generation pattern
+    ulong64 g1 = pattern;
+
+    bool shouldAdvance = step6GenerationsAndCheck(&g1, pattern, &generations, candidates, &numCandidates);
+
+    EXPECT_TRUE(shouldAdvance) << "Pattern reaching MIN_CANDIDATE_GENERATIONS should advance";
+    EXPECT_EQ(generations, 0) << "Generations should be reset to 0 after becoming candidate";
+    EXPECT_EQ(numCandidates, 1) << "Pattern should be added as candidate";
+    EXPECT_EQ(candidates[0], pattern) << "Correct pattern should be stored as candidate";
+}
+
+TEST_F(GOLStep6Test, Step6GenerationsAndCheckContinuePattern) {
+    // Test continuing with pattern that hasn't reached criteria yet
+    ulong64 candidates[100];
+    ulong64 numCandidates = 0;
+    ulong64 generations = 50; // Well below MIN_CANDIDATE_GENERATIONS
+
+    // Use a pattern we know runs for 193+ generations
+    ulong64 pattern = 12510220043743999556ULL; // Known long-runner
+    ulong64 g1 = pattern;
+
+    bool shouldAdvance = step6GenerationsAndCheck(&g1, pattern, &generations, candidates, &numCandidates);
+
+    EXPECT_FALSE(shouldAdvance) << "Pattern not meeting criteria should continue";
+    EXPECT_EQ(generations, 56) << "Generations should be incremented by 6";
+    EXPECT_EQ(numCandidates, 0) << "No candidates should be generated";
+    EXPECT_NE(g1, pattern) << "g1 should be updated to generation after g6";
+}
+
+TEST_F(GOLStep6Test, Step6GenerationsAndCheckDeadPattern) {
+    // Test pattern that dies out within 6 generations
+    ulong64 candidates[100];
+    ulong64 numCandidates = 0;
+    ulong64 generations = 0;
+
+    // Single cell dies quickly
+    ulong64 pattern = 1ULL << (4 * 8 + 4); // Center cell
+    ulong64 g1 = pattern;
+
+    bool shouldAdvance = step6GenerationsAndCheck(&g1, pattern, &generations, candidates, &numCandidates);
+
+    EXPECT_TRUE(shouldAdvance) << "Dead pattern should advance to next";
+    EXPECT_EQ(generations, 0) << "Generations should be reset for dead pattern";
+    EXPECT_EQ(numCandidates, 0) << "Dead patterns should not be candidates";
+    EXPECT_EQ(g1, 0ULL) << "Dead pattern should result in g1 = 0";
+}
+
+TEST_F(GOLStep6Test, Step6GenerationsAndCheckMultipleCandidates) {
+    // Test multiple patterns being added as candidates
+    ulong64 candidates[100];
+    ulong64 numCandidates = 0;
+    ulong64 generations = MIN_CANDIDATE_GENERATIONS - 6;
+
+    // Add first candidate - use known long-running pattern
+    ulong64 pattern1 = 12510220043743999556ULL; // 193-generation pattern
+    ulong64 g1_1 = pattern1;
+    step6GenerationsAndCheck(&g1_1, pattern1, &generations, candidates, &numCandidates);
+
+    // Add second candidate - use another known long-running pattern
+    generations = MIN_CANDIDATE_GENERATIONS - 6; // Reset for next pattern
+    ulong64 pattern2 = 82597382355986899ULL; // 197-generation pattern
+    ulong64 g1_2 = pattern2;
+    step6GenerationsAndCheck(&g1_2, pattern2, &generations, candidates, &numCandidates);
+
+    EXPECT_EQ(numCandidates, 2) << "Both patterns should be candidates";
+    EXPECT_EQ(candidates[0], pattern1) << "First candidate should be stored";
+    EXPECT_EQ(candidates[1], pattern2) << "Second candidate should be stored";
+}
+
+TEST_F(GOLStep6Test, Step6GenerationsAndCheckExactCyclePeriods) {
+    // Test detection of different cycle periods (2, 3, 4)
+    ulong64 candidates[100];
+    ulong64 numCandidates = 0;
+    ulong64 generations = 0;
+
+    // Test with a stable pattern (period 1)
+    const char block[8][8] = {
+        {'0','0','0','0','0','0','0','0'},
+        {'0','0','0','0','0','0','0','0'},
+        {'0','0','0','0','0','0','0','0'},
+        {'0','0','0','1','1','0','0','0'},
+        {'0','0','0','1','1','0','0','0'},
+        {'0','0','0','0','0','0','0','0'},
+        {'0','0','0','0','0','0','0','0'},
+        {'0','0','0','0','0','0','0','0'}
+    };
+
+    ulong64 pattern = createPattern(block);
+    ulong64 g1 = pattern;
+
+    bool shouldAdvance = step6GenerationsAndCheck(&g1, pattern, &generations, candidates, &numCandidates);
+
+    EXPECT_TRUE(shouldAdvance) << "Stable pattern should be detected as cyclical";
+    EXPECT_EQ(generations, 0) << "Generations should be reset";
+    EXPECT_EQ(g1, pattern) << "Stable pattern should remain unchanged";
 }
 
 // Test constructKernel function - critical for CUDA pattern construction
