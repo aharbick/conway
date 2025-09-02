@@ -2,6 +2,7 @@
 #define _DISPLAY_UTILS_H_
 
 #include <stdio.h>
+
 #include "types.h"
 
 // Convert a 64-bit number to its binary string representation
@@ -18,11 +19,11 @@ static inline void printPattern(ulong64 number) {
   asBinary(number, pat);
   for (int i = 0; i < 64; i++) {
     printf(" %c ", pat[i]);
-    if ((i+1) % 8 == 0) {
+    if ((i + 1) % 8 == 0) {
       printf("\n");
     }
   }
   printf("\n");
 }
 
-#endif 
+#endif

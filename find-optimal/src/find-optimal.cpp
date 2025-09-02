@@ -1,37 +1,38 @@
+#include <argp.h>
+#include <errno.h>
+#include <limits.h>
+#include <locale.h>
+#include <pthread.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
-#include <pthread.h>
-#include <limits.h>
-#include <unistd.h>
 #include <string.h>
-#include <argp.h>
 #include <sys/time.h>
-#include <locale.h>
-#include <errno.h>
+#include <unistd.h>
 
 #include "gol.h"
 
 #define STRINGIFY_CONSTANT(x) #x
 
-const char *prog = "find-optimal v0.1";
-const char *prog_bug_email = "aharbick@aharbick.com";
+const char* prog = "find-optimal v0.1";
+const char* prog_bug_email = "aharbick@aharbick.com";
 static char prog_doc[] = "Search for terminal and stable states in an 8x8 bounded Conway's Game of Life grid";
 static char ProgramArgs_doc[] = "";
 static struct argp_option argp_options[] = {
-  { "cudaconfig", 'c', "config", 0, "CUDA kernel params numgpus:blocksize:threadsperblock (e.g. 1:1024:1024)"},
-  { "threads", 't', "num", 0, "Number of CPU threads (if you use more than one GPU you should use matching threads)."},
+    {"cudaconfig", 'c', "config", 0, "CUDA kernel params numgpus:blocksize:threadsperblock (e.g. 1:1024:1024)"},
+    {"threads", 't', "num", 0, "Number of CPU threads (if you use more than one GPU you should use matching threads)."},
 #ifndef __NVCC__
-  { "range", 'r', "BEGIN[:END]", 0, "Range to search (e.g., 1: or 1:1012415). Default end is ULONG_MAX."},
+    {"range", 'r', "BEGIN[:END]", 0, "Range to search (e.g., 1: or 1:1012415). Default end is ULONG_MAX."},
 #endif
-  { "frame-index-range", 'f', "BEGIN[:END]", 0, "Frame index range to search from 0 to " STRINGIFY_CONSTANT(FRAME_SEARCH_TOTAL_MINIMAL_FRAMES) " or 'resume' (e.g. 0: or 1:1234 or resume)"},
-  { "chunk-size", 'k', "size", 0, "Chunk size for pattern processing (default: 32768)."},
-  { "verbose", 'v', NULL, 0, "Enable verbose output."},
-  { "random", 'R', NULL, 0, "Use random patterns."},
-  { "randomsamples", 's', "num", 0, "How many random samples to run. Default is 1 billion."},
-  { "test-airtable", 'a', NULL, 0, "Test Airtable API with fake data and exit."},
-  { 0 }
-};
+    {"frame-index-range", 'f', "BEGIN[:END]", 0,
+     "Frame index range to search from 0 to " STRINGIFY_CONSTANT(
+         FRAME_SEARCH_TOTAL_MINIMAL_FRAMES) " or 'resume' (e.g. 0: or 1:1234 or resume)"},
+    {"chunk-size", 'k', "size", 0, "Chunk size for pattern processing (default: 32768)."},
+    {"verbose", 'v', NULL, 0, "Enable verbose output."},
+    {"random", 'R', NULL, 0, "Use random patterns."},
+    {"randomsamples", 's', "num", 0, "How many random samples to run. Default is 1 billion."},
+    {"test-airtable", 'a', NULL, 0, "Test Airtable API with fake data and exit."},
+    {0}};
 
 static bool validatePositiveInteger(long value, const char* name, const char* input) {
   if (value <= 0) {
@@ -95,20 +96,20 @@ static bool validateRange(ulong64 begin, ulong64 end, const char* beginStr, cons
   return true;
 }
 
-static bool parseCudaConfig(const char *arg, ProgramArgs *a) {
+static bool parseCudaConfig(const char* arg, ProgramArgs* a) {
   if (!arg || *arg == '\0') {
     printf("[ERROR] CUDA config cannot be empty\n");
     return false;
   }
 
-  char *argCopy = strdup(arg);  // Make a copy to avoid modifying original
+  char* argCopy = strdup(arg);  // Make a copy to avoid modifying original
   if (!argCopy) {
     printf("[ERROR] Memory allocation failed\n");
     return false;
   }
 
-  char *saveptr;
-  char *gpuStr = strtok_r(argCopy, ":", &saveptr);
+  char* saveptr;
+  char* gpuStr = strtok_r(argCopy, ":", &saveptr);
 
   if (!gpuStr) {
     printf("[ERROR] Invalid CUDA config format '%s', expected numgpus:blocksize:threadsperblock\n", arg);
@@ -127,7 +128,7 @@ static bool parseCudaConfig(const char *arg, ProgramArgs *a) {
     return false;
   }
 
-  char *blockStr = strtok_r(NULL, ":", &saveptr);
+  char* blockStr = strtok_r(NULL, ":", &saveptr);
   if (blockStr) {
     if (!validateIntegerString(blockStr, "blockSize")) {
       free(argCopy);
@@ -143,7 +144,7 @@ static bool parseCudaConfig(const char *arg, ProgramArgs *a) {
     a->blockSize = DEFAULT_CUDA_GRID_SIZE;
   }
 
-  char *threadsStr = strtok_r(NULL, ":", &saveptr);
+  char* threadsStr = strtok_r(NULL, ":", &saveptr);
   if (threadsStr) {
     if (!validateIntegerString(threadsStr, "threadsPerBlock")) {
       free(argCopy);
@@ -244,7 +245,7 @@ static void cleanupProgArgs(ProgramArgs* cli) {
   free(cli);
 }
 
-static bool parseRange(char *arg, ulong64 *begin, ulong64 *end, ulong64 defaultEnd) {
+static bool parseRange(char* arg, ulong64* begin, ulong64* end, ulong64 defaultEnd) {
   if (!arg || *arg == '\0') {
     printf("[ERROR] range cannot be empty\n");
     return false;
@@ -259,13 +260,13 @@ static bool parseRange(char *arg, ulong64 *begin, ulong64 *end, ulong64 defaultE
     return true;
   }
 
-  char *argCopy = strdup(arg);  // Make a copy to avoid modifying original
+  char* argCopy = strdup(arg);  // Make a copy to avoid modifying original
   if (!argCopy) {
     printf("[ERROR] Memory allocation failed\n");
     return false;
   }
 
-  char *colon = strchr(argCopy, ':');
+  char* colon = strchr(argCopy, ':');
   if (colon == NULL) {
     printf("[ERROR] invalid range format '%s', expected BEGIN: or BEGIN:END or 'resume'\n", arg);
     free(argCopy);
@@ -300,10 +301,10 @@ static bool parseRange(char *arg, ulong64 *begin, ulong64 *end, ulong64 defaultE
   return true;
 }
 
-static error_t parseArgpOptions(int key, char *arg, struct argp_state *state) {
-  ProgramArgs *a = (ProgramArgs *)state->input;
+static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
+  ProgramArgs* a = (ProgramArgs*)state->input;
 
-  switch(key) {
+  switch (key) {
   case 'c':
     if (!parseCudaConfig(arg, a)) {
       return ARGP_ERR_UNKNOWN;
@@ -377,7 +378,7 @@ static error_t parseArgpOptions(int key, char *arg, struct argp_state *state) {
 
 struct argp argp = {argp_options, parseArgpOptions, ProgramArgs_doc, prog_doc, 0, 0};
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   // Set locale for number formatting with thousands separators
   setlocale(LC_NUMERIC, "");
 
@@ -388,7 +389,7 @@ int main(int argc, char **argv) {
   airtableInit();
 
   // Process the arguments
-  ProgramArgs *cli = (ProgramArgs *) malloc(sizeof(ProgramArgs));
+  ProgramArgs* cli = (ProgramArgs*)malloc(sizeof(ProgramArgs));
   initializeDefaultArgs(cli);
   argp_parse(&argp, argc, argv, 0, 0, cli);
 
@@ -402,12 +403,12 @@ int main(int argc, char **argv) {
 
     // Generate realistic progress data
     ulong64 testFrameId = 1000000 + (rand() % 1000000);  // Frame IDs in realistic range
-    int testKernelId = rand() % 16;  // Kernel IDs 0-15
-    int testChunkId = rand() % 100;  // Chunk IDs 0-99
-    double testRate = 500000.0 + (rand() % 1000000);  // Realistic patterns/sec rate
+    int testKernelId = rand() % 16;                      // Kernel IDs 0-15
+    int testChunkId = rand() % 100;                      // Chunk IDs 0-99
+    double testRate = 500000.0 + (rand() % 1000000);     // Realistic patterns/sec rate
 
     // Generate realistic result data
-    int testGenerations = 180 + (rand() % 200);  // Generations 180-379 (realistic range)
+    int testGenerations = 180 + (rand() % 200);              // Generations 180-379 (realistic range)
     ulong64 testPattern = ((ulong64)rand() << 32) | rand();  // Random 64-bit pattern
 
     // Generate a realistic 64-bit binary pattern string
@@ -418,28 +419,30 @@ int main(int argc, char **argv) {
     testPatternBin[64] = '\0';
 
     // Test unified progress upload with best result data
-    printf("Testing progress upload (frameIdx=%llu, kernelIdx=%d, chunkIdx=%d, rate=%.0f, generations=%d, pattern=%llX)...\n",
-           testFrameId, testKernelId, testChunkId, testRate, testGenerations, testPattern);
-    bool sendProgressResult = airtableSendProgress(false, testFrameId, testKernelId, testChunkId, (ulong64)testRate, 
-                                                    testGenerations, testPattern, testPatternBin, true);
+    printf(
+        "Testing progress upload (frameIdx=%llu, kernelIdx=%d, chunkIdx=%d, rate=%.0f, generations=%d, "
+        "pattern=%llX)...\n",
+        testFrameId, testKernelId, testChunkId, testRate, testGenerations, testPattern);
+    bool sendProgressResult = airtableSendProgress(false, testFrameId, testKernelId, testChunkId, (ulong64)testRate,
+                                                   testGenerations, testPattern, testPatternBin, true);
     printf("Progress upload %s\n", sendProgressResult ? "succeeded" : "failed");
 
     // Test querying best result
     printf("Testing best result query...\n");
     int bestResult = airtableGetBestResult();
     if (bestResult >= 0) {
-        printf("Best result query succeeded: %d generations\n", bestResult);
+      printf("Best result query succeeded: %d generations\n", bestResult);
     } else {
-        printf("Best result query failed\n");
+      printf("Best result query failed\n");
     }
 
     // Test querying best complete frame
     printf("Testing best complete frame query...\n");
     ulong64 bestFrame = airtableGetBestCompleteFrame();
     if (bestFrame == ULLONG_MAX) {
-        printf("Best complete frame query: no completed frames found\n");
+      printf("Best complete frame query: no completed frames found\n");
     } else {
-        printf("Best complete frame query result: %llu\n", bestFrame);
+      printf("Best complete frame query result: %llu\n", bestFrame);
     }
 
     // Cleanup and exit
@@ -475,7 +478,7 @@ int main(int argc, char **argv) {
   }
 
   // Create and start threads, then wait for completion
-  ThreadContext *context = createAndStartThreads(cli);
+  ThreadContext* context = createAndStartThreads(cli);
   joinAndCleanupThreads(context);
   cleanupProgArgs(cli);
 
@@ -484,4 +487,3 @@ int main(int argc, char **argv) {
 
   return 0;
 }
-

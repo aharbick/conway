@@ -1,100 +1,52 @@
+#include <limits.h>
+#include <pthread.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
-#include <pthread.h>
-#include <limits.h>
-#include <unistd.h>
-#include <time.h>
 #include <string.h>
-#include "mt.h"
-#include "types.h"
-#include "display_utils.h"
+#include <time.h>
+#include <unistd.h>
 
 #include <set>
+
+#include "display_utils.h"
+#include "mt.h"
+#include "types.h"
 using namespace std;
 
 static const ulong64 gNeighborFilters[64] = {
-  // Row 0 pixels
-  (ulong64) 770,
-  (ulong64) 1797 << 0,
-  (ulong64) 1797 << 1,
-  (ulong64) 1797 << 2,
-  (ulong64) 1797 << 3,
-  (ulong64) 1797 << 4,
-  (ulong64) 1797 << 5,
-  (ulong64) 49216,
+    // Row 0 pixels
+    (ulong64)770, (ulong64)1797 << 0, (ulong64)1797 << 1, (ulong64)1797 << 2, (ulong64)1797 << 3, (ulong64)1797 << 4,
+    (ulong64)1797 << 5, (ulong64)49216,
 
-  // Row 1 pixels
-  (ulong64) 197123,
-  (ulong64) 460039 << 0,
-  (ulong64) 460039 << 1,
-  (ulong64) 460039 << 2,
-  (ulong64) 460039 << 3,
-  (ulong64) 460039 << 4,
-  (ulong64) 460039 << 5,
-  (ulong64) 12599488,
+    // Row 1 pixels
+    (ulong64)197123, (ulong64)460039 << 0, (ulong64)460039 << 1, (ulong64)460039 << 2, (ulong64)460039 << 3,
+    (ulong64)460039 << 4, (ulong64)460039 << 5, (ulong64)12599488,
 
 
-  // Row 2 pixels
-  (ulong64) 197123 << 8,
-  (ulong64) 460039 << 8 << 0,
-  (ulong64) 460039 << 8 << 1,
-  (ulong64) 460039 << 8 << 2,
-  (ulong64) 460039 << 8 << 3,
-  (ulong64) 460039 << 8 << 4,
-  (ulong64) 460039 << 8 << 5,
-  (ulong64) 12599488 << 8,
+    // Row 2 pixels
+    (ulong64)197123 << 8, (ulong64)460039 << 8 << 0, (ulong64)460039 << 8 << 1, (ulong64)460039 << 8 << 2,
+    (ulong64)460039 << 8 << 3, (ulong64)460039 << 8 << 4, (ulong64)460039 << 8 << 5, (ulong64)12599488 << 8,
 
-  // Row 3 pixels
-  (ulong64) 197123 << 16,
-  (ulong64) 460039 << 16 << 0,
-  (ulong64) 460039 << 16 << 1,
-  (ulong64) 460039 << 16 << 2,
-  (ulong64) 460039 << 16 << 3,
-  (ulong64) 460039 << 16 << 4,
-  (ulong64) 460039 << 16 << 5,
-  (ulong64) 12599488 << 16,
+    // Row 3 pixels
+    (ulong64)197123 << 16, (ulong64)460039 << 16 << 0, (ulong64)460039 << 16 << 1, (ulong64)460039 << 16 << 2,
+    (ulong64)460039 << 16 << 3, (ulong64)460039 << 16 << 4, (ulong64)460039 << 16 << 5, (ulong64)12599488 << 16,
 
-  // Row 4 pixels
-  (ulong64) 197123 << 24,
-  (ulong64) 460039 << 24 << 0,
-  (ulong64) 460039 << 24 << 1,
-  (ulong64) 460039 << 24 << 2,
-  (ulong64) 460039 << 24 << 3,
-  (ulong64) 460039 << 24 << 4,
-  (ulong64) 460039 << 24 << 5,
-  (ulong64) 12599488 << 24,
+    // Row 4 pixels
+    (ulong64)197123 << 24, (ulong64)460039 << 24 << 0, (ulong64)460039 << 24 << 1, (ulong64)460039 << 24 << 2,
+    (ulong64)460039 << 24 << 3, (ulong64)460039 << 24 << 4, (ulong64)460039 << 24 << 5, (ulong64)12599488 << 24,
 
-  // Row 5 pixels
-  (ulong64) 197123 << 32,
-  (ulong64) 460039 << 32 << 0,
-  (ulong64) 460039 << 32 << 1,
-  (ulong64) 460039 << 32 << 2,
-  (ulong64) 460039 << 32 << 3,
-  (ulong64) 460039 << 32 << 4,
-  (ulong64) 460039 << 32 << 5,
-  (ulong64) 12599488 << 32,
+    // Row 5 pixels
+    (ulong64)197123 << 32, (ulong64)460039 << 32 << 0, (ulong64)460039 << 32 << 1, (ulong64)460039 << 32 << 2,
+    (ulong64)460039 << 32 << 3, (ulong64)460039 << 32 << 4, (ulong64)460039 << 32 << 5, (ulong64)12599488 << 32,
 
-  // Row 6 pixels
-  (ulong64) 197123 << 40,
-  (ulong64) 460039 << 40 << 0,
-  (ulong64) 460039 << 40 << 1,
-  (ulong64) 460039 << 40 << 2,
-  (ulong64) 460039 << 40 << 3,
-  (ulong64) 460039 << 40 << 4,
-  (ulong64) 460039 << 40 << 5,
-  (ulong64) 12599488 << 40,
+    // Row 6 pixels
+    (ulong64)197123 << 40, (ulong64)460039 << 40 << 0, (ulong64)460039 << 40 << 1, (ulong64)460039 << 40 << 2,
+    (ulong64)460039 << 40 << 3, (ulong64)460039 << 40 << 4, (ulong64)460039 << 40 << 5, (ulong64)12599488 << 40,
 
-  // Row 7 pixels
-  (ulong64) 515 << 48,
-  (ulong64) 1287 << 48 << 0,
-  (ulong64) 1287 << 48 << 1,
-  (ulong64) 1287 << 48 << 2,
-  (ulong64) 1287 << 48 << 3,
-  (ulong64) 1287 << 48 << 4,
-  (ulong64) 1287 << 48 << 5,
-  (ulong64) 16576 << 48
-};
+    // Row 7 pixels
+    (ulong64)515 << 48, (ulong64)1287 << 48 << 0, (ulong64)1287 << 48 << 1, (ulong64)1287 << 48 << 2,
+    (ulong64)1287 << 48 << 3, (ulong64)1287 << 48 << 4, (ulong64)1287 << 48 << 5, (ulong64)16576 << 48};
 
 ulong64 computeNextGeneration(ulong64 currentGeneration) {
   ulong64 nextGeneration = currentGeneration;
@@ -105,13 +57,11 @@ ulong64 computeNextGeneration(ulong64 currentGeneration) {
       if (neighbors <= 1) {
         // DIE - lonely
         nextGeneration &= ~(1ULL << i);
-      }
-      else if (neighbors >= 4) {
+      } else if (neighbors >= 4) {
         // DIE - too crowded
         nextGeneration &= ~(1ULL << i);
       }
-    }
-    else {
+    } else {
       // Currently dead
       if (neighbors == 3) {
         // BIRTH - perfect number of neighbors
@@ -192,25 +142,24 @@ ulong64 computeNextGeneration(ulong64 currentGeneration) {
 bool coverableByXxY(ulong64 pattern, int x, int y) {
   static ulong64 masks[64] = {0};
   static int convolutions[64] = {0};
-  if (masks[x*y] == 0) {
-    convolutions[x*y] = (8-x+1) * (8-y+1);
+  if (masks[x * y] == 0) {
+    convolutions[x * y] = (8 - x + 1) * (8 - y + 1);
     for (int i = 0; i < y; i++) {
-      masks[x*y] <<= 8;
-      masks[x*y] |= (1<<x)-1;
+      masks[x * y] <<= 8;
+      masks[x * y] |= (1 << x) - 1;
     }
   }
 
-  ulong64 mask = masks[x*y];
-  int iters = convolutions[x*y];
+  ulong64 mask = masks[x * y];
+  int iters = convolutions[x * y];
   for (int i = 0; i < iters; i++) {
     if ((pattern & mask) > 0 && (pattern & ~mask) == 0) {
       return true;
     }
 
-    if (x != 8 && ((i+1)%(8-x+1)) == 0) {
+    if (x != 8 && ((i + 1) % (8 - x + 1)) == 0) {
       mask <<= 1;
-    }
-    else {
+    } else {
       mask <<= x;
     }
   }
@@ -222,7 +171,7 @@ int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
 
   // Initialize Random number generator
-  init_genrand64((ulong64) time(NULL));
+  init_genrand64((ulong64)time(NULL));
 
   int x = 7;
   int y = 5;
@@ -235,7 +184,7 @@ int main(int argc, char **argv) {
   ulong64 savedGenerations = 0;
 
   // Check 1m random numbers
-  for (ulong64 i = 0; i < 1000*1000; i++) {
+  for (ulong64 i = 0; i < 1000 * 1000; i++) {
     ulong64 pattern = genrand64_int64() % ULONG_MAX;
 
     ulong64 generations = 0;
@@ -255,7 +204,7 @@ int main(int argc, char **argv) {
       ulong64 nextGen = computeNextGeneration(currentGen);
 
       // We found a terminal pattern if we found a pattern that doesn't change with computeNextGeneration()
-      if (nextGen == 0 || currentGen == nextGen)  {
+      if (nextGen == 0 || currentGen == nextGen) {
         break;
       }
 
@@ -269,6 +218,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  printf("Total generations: %llu, saved generations: %llu (%2.2f%%)\n",
-         totalGenerations, savedGenerations, (float) savedGenerations/totalGenerations * 100);
+  printf("Total generations: %llu, saved generations: %llu (%2.2f%%)\n", totalGenerations, savedGenerations,
+         (float)savedGenerations / totalGenerations * 100);
 }

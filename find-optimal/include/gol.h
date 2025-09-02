@@ -2,14 +2,14 @@
 #define _GOL_H_
 
 #include <assert.h>
-#include <stdbool.h>
+#include <limits.h>
+#include <locale.h>
 #include <pthread.h>
-#include <unistd.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <limits.h>
-#include <locale.h>
+#include <unistd.h>
 
 #ifdef __NVCC__
 #include <cuda.h>
@@ -19,13 +19,14 @@
 #define __global__
 #endif
 
-#include "mt.h" // For mersenne twister random numbers
-#include "types.h"
-#include "frame_utils.h"
-#include "display_utils.h"
-#include "airtable_client.h"
-#include "gol_core.h" // Core GOL computation functions
 #include <stdarg.h>
+
+#include "airtable_client.h"
+#include "display_utils.h"
+#include "frame_utils.h"
+#include "gol_core.h"  // Core GOL computation functions
+#include "mt.h"        // For mersenne twister random numbers
+#include "types.h"
 
 // User-configurable defaults (can be overridden via command line)
 #define DEFAULT_CUDA_GRID_SIZE 1024
@@ -38,7 +39,7 @@
 #define FRAME_SEARCH_NUM_KERNELS 16
 #define FRAME_SEARCH_DEFAULT_CHUNK_SIZE 32768
 #define FRAME_SEARCH_MAX_CHUNK_SIZE 65536
-#define FRAME_SEARCH_MAX_CANDIDATES (1<<30)
+#define FRAME_SEARCH_MAX_CANDIDATES (1 << 30)
 #define FRAME_SEARCH_MAX_FRAMES (1 << 24)
 #define FRAME_SEARCH_KERNEL_PATTERN_INCREMENT 0x1000000ULL
 #define FRAME_SEARCH_TOTAL_MINIMAL_FRAMES 2102800
@@ -48,18 +49,15 @@
 #define GOL_VERTICAL_SHIFT_MASK 0xFEFEFEFEFEFEFEFE
 
 // Random search constants
-#define RANDOM_SEARCH_CHUNK_SIZE (1<<20)
-#define RANDOM_SEARCH_MAX_CANDIDATES (1<<20)
+#define RANDOM_SEARCH_CHUNK_SIZE (1 << 20)
+#define RANDOM_SEARCH_MAX_CANDIDATES (1 << 20)
 
 // Generation counting constants
 #define MIN_CANDIDATE_GENERATIONS 180
 #define FAST_SEARCH_MAX_GENERATIONS 300
 
 // Search type enumeration
-typedef enum {
-  SEARCH_TYPE_FRAME_BASED,
-  SEARCH_TYPE_RANDOM
-} SearchType;
+typedef enum { SEARCH_TYPE_FRAME_BASED, SEARCH_TYPE_RANDOM } SearchType;
 
 // Common buffer sizes
 #define BINARY_STRING_BUFFER_SIZE 65
@@ -89,7 +87,7 @@ typedef struct ProgramArgs {
   ulong64 chunkSize;
 } ProgramArgs;
 
-__host__ void printThreadStatus(int threadId, const char* format, ...) {
+__host__ void printThreadStatus(int threadId, const char *format, ...) {
   va_list args;
   va_start(args, format);
   printf("[Thread %d - %llu] ", threadId, (ulong64)time(NULL));
@@ -99,10 +97,11 @@ __host__ void printThreadStatus(int threadId, const char* format, ...) {
 }
 
 #ifdef __NVCC__
-#define cudaCheckError(ans) { cudaAssert((ans), __FILE__, __LINE__); }
+#define cudaCheckError(ans) \
+  { cudaAssert((ans), __FILE__, __LINE__); }
 inline void cudaAssert(cudaError_t code, const char *file, int line) {
   if (code != cudaSuccess) {
-    fprintf(stderr,"CUDA Error: %s %s %d\n", cudaGetErrorString(code), file, line);
+    fprintf(stderr, "CUDA Error: %s %s %d\n", cudaGetErrorString(code), file, line);
     exit(code);
   }
 }
@@ -112,26 +111,27 @@ typedef struct {
   ulong64 *h_candidates, *h_numCandidates, *h_bestPattern, *h_bestGenerations;
 } SearchMemory;
 
-__host__ SearchMemory* allocateSearchMemory(size_t candidateSize) {
-  SearchMemory* mem = (SearchMemory*)malloc(sizeof(SearchMemory));
+__host__ SearchMemory *allocateSearchMemory(size_t candidateSize) {
+  SearchMemory *mem = (SearchMemory *)malloc(sizeof(SearchMemory));
 
   // Allocate device memory
-  cudaCheckError(cudaMalloc((void**)&mem->d_candidates, sizeof(ulong64) * candidateSize));
-  cudaCheckError(cudaMalloc((void**)&mem->d_numCandidates, sizeof(ulong64)));
-  cudaCheckError(cudaMalloc((void**)&mem->d_bestPattern, sizeof(ulong64)));
-  cudaCheckError(cudaMalloc((void**)&mem->d_bestGenerations, sizeof(ulong64)));
+  cudaCheckError(cudaMalloc((void **)&mem->d_candidates, sizeof(ulong64) * candidateSize));
+  cudaCheckError(cudaMalloc((void **)&mem->d_numCandidates, sizeof(ulong64)));
+  cudaCheckError(cudaMalloc((void **)&mem->d_bestPattern, sizeof(ulong64)));
+  cudaCheckError(cudaMalloc((void **)&mem->d_bestGenerations, sizeof(ulong64)));
 
   // Allocate host memory
-  mem->h_candidates = (ulong64*)calloc(candidateSize, sizeof(ulong64));
-  mem->h_numCandidates = (ulong64*)malloc(sizeof(ulong64));
-  mem->h_bestPattern = (ulong64*)malloc(sizeof(ulong64));
-  mem->h_bestGenerations = (ulong64*)malloc(sizeof(ulong64));
+  mem->h_candidates = (ulong64 *)calloc(candidateSize, sizeof(ulong64));
+  mem->h_numCandidates = (ulong64 *)malloc(sizeof(ulong64));
+  mem->h_bestPattern = (ulong64 *)malloc(sizeof(ulong64));
+  mem->h_bestGenerations = (ulong64 *)malloc(sizeof(ulong64));
 
   return mem;
 }
 
-__host__ void freeSearchMemory(SearchMemory* mem) {
-  if (!mem) return;
+__host__ void freeSearchMemory(SearchMemory *mem) {
+  if (!mem)
+    return;
 
   // Free device memory
   cudaCheckError(cudaFree(mem->d_candidates));
@@ -148,28 +148,30 @@ __host__ void freeSearchMemory(SearchMemory* mem) {
   free(mem);
 }
 
-__host__ void reportChunkResults(SearchMemory* mem, ProgramArgs* cli, double startTime, ulong64 frame, ulong64 frameIdx, int kernelIdx, int chunkIdx, bool isFrameComplete) {
+__host__ void reportChunkResults(SearchMemory *mem, ProgramArgs *cli, double startTime, ulong64 frame, ulong64 frameIdx,
+                                 int kernelIdx, int chunkIdx, bool isFrameComplete) {
   double chunkTime = getCurrentTime() - startTime;
   ulong64 patternsPerSec = (FRAME_SEARCH_TOTAL_THREADS * cli->chunkSize) / chunkTime;
-  
+
   if (*mem->h_numCandidates <= 0) {
-    printf("[Thread %d - %llu] WARN: NO PATTERNS FOUND frameIdx=%llu, kernelIdx=%d, chunkIdx=%d\n",
-           cli->threadId, (ulong64)time(NULL), frameIdx, kernelIdx, chunkIdx);
-    
-    airtableSendProgress(isFrameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSec, 
-                          0, 0, "ERROR", false);
+    printf("[Thread %d - %llu] WARN: NO PATTERNS FOUND frameIdx=%llu, kernelIdx=%d, chunkIdx=%d\n", cli->threadId,
+           (ulong64)time(NULL), frameIdx, kernelIdx, chunkIdx);
+
+    airtableSendProgress(isFrameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSec, 0, 0, "ERROR", false);
     return;
   }
-  
+
   char bestPatternBin[BINARY_STRING_BUFFER_SIZE] = {'\0'};
   asBinary(*mem->h_bestPattern, bestPatternBin);
-  
-  printf("[Thread %d - %llu] frameIdx=%llu, kernelIdx=%d, chunkIdx=%d, bestGenerations=%d, bestPattern=%llu, bestPatternBin=%s, patternsPerSec=%llu\n",
-         cli->threadId, (ulong64)time(NULL), frameIdx, kernelIdx, chunkIdx, 
-         (int)*mem->h_bestGenerations, *mem->h_bestPattern, bestPatternBin, patternsPerSec);
 
-  airtableSendProgress(isFrameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSec, 
-                        (int)*mem->h_bestGenerations, *mem->h_bestPattern, bestPatternBin, false);
+  printf(
+      "[Thread %d - %llu] frameIdx=%llu, kernelIdx=%d, chunkIdx=%d, bestGenerations=%d, bestPattern=%llu, "
+      "bestPatternBin=%s, patternsPerSec=%llu\n",
+      cli->threadId, (ulong64)time(NULL), frameIdx, kernelIdx, chunkIdx, (int)*mem->h_bestGenerations,
+      *mem->h_bestPattern, bestPatternBin, patternsPerSec);
+
+  airtableSendProgress(isFrameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSec, (int)*mem->h_bestGenerations,
+                       *mem->h_bestPattern, bestPatternBin, false);
 }
 #endif
 
@@ -181,12 +183,12 @@ int gBestGenerations = 0;
 
 __host__ bool updateBestGenerations(int generations) {
   pthread_mutex_lock(&gMutex);
-  
+
   bool isNewGlobalBest = (gBestGenerations < generations);
   if (isNewGlobalBest) {
     gBestGenerations = generations;
   }
-  
+
   pthread_mutex_unlock(&gMutex);
   return isNewGlobalBest;
 }
@@ -194,8 +196,8 @@ __host__ bool updateBestGenerations(int generations) {
 // Core GOL functions now included from gol_core.h
 
 #ifdef __NVCC__
-__global__ void processCandidates(ulong64 *candidates, ulong64 *numCandidates,
-                                  ulong64 *bestPattern, ulong64 *bestGenerations) {
+__global__ void processCandidates(ulong64 *candidates, ulong64 *numCandidates, ulong64 *bestPattern,
+                                  ulong64 *bestGenerations) {
   for (ulong64 i = blockIdx.x * blockDim.x + threadIdx.x; i < *numCandidates; i += blockDim.x * gridDim.x) {
     ulong64 generations = countGenerations(candidates[i]);
     if (generations > 0) {  // Only process if it actually ended
@@ -208,8 +210,7 @@ __global__ void processCandidates(ulong64 *candidates, ulong64 *numCandidates,
   }
 }
 
-__global__ void findCandidates(ulong64 beginAt, ulong64 endAt,
-                               ulong64 *candidates, ulong64 *numCandidates) {
+__global__ void findCandidates(ulong64 beginAt, ulong64 endAt, ulong64 *candidates, ulong64 *numCandidates) {
   ulong64 pattern = beginAt + (blockIdx.x * blockDim.x + threadIdx.x);
   ulong64 g1 = pattern;
   ulong64 generations = 0;
@@ -223,7 +224,8 @@ __global__ void findCandidates(ulong64 beginAt, ulong64 endAt,
   }
 }
 
-__global__ void findCandidatesInKernel(ulong64 kernel, int chunkIdx, ulong64 chunkSize, ulong64 *candidates, ulong64 *numCandidates) {
+__global__ void findCandidatesInKernel(ulong64 kernel, int chunkIdx, ulong64 chunkSize, ulong64 *candidates,
+                                       ulong64 *numCandidates) {
   // Construct the starting pattern for this thread
   ulong64 pattern = kernel;
   pattern += ((ulong64)(threadIdx.x & 15)) << 10;  // lower row of T bits
@@ -248,7 +250,7 @@ __global__ void findCandidatesInKernel(ulong64 kernel, int chunkIdx, ulong64 chu
 }
 
 
-__host__ void executeCandidateSearch(SearchMemory* mem, ProgramArgs* cli, ulong64 start, ulong64 end) {
+__host__ void executeCandidateSearch(SearchMemory *mem, ProgramArgs *cli, ulong64 start, ulong64 end) {
   // Phase 1: Find candidates
   *mem->h_numCandidates = 0;
   cudaCheckError(cudaMemcpy(mem->d_numCandidates, mem->h_numCandidates, sizeof(ulong64), cudaMemcpyHostToDevice));
@@ -263,40 +265,41 @@ __host__ void executeCandidateSearch(SearchMemory* mem, ProgramArgs* cli, ulong6
     *mem->h_bestPattern = 0;
     cudaCheckError(cudaMemcpy(mem->d_bestGenerations, mem->h_bestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice));
     cudaCheckError(cudaMemcpy(mem->d_bestPattern, mem->h_bestPattern, sizeof(ulong64), cudaMemcpyHostToDevice));
-    processCandidates<<<cli->blockSize, cli->threadsPerBlock>>>(mem->d_candidates, mem->d_numCandidates, mem->d_bestPattern, mem->d_bestGenerations);
+    processCandidates<<<cli->blockSize, cli->threadsPerBlock>>>(mem->d_candidates, mem->d_numCandidates,
+                                                                mem->d_bestPattern, mem->d_bestGenerations);
     cudaCheckError(cudaGetLastError());
     cudaCheckError(cudaDeviceSynchronize());
 
     cudaCheckError(cudaMemcpy(mem->h_bestPattern, mem->d_bestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost));
     cudaCheckError(cudaMemcpy(mem->h_bestGenerations, mem->d_bestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost));
     bool isNewGlobalBest = updateBestGenerations(*mem->h_bestGenerations);
-    
+
     // Print result for new best
     if (isNewGlobalBest) {
       char bin[BINARY_STRING_BUFFER_SIZE] = {'\0'};
       asBinary(*mem->h_bestPattern, bin);
-      printf("[Thread %d - %llu] %s%d generations : %llu : %s\n",
-             cli->threadId, (ulong64)time(NULL), "NEW HIGH ", 
+      printf("[Thread %d - %llu] %s%d generations : %llu : %s\n", cli->threadId, (ulong64)time(NULL), "NEW HIGH ",
              (int)*mem->h_bestGenerations, *mem->h_bestPattern, bin);
     }
   }
 }
 
-__host__ void executeKernelSearch(SearchMemory* mem, ProgramArgs* cli, ulong64 frame, ulong64 frameIdx) {
+__host__ void executeKernelSearch(SearchMemory *mem, ProgramArgs *cli, ulong64 frame, ulong64 frameIdx) {
   int numChunks = FRAME_SEARCH_MAX_CHUNK_SIZE / cli->chunkSize;
-  
+
   // Loop over all kernels for this frame
   for (int kernelIdx = 0; kernelIdx < FRAME_SEARCH_NUM_KERNELS; kernelIdx++) {
     ulong64 kernel = constructKernel(frame, kernelIdx);
-    
+
     // Loop over all chunks for this kernel
     for (int chunkIdx = 0; chunkIdx < numChunks; chunkIdx++) {
       double chunkStartTime = getCurrentTime();
-      
+
       // Phase 1: Find candidates in kernel
       *mem->h_numCandidates = 0;
       cudaCheckError(cudaMemcpy(mem->d_numCandidates, mem->h_numCandidates, sizeof(ulong64), cudaMemcpyHostToDevice));
-      findCandidatesInKernel<<<FRAME_SEARCH_GRID_SIZE,FRAME_SEARCH_THREADS_PER_BLOCK>>>(kernel, chunkIdx, cli->chunkSize, mem->d_candidates, mem->d_numCandidates);
+      findCandidatesInKernel<<<FRAME_SEARCH_GRID_SIZE, FRAME_SEARCH_THREADS_PER_BLOCK>>>(
+          kernel, chunkIdx, cli->chunkSize, mem->d_candidates, mem->d_numCandidates);
       cudaCheckError(cudaGetLastError());
       cudaCheckError(cudaDeviceSynchronize());
       cudaCheckError(cudaMemcpy(mem->h_numCandidates, mem->d_numCandidates, sizeof(ulong64), cudaMemcpyDeviceToHost));
@@ -305,15 +308,18 @@ __host__ void executeKernelSearch(SearchMemory* mem, ProgramArgs* cli, ulong64 f
       if (*mem->h_numCandidates > 0) {
         *mem->h_bestGenerations = 0;
         *mem->h_bestPattern = 0;
-        cudaCheckError(cudaMemcpy(mem->d_bestGenerations, mem->h_bestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice));
+        cudaCheckError(
+            cudaMemcpy(mem->d_bestGenerations, mem->h_bestGenerations, sizeof(ulong64), cudaMemcpyHostToDevice));
         cudaCheckError(cudaMemcpy(mem->d_bestPattern, mem->h_bestPattern, sizeof(ulong64), cudaMemcpyHostToDevice));
-        processCandidates<<<FRAME_SEARCH_GRID_SIZE,FRAME_SEARCH_THREADS_PER_BLOCK>>>(mem->d_candidates, mem->d_numCandidates, mem->d_bestPattern, mem->d_bestGenerations);
+        processCandidates<<<FRAME_SEARCH_GRID_SIZE, FRAME_SEARCH_THREADS_PER_BLOCK>>>(
+            mem->d_candidates, mem->d_numCandidates, mem->d_bestPattern, mem->d_bestGenerations);
         cudaCheckError(cudaGetLastError());
         cudaCheckError(cudaDeviceSynchronize());
 
         cudaCheckError(cudaMemcpy(mem->h_bestPattern, mem->d_bestPattern, sizeof(ulong64), cudaMemcpyDeviceToHost));
-        cudaCheckError(cudaMemcpy(mem->h_bestGenerations, mem->d_bestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost));
-        
+        cudaCheckError(
+            cudaMemcpy(mem->h_bestGenerations, mem->d_bestGenerations, sizeof(ulong64), cudaMemcpyDeviceToHost));
+
         bool isNewGlobalBest = updateBestGenerations(*mem->h_bestGenerations);
 
         // Report chunk results if verbose output is enabled
@@ -327,9 +333,9 @@ __host__ void executeKernelSearch(SearchMemory* mem, ProgramArgs* cli, ulong64 f
 }
 
 __host__ void searchRandom(ProgramArgs *cli) {
-  init_genrand64((ulong64) time(NULL));
+  init_genrand64((ulong64)time(NULL));
 
-  SearchMemory* mem = allocateSearchMemory(RANDOM_SEARCH_MAX_CANDIDATES);
+  SearchMemory *mem = allocateSearchMemory(RANDOM_SEARCH_MAX_CANDIDATES);
 
   // We're randomly searching..  I didn't get cuRAND to work so we randomize our batches. Each
   // call to findCandidates is sequential but we look at random locations across all possible.
@@ -347,7 +353,7 @@ __host__ void searchRandom(ProgramArgs *cli) {
 
 // See the algorithm described in PERFORMANCE under "Eliminating Rotations"
 __host__ void searchAll(ProgramArgs *cli) {
-  SearchMemory* mem = allocateSearchMemory(FRAME_SEARCH_MAX_CANDIDATES);
+  SearchMemory *mem = allocateSearchMemory(FRAME_SEARCH_MAX_CANDIDATES);
 
   // Iterate through frame range or all possible 24-bit numbers and use spreadBitsToFrame to cover all 64-bit "frames"
   // Frames in the 8x8 grid are the 24 corner bits marked with F.
@@ -386,18 +392,18 @@ __host__ void searchAll(ProgramArgs *cli) {
 #else
 // CPU version
 __host__ void searchRandom(ProgramArgs *cli) {
-  init_genrand64((ulong64) time(NULL));
+  init_genrand64((ulong64)time(NULL));
 
   for (ulong64 i = 0; i < cli->randomSamples; i++) {
     ulong64 pattern = genrand64_int64();
     int generations = countGenerations(pattern);
     bool isNewGlobalBest = updateBestGenerations(generations);
-    
+
     if (isNewGlobalBest) {
       char bin[BINARY_STRING_BUFFER_SIZE] = {'\0'};
       asBinary(pattern, bin);
-      printf("[Thread %d - %llu] %s%d generations : %llu : %s\n",
-             cli->threadId, (ulong64)time(NULL), "NEW HIGH ", generations, pattern, bin);
+      printf("[Thread %d - %llu] %s%d generations : %llu : %s\n", cli->threadId, (ulong64)time(NULL), "NEW HIGH ",
+             generations, pattern, bin);
     }
   }
 }
@@ -406,18 +412,18 @@ __host__ void searchAll(ProgramArgs *cli) {
   for (ulong64 i = cli->beginAt; i < cli->endAt; i++) {
     int generations = countGenerations(i);
     bool isNewGlobalBest = updateBestGenerations(generations);
-    
+
     if (isNewGlobalBest) {
       char bin[BINARY_STRING_BUFFER_SIZE] = {'\0'};
       asBinary(i, bin);
-      printf("[Thread %d - %llu] %s%d generations : %llu : %s\n",
-             cli->threadId, (ulong64)time(NULL), "NEW HIGH ", generations, i, bin);
+      printf("[Thread %d - %llu] %s%d generations : %llu : %s\n", cli->threadId, (ulong64)time(NULL), "NEW HIGH ",
+             generations, i, bin);
     }
   }
 }
 #endif
 
-__host__ const char* getSearchDescription(ProgramArgs* cli, char* buffer, size_t bufferSize) {
+__host__ const char *getSearchDescription(ProgramArgs *cli, char *buffer, size_t bufferSize) {
   if (cli->beginAt > 0 || cli->endAt > 0) {
     snprintf(buffer, bufferSize, "ALL in range (%llu - %llu)", cli->beginAt, cli->endAt);
   } else if (cli->frameBeginIdx > 0 || cli->frameEndIdx > 0) {
@@ -440,8 +446,7 @@ __host__ void *search(void *args) {
   if (cli->random) {
     printThreadStatus(cli->threadId, "searching RANDOMLY %llu candidates", cli->randomSamples);
     searchRandom(cli);
-  }
-  else {
+  } else {
     char searchRangeMessage[MESSAGE_BUFFER_SIZE] = {'\0'};
     getSearchDescription(cli, searchRangeMessage, sizeof(searchRangeMessage));
     printThreadStatus(cli->threadId, "searching %s", searchRangeMessage);
@@ -452,4 +457,3 @@ __host__ void *search(void *args) {
 }
 
 #endif
-
