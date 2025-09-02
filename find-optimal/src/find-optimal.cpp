@@ -88,7 +88,7 @@ static bool validateUnsignedLongString(const char* str, const char* name) {
   return true;
 }
 
-static bool validateRange(ulong64 begin, ulong64 end, const char* beginStr, const char* endStr) {
+static bool validateRange(uint64_t begin, uint64_t end, const char* beginStr, const char* endStr) {
   if (end <= begin) {
     printf("[WARN] invalid range '%s:%s', end must be greater than begin\n", beginStr, endStr);
     return false;
@@ -193,7 +193,7 @@ static void printCudaDeviceInfo(ProgramArgs* cli) {
 }
 #endif
 
-static ProgramArgs* createThreadArgs(ProgramArgs* cli, int threadId, ulong64 patternsPerThread) {
+static ProgramArgs* createThreadArgs(ProgramArgs* cli, int threadId, uint64_t patternsPerThread) {
   ProgramArgs* targs = (ProgramArgs*)malloc(sizeof(ProgramArgs));
   memcpy(targs, cli, sizeof(ProgramArgs));
   targs->threadId = threadId;
@@ -211,7 +211,7 @@ typedef struct {
 } ThreadContext;
 
 static ThreadContext* createAndStartThreads(ProgramArgs* cli) {
-  ulong64 patternsPerThread = ((cli->endAt > 0) ? cli->endAt - cli->beginAt : ULONG_MAX) / cli->cpuThreads;
+  uint64_t patternsPerThread = ((cli->endAt > 0) ? cli->endAt - cli->beginAt : ULONG_MAX) / cli->cpuThreads;
 
   ThreadContext* context = (ThreadContext*)malloc(sizeof(ThreadContext));
   context->threads = (pthread_t*)malloc(sizeof(pthread_t) * cli->cpuThreads);
@@ -227,7 +227,7 @@ static ThreadContext* createAndStartThreads(ProgramArgs* cli) {
 }
 
 static void printThreadCompletion(int threadId, const char* status) {
-  printf("\n[Thread %d - %llu] %s\n", threadId, (ulong64)time(NULL), status);
+  printf("\n[Thread %d - %llu] %s\n", threadId, (uint64_t)time(NULL), status);
 }
 
 static void joinAndCleanupThreads(ThreadContext* context) {
@@ -245,7 +245,7 @@ static void cleanupProgArgs(ProgramArgs* cli) {
   free(cli);
 }
 
-static bool parseRange(char* arg, ulong64* begin, ulong64* end, ulong64 defaultEnd) {
+static bool parseRange(char* arg, uint64_t* begin, uint64_t* end, uint64_t defaultEnd) {
   if (!arg || *arg == '\0') {
     printf("[ERROR] range cannot be empty\n");
     return false;
@@ -402,14 +402,14 @@ int main(int argc, char** argv) {
     srand(now);  // Seed random number generator with current time
 
     // Generate realistic progress data
-    ulong64 testFrameId = 1000000 + (rand() % 1000000);  // Frame IDs in realistic range
-    int testKernelId = rand() % 16;                      // Kernel IDs 0-15
-    int testChunkId = rand() % 100;                      // Chunk IDs 0-99
-    double testRate = 500000.0 + (rand() % 1000000);     // Realistic patterns/sec rate
+    uint64_t testFrameId = 1000000 + (rand() % 1000000);  // Frame IDs in realistic range
+    int testKernelId = rand() % 16;                       // Kernel IDs 0-15
+    int testChunkId = rand() % 100;                       // Chunk IDs 0-99
+    double testRate = 500000.0 + (rand() % 1000000);      // Realistic patterns/sec rate
 
     // Generate realistic result data
-    int testGenerations = 180 + (rand() % 200);              // Generations 180-379 (realistic range)
-    ulong64 testPattern = ((ulong64)rand() << 32) | rand();  // Random 64-bit pattern
+    int testGenerations = 180 + (rand() % 200);                // Generations 180-379 (realistic range)
+    uint64_t testPattern = ((uint64_t)rand() << 32) | rand();  // Random 64-bit pattern
 
     // Generate a realistic 64-bit binary pattern string
     char testPatternBin[65];
@@ -423,7 +423,7 @@ int main(int argc, char** argv) {
         "Testing progress upload (frameIdx=%llu, kernelIdx=%d, chunkIdx=%d, rate=%.0f, generations=%d, "
         "pattern=%llX)...\n",
         testFrameId, testKernelId, testChunkId, testRate, testGenerations, testPattern);
-    bool sendProgressResult = airtableSendProgress(false, testFrameId, testKernelId, testChunkId, (ulong64)testRate,
+    bool sendProgressResult = airtableSendProgress(false, testFrameId, testKernelId, testChunkId, (uint64_t)testRate,
                                                    testGenerations, testPattern, testPatternBin, true);
     printf("Progress upload %s\n", sendProgressResult ? "succeeded" : "failed");
 
@@ -438,7 +438,7 @@ int main(int argc, char** argv) {
 
     // Test querying best complete frame
     printf("Testing best complete frame query...\n");
-    ulong64 bestFrame = airtableGetBestCompleteFrame();
+    uint64_t bestFrame = airtableGetBestCompleteFrame();
     if (bestFrame == ULLONG_MAX) {
       printf("Best complete frame query: no completed frames found\n");
     } else {
@@ -458,7 +458,7 @@ int main(int argc, char** argv) {
   // Handle resume from database if requested
   if (cli->frameBeginIdx == ULLONG_MAX) {
     // User specified "resume" - query database for last completed frame
-    ulong64 resumeFrame = airtableGetBestCompleteFrame();
+    uint64_t resumeFrame = airtableGetBestCompleteFrame();
     if (resumeFrame == ULLONG_MAX) {
       // No completed frames found in database or error occurred
       cli->frameBeginIdx = 0;

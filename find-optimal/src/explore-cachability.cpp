@@ -7,51 +7,51 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <cstdint>
 #include <set>
 
 #include "display_utils.h"
 #include "mt.h"
-#include "types.h"
 using namespace std;
 
-static const ulong64 gNeighborFilters[64] = {
+static const uint64_t gNeighborFilters[64] = {
     // Row 0 pixels
-    (ulong64)770, (ulong64)1797 << 0, (ulong64)1797 << 1, (ulong64)1797 << 2, (ulong64)1797 << 3, (ulong64)1797 << 4,
-    (ulong64)1797 << 5, (ulong64)49216,
+    (uint64_t)770, (uint64_t)1797 << 0, (uint64_t)1797 << 1, (uint64_t)1797 << 2, (uint64_t)1797 << 3,
+    (uint64_t)1797 << 4, (uint64_t)1797 << 5, (uint64_t)49216,
 
     // Row 1 pixels
-    (ulong64)197123, (ulong64)460039 << 0, (ulong64)460039 << 1, (ulong64)460039 << 2, (ulong64)460039 << 3,
-    (ulong64)460039 << 4, (ulong64)460039 << 5, (ulong64)12599488,
+    (uint64_t)197123, (uint64_t)460039 << 0, (uint64_t)460039 << 1, (uint64_t)460039 << 2, (uint64_t)460039 << 3,
+    (uint64_t)460039 << 4, (uint64_t)460039 << 5, (uint64_t)12599488,
 
 
     // Row 2 pixels
-    (ulong64)197123 << 8, (ulong64)460039 << 8 << 0, (ulong64)460039 << 8 << 1, (ulong64)460039 << 8 << 2,
-    (ulong64)460039 << 8 << 3, (ulong64)460039 << 8 << 4, (ulong64)460039 << 8 << 5, (ulong64)12599488 << 8,
+    (uint64_t)197123 << 8, (uint64_t)460039 << 8 << 0, (uint64_t)460039 << 8 << 1, (uint64_t)460039 << 8 << 2,
+    (uint64_t)460039 << 8 << 3, (uint64_t)460039 << 8 << 4, (uint64_t)460039 << 8 << 5, (uint64_t)12599488 << 8,
 
     // Row 3 pixels
-    (ulong64)197123 << 16, (ulong64)460039 << 16 << 0, (ulong64)460039 << 16 << 1, (ulong64)460039 << 16 << 2,
-    (ulong64)460039 << 16 << 3, (ulong64)460039 << 16 << 4, (ulong64)460039 << 16 << 5, (ulong64)12599488 << 16,
+    (uint64_t)197123 << 16, (uint64_t)460039 << 16 << 0, (uint64_t)460039 << 16 << 1, (uint64_t)460039 << 16 << 2,
+    (uint64_t)460039 << 16 << 3, (uint64_t)460039 << 16 << 4, (uint64_t)460039 << 16 << 5, (uint64_t)12599488 << 16,
 
     // Row 4 pixels
-    (ulong64)197123 << 24, (ulong64)460039 << 24 << 0, (ulong64)460039 << 24 << 1, (ulong64)460039 << 24 << 2,
-    (ulong64)460039 << 24 << 3, (ulong64)460039 << 24 << 4, (ulong64)460039 << 24 << 5, (ulong64)12599488 << 24,
+    (uint64_t)197123 << 24, (uint64_t)460039 << 24 << 0, (uint64_t)460039 << 24 << 1, (uint64_t)460039 << 24 << 2,
+    (uint64_t)460039 << 24 << 3, (uint64_t)460039 << 24 << 4, (uint64_t)460039 << 24 << 5, (uint64_t)12599488 << 24,
 
     // Row 5 pixels
-    (ulong64)197123 << 32, (ulong64)460039 << 32 << 0, (ulong64)460039 << 32 << 1, (ulong64)460039 << 32 << 2,
-    (ulong64)460039 << 32 << 3, (ulong64)460039 << 32 << 4, (ulong64)460039 << 32 << 5, (ulong64)12599488 << 32,
+    (uint64_t)197123 << 32, (uint64_t)460039 << 32 << 0, (uint64_t)460039 << 32 << 1, (uint64_t)460039 << 32 << 2,
+    (uint64_t)460039 << 32 << 3, (uint64_t)460039 << 32 << 4, (uint64_t)460039 << 32 << 5, (uint64_t)12599488 << 32,
 
     // Row 6 pixels
-    (ulong64)197123 << 40, (ulong64)460039 << 40 << 0, (ulong64)460039 << 40 << 1, (ulong64)460039 << 40 << 2,
-    (ulong64)460039 << 40 << 3, (ulong64)460039 << 40 << 4, (ulong64)460039 << 40 << 5, (ulong64)12599488 << 40,
+    (uint64_t)197123 << 40, (uint64_t)460039 << 40 << 0, (uint64_t)460039 << 40 << 1, (uint64_t)460039 << 40 << 2,
+    (uint64_t)460039 << 40 << 3, (uint64_t)460039 << 40 << 4, (uint64_t)460039 << 40 << 5, (uint64_t)12599488 << 40,
 
     // Row 7 pixels
-    (ulong64)515 << 48, (ulong64)1287 << 48 << 0, (ulong64)1287 << 48 << 1, (ulong64)1287 << 48 << 2,
-    (ulong64)1287 << 48 << 3, (ulong64)1287 << 48 << 4, (ulong64)1287 << 48 << 5, (ulong64)16576 << 48};
+    (uint64_t)515 << 48, (uint64_t)1287 << 48 << 0, (uint64_t)1287 << 48 << 1, (uint64_t)1287 << 48 << 2,
+    (uint64_t)1287 << 48 << 3, (uint64_t)1287 << 48 << 4, (uint64_t)1287 << 48 << 5, (uint64_t)16576 << 48};
 
-ulong64 computeNextGeneration(ulong64 currentGeneration) {
-  ulong64 nextGeneration = currentGeneration;
+uint64_t computeNextGeneration(uint64_t currentGeneration) {
+  uint64_t nextGeneration = currentGeneration;
   for (int i = 0; i < 64; i++) {
-    ulong64 neighbors = __builtin_popcountll(currentGeneration & gNeighborFilters[i]);
+    uint64_t neighbors = __builtin_popcountll(currentGeneration & gNeighborFilters[i]);
     if (currentGeneration & (1ULL << i)) {
       // Currently alive...
       if (neighbors <= 1) {
@@ -139,8 +139,8 @@ ulong64 computeNextGeneration(ulong64 currentGeneration) {
    Adding against both our mask and ~mask can be used to know if we've
    covered all the bits in our 8x8 grid.
 */
-bool coverableByXxY(ulong64 pattern, int x, int y) {
-  static ulong64 masks[64] = {0};
+bool coverableByXxY(uint64_t pattern, int x, int y) {
+  static uint64_t masks[64] = {0};
   static int convolutions[64] = {0};
   if (masks[x * y] == 0) {
     convolutions[x * y] = (8 - x + 1) * (8 - y + 1);
@@ -150,7 +150,7 @@ bool coverableByXxY(ulong64 pattern, int x, int y) {
     }
   }
 
-  ulong64 mask = masks[x * y];
+  uint64_t mask = masks[x * y];
   int iters = convolutions[x * y];
   for (int i = 0; i < iters; i++) {
     if ((pattern & mask) > 0 && (pattern & ~mask) == 0) {
@@ -171,7 +171,7 @@ int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
 
   // Initialize Random number generator
-  init_genrand64((ulong64)time(NULL));
+  init_genrand64((uint64_t)time(NULL));
 
   int x = 7;
   int y = 5;
@@ -180,17 +180,17 @@ int main(int argc, char **argv) {
     x = atoi(argv[2]);
   }
 
-  ulong64 totalGenerations = 0;
-  ulong64 savedGenerations = 0;
+  uint64_t totalGenerations = 0;
+  uint64_t savedGenerations = 0;
 
   // Check 1m random numbers
-  for (ulong64 i = 0; i < 1000 * 1000; i++) {
-    ulong64 pattern = genrand64_int64() % ULONG_MAX;
+  for (uint64_t i = 0; i < 1000 * 1000; i++) {
+    uint64_t pattern = genrand64_int64() % ULONG_MAX;
 
-    ulong64 generations = 0;
-    ulong64 shortcutGenerations = 0;
-    ulong64 currentGen = pattern;
-    set<ulong64> visitedPatterns;
+    uint64_t generations = 0;
+    uint64_t shortcutGenerations = 0;
+    uint64_t currentGen = pattern;
+    set<uint64_t> visitedPatterns;
 
     // Loop until we cycle to a number we've already visited
     do {
@@ -201,7 +201,7 @@ int main(int argc, char **argv) {
       // Mark the pattern as seen, keep track of the number of generations, and compute the next generation
       visitedPatterns.insert(currentGen);
       generations++;
-      ulong64 nextGen = computeNextGeneration(currentGen);
+      uint64_t nextGen = computeNextGeneration(currentGen);
 
       // We found a terminal pattern if we found a pattern that doesn't change with computeNextGeneration()
       if (nextGen == 0 || currentGen == nextGen) {
@@ -218,6 +218,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  printf("Total generations: %llu, saved generations: %llu (%2.2f%%)\n", totalGenerations, savedGenerations,
+  printf("Total generations: %lu, saved generations: %lu (%2.2f%%)\n", totalGenerations, savedGenerations,
          (float)savedGenerations / totalGenerations * 100);
 }

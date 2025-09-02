@@ -12,7 +12,6 @@
 #include <climits>
 
 #include "display_utils.h"
-#include "types.h"
 
 class DisplayUtilsTest : public ::testing::Test {
  protected:
@@ -60,7 +59,7 @@ TEST_F(DisplayUtilsTest, AsBinaryPowerOfTwo) {
 TEST_F(DisplayUtilsTest, AsBinaryProblematicAirtableValue) {
   // Test the specific value that was problematic with Airtable precision
   char buffer[65];
-  ulong64 problematic_value = 1736161183231225856ULL;
+  uint64_t problematic_value = 1736161183231225856ULL;
   asBinary(problematic_value, buffer);
 
   // Verify the string is exactly 64 characters and null terminated
@@ -70,7 +69,7 @@ TEST_F(DisplayUtilsTest, AsBinaryProblematicAirtableValue) {
   EXPECT_STREQ(buffer, "0001100000011000000101010110010111000111010100011011000000000000");
 
   // Verify we can reconstruct the original value from the binary string
-  ulong64 reconstructed = 0;
+  uint64_t reconstructed = 0;
   for (int i = 0; i < 64; i++) {
     if (buffer[i] == '1') {
       reconstructed |= (1ULL << (63 - i));
@@ -81,7 +80,7 @@ TEST_F(DisplayUtilsTest, AsBinaryProblematicAirtableValue) {
 
 TEST_F(DisplayUtilsTest, AsBinaryLargeNumber) {
   char buffer[65];
-  ulong64 large_number = 9223372036854775808ULL;  // 2^63
+  uint64_t large_number = 9223372036854775808ULL;  // 2^63
   asBinary(large_number, buffer);
 
   // Should start with 1 followed by 63 zeros (MSB set)
@@ -95,7 +94,7 @@ TEST_F(DisplayUtilsTest, AsBinaryLargeNumber) {
 TEST_F(DisplayUtilsTest, AsBinaryPattern) {
   char buffer[65];
   // Test a specific pattern: alternating bits 0x5555555555555555
-  ulong64 pattern = 0x5555555555555555ULL;
+  uint64_t pattern = 0x5555555555555555ULL;
   asBinary(pattern, buffer);
 
   // Should alternate 01010101... for all 64 bits

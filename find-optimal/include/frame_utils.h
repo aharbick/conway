@@ -3,13 +3,13 @@
 
 #include <stdbool.h>
 
-#include "types.h"
+#include <cstdint>
 
 // See the algorithm described in PERFORMANCE under "Eliminating Rotations"
 
 // Rotates a pattern 90 degrees clockwise
-__host__ __device__ inline ulong64 rotate90(ulong64 pattern) {
-  ulong64 result = 0;
+__host__ __device__ inline uint64_t rotate90(uint64_t pattern) {
+  uint64_t result = 0;
   for (int row = 0; row < 8; row++) {
     for (int col = 0; col < 8; col++) {
       if (pattern & (1ULL << (row * 8 + col))) {
@@ -22,8 +22,8 @@ __host__ __device__ inline ulong64 rotate90(ulong64 pattern) {
 }
 
 // Reflects a pattern horizontally
-__host__ __device__ inline ulong64 reflectHorizontal(ulong64 pattern) {
-  ulong64 result = 0;
+__host__ __device__ inline uint64_t reflectHorizontal(uint64_t pattern) {
+  uint64_t result = 0;
   for (int row = 0; row < 8; row++) {
     for (int col = 0; col < 8; col++) {
       if (pattern & (1ULL << (row * 8 + col))) {
@@ -35,28 +35,28 @@ __host__ __device__ inline ulong64 reflectHorizontal(ulong64 pattern) {
 }
 
 // Extract frame bits from a pattern
-__host__ __device__ inline ulong64 extractFrame(ulong64 pattern) {
+__host__ __device__ inline uint64_t extractFrame(uint64_t pattern) {
   // Frame mask - 1s for frame positions, 0s elsewhere
-  static const ulong64 FRAME_MASK = 0xE7ULL << 56 |  // FFFooFFF
-                                    0xC3ULL << 48 |  // FFooooFF
-                                    0x81ULL << 40 |  // FooooooF
-                                                     // oooooooo
-                                                     // oooooooo
-                                    0x81ULL << 16 |  // FooooooF
-                                    0xC3ULL << 8 |   // FFooooFF
-                                    0xE7ULL;         // FFFooFFF
+  static const uint64_t FRAME_MASK = 0xE7ULL << 56 |  // FFFooFFF
+                                     0xC3ULL << 48 |  // FFooooFF
+                                     0x81ULL << 40 |  // FooooooF
+                                                      // oooooooo
+                                                      // oooooooo
+                                     0x81ULL << 16 |  // FooooooF
+                                     0xC3ULL << 8 |   // FFooooFF
+                                     0xE7ULL;         // FFFooFFF
 
   return pattern & FRAME_MASK;
 }
 
 // Spreads 24 bits into frame positions
-__host__ __device__ inline ulong64 spreadBitsToFrame(ulong64 bits) {
-  ulong64 result = 0;
+__host__ __device__ inline uint64_t spreadBitsToFrame(uint64_t bits) {
+  uint64_t result = 0;
   int bitPos = 0;
 
   // Row offsets and patterns
   static const int offsets[] = {56, 48, 40, 16, 8, 0};  // Row bit offsets
-  static const ulong64 patterns[] = {
+  static const uint64_t patterns[] = {
       0xE7,  // FFFooFFF - 11100111
       0xC3,  // FFooooFF - 11000011
       0x81,  // FooooooF - 10000001
@@ -67,7 +67,7 @@ __host__ __device__ inline ulong64 spreadBitsToFrame(ulong64 bits) {
 
   // Process each row
   for (int row = 0; row < 6; row++) {
-    ulong64 pattern = patterns[row];
+    uint64_t pattern = patterns[row];
     int offset = offsets[row];
 
     // Process each bit in the pattern
@@ -83,11 +83,11 @@ __host__ __device__ inline ulong64 spreadBitsToFrame(ulong64 bits) {
 
 // Returns true if this frame is the lexicographically minimal version
 // among all its rotations and reflections
-__host__ __device__ inline bool isMinimalFrame(ulong64 frame) {
-  ulong64 min = frame;
+__host__ __device__ inline bool isMinimalFrame(uint64_t frame) {
+  uint64_t min = frame;
 
   // Check all rotations
-  ulong64 rotated = frame;
+  uint64_t rotated = frame;
   for (int i = 0; i < 3; i++) {
     rotated = rotate90(rotated);
     if (rotated < min)
@@ -95,7 +95,7 @@ __host__ __device__ inline bool isMinimalFrame(ulong64 frame) {
   }
 
   // Check horizontal reflection and its rotations
-  ulong64 reflected = reflectHorizontal(frame);
+  uint64_t reflected = reflectHorizontal(frame);
   if (reflected < min)
     return false;
 

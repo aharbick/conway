@@ -8,7 +8,6 @@
 #endif
 
 #include "frame_utils.h"
-#include "types.h"
 
 // Test frame utility functions (these don't have problematic dependencies)
 class FrameUtilsTest : public ::testing::Test {
@@ -21,16 +20,16 @@ class FrameUtilsTest : public ::testing::Test {
 TEST_F(FrameUtilsTest, Rotate90SingleBit) {
   // Test rotating a single bit 90 degrees clockwise
   // Bit at position (0,0) should move to (7,0)
-  ulong64 pattern = 1ULL << (0 * 8 + 0);  // Top-left corner
-  ulong64 rotated = rotate90(pattern);
-  ulong64 expected = 1ULL << (7 * 8 + 0);  // Bottom-left corner (after clockwise rotation)
+  uint64_t pattern = 1ULL << (0 * 8 + 0);  // Top-left corner
+  uint64_t rotated = rotate90(pattern);
+  uint64_t expected = 1ULL << (7 * 8 + 0);  // Bottom-left corner (after clockwise rotation)
   EXPECT_EQ(rotated, expected);
 }
 
 TEST_F(FrameUtilsTest, Rotate90FourTimes) {
   // Rotating 4 times should return to original
-  ulong64 original = 0x123456789ABCDEFULL;
-  ulong64 result = original;
+  uint64_t original = 0x123456789ABCDEFULL;
+  uint64_t result = original;
 
   for (int i = 0; i < 4; i++) {
     result = rotate90(result);
@@ -42,28 +41,28 @@ TEST_F(FrameUtilsTest, Rotate90FourTimes) {
 TEST_F(FrameUtilsTest, ReflectHorizontalSingleBit) {
   // Test horizontal reflection
   // Bit at position (0,0) should move to (0,7)
-  ulong64 pattern = 1ULL << (0 * 8 + 0);  // Top-left corner
-  ulong64 reflected = reflectHorizontal(pattern);
-  ulong64 expected = 1ULL << (0 * 8 + 7);  // Top-right corner
+  uint64_t pattern = 1ULL << (0 * 8 + 0);  // Top-left corner
+  uint64_t reflected = reflectHorizontal(pattern);
+  uint64_t expected = 1ULL << (0 * 8 + 7);  // Top-right corner
   EXPECT_EQ(reflected, expected);
 }
 
 TEST_F(FrameUtilsTest, ReflectHorizontalTwice) {
   // Reflecting twice should return to original
-  ulong64 original = 0x123456789ABCDEFULL;
-  ulong64 result = reflectHorizontal(reflectHorizontal(original));
+  uint64_t original = 0x123456789ABCDEFULL;
+  uint64_t result = reflectHorizontal(reflectHorizontal(original));
   EXPECT_EQ(result, original);
 }
 
 TEST_F(FrameUtilsTest, ExtractFrameEmpty) {
   // Test extracting frame from empty pattern
-  ulong64 frameOnly = extractFrame(0);
+  uint64_t frameOnly = extractFrame(0);
   EXPECT_EQ(frameOnly, 0);
 }
 
 TEST_F(FrameUtilsTest, SpreadBitsToFrameZero) {
   // Test spreading zero bits
-  ulong64 frame = spreadBitsToFrame(0);
+  uint64_t frame = spreadBitsToFrame(0);
   EXPECT_EQ(frame, 0);
 }
 
@@ -74,8 +73,8 @@ TEST_F(FrameUtilsTest, IsMinimalFrameEmpty) {
 
 TEST_F(FrameUtilsTest, ExtractFrameNonEmpty) {
   // Test extracting frame from a pattern with both frame and non-frame bits
-  ulong64 pattern = 0xFFFFFFFFFFFFFFFFULL;  // All bits set
-  ulong64 frameOnly = extractFrame(pattern);
+  uint64_t pattern = 0xFFFFFFFFFFFFFFFFULL;  // All bits set
+  uint64_t frameOnly = extractFrame(pattern);
 
   // Frame should be smaller than full pattern
   EXPECT_LT(frameOnly, pattern);
@@ -87,27 +86,27 @@ TEST_F(FrameUtilsTest, ExtractFrameNonEmpty) {
 
 TEST_F(FrameUtilsTest, SpreadBitsToFrameNonZero) {
   // Test spreading some bits to frame positions
-  ulong64 bits = 0x1;  // Just the first bit
-  ulong64 frame = spreadBitsToFrame(bits);
+  uint64_t bits = 0x1;  // Just the first bit
+  uint64_t frame = spreadBitsToFrame(bits);
 
   // Should have exactly one bit set in frame position
   EXPECT_NE(frame, 0);
   EXPECT_EQ(extractFrame(frame), frame);  // Should be valid frame
 
   // Test with all 24 bits set
-  ulong64 allBits = 0xFFFFFF;  // 24 bits
-  ulong64 allFrame = spreadBitsToFrame(allBits);
+  uint64_t allBits = 0xFFFFFF;  // 24 bits
+  uint64_t allFrame = spreadBitsToFrame(allBits);
   EXPECT_NE(allFrame, 0);
   EXPECT_EQ(extractFrame(allFrame), allFrame);  // Should be valid frame
 }
 
 TEST_F(FrameUtilsTest, IsMinimalFrameAsymmetric) {
   // Test with an asymmetric pattern that should NOT be minimal
-  ulong64 asymmetric = 1ULL << (0 * 8 + 1);  // Just one bit in frame
+  uint64_t asymmetric = 1ULL << (0 * 8 + 1);  // Just one bit in frame
 
   // This single bit might or might not be minimal depending on frame structure
   // Let's test the property that rotating it gives a different result
-  ulong64 rotated = rotate90(asymmetric);
+  uint64_t rotated = rotate90(asymmetric);
   if (rotated < asymmetric) {
     EXPECT_FALSE(isMinimalFrame(asymmetric));
   } else {
@@ -118,13 +117,13 @@ TEST_F(FrameUtilsTest, IsMinimalFrameAsymmetric) {
 TEST_F(FrameUtilsTest, IsMinimalFrameRotationUniqueness) {
   // Test that exactly one rotation of any pattern is the minimal frame
   // Start with an asymmetric pattern that will have 4 distinct rotations
-  ulong64 pattern = 0x0000001800240042ULL;  // L-shaped pattern
+  uint64_t pattern = 0x0000001800240042ULL;  // L-shaped pattern
 
   // Generate all 4 rotations
-  ulong64 rotation0 = pattern;
-  ulong64 rotation1 = rotate90(rotation0);
-  ulong64 rotation2 = rotate90(rotation1);
-  ulong64 rotation3 = rotate90(rotation2);
+  uint64_t rotation0 = pattern;
+  uint64_t rotation1 = rotate90(rotation0);
+  uint64_t rotation2 = rotate90(rotation1);
+  uint64_t rotation3 = rotate90(rotation2);
 
   // Verify we get back to original after 4 rotations
   EXPECT_EQ(rotate90(rotation3), rotation0);
@@ -168,10 +167,10 @@ TEST_F(FrameUtilsTest, IsMinimalFrameRotationUniqueness) {
 TEST_F(FrameUtilsTest, IsMinimalFrameReflectionUniqueness) {
   // Test that exactly one orientation among all 8 (4 rotations × 2 reflections) is minimal
   // Start with an asymmetric pattern that will have 8 distinct orientations
-  ulong64 pattern = 0x0000001800240042ULL;  // L-shaped pattern (same as rotation test)
+  uint64_t pattern = 0x0000001800240042ULL;  // L-shaped pattern (same as rotation test)
 
   // Generate all 8 orientations: 4 rotations + 4 reflected rotations
-  ulong64 orientations[8];
+  uint64_t orientations[8];
 
   // First 4: normal rotations
   orientations[0] = pattern;
@@ -180,7 +179,7 @@ TEST_F(FrameUtilsTest, IsMinimalFrameReflectionUniqueness) {
   orientations[3] = rotate90(orientations[2]);
 
   // Next 4: reflected rotations
-  ulong64 reflected = reflectHorizontal(pattern);
+  uint64_t reflected = reflectHorizontal(pattern);
   orientations[4] = reflected;
   orientations[5] = rotate90(orientations[4]);
   orientations[6] = rotate90(orientations[5]);
@@ -229,11 +228,11 @@ TEST_F(FrameUtilsTest, IsMinimalFrameReflectionUniqueness) {
 
 TEST_F(FrameUtilsTest, ReflectHorizontalWithRotations) {
   // Test that reflection + rotation combinations work correctly
-  ulong64 pattern = 0x8040201008040201ULL;  // Diagonal pattern
+  uint64_t pattern = 0x8040201008040201ULL;  // Diagonal pattern
 
   // Test reflection + rotation combinations work correctly
-  ulong64 rotateFirstThenReflect = reflectHorizontal(rotate90(pattern));
-  ulong64 reflectFirstThenRotate = rotate90(reflectHorizontal(pattern));
+  uint64_t rotateFirstThenReflect = reflectHorizontal(rotate90(pattern));
+  uint64_t reflectFirstThenRotate = rotate90(reflectHorizontal(pattern));
 
   // These operations may or may not commute depending on the pattern's symmetry
   // What's important is that both produce valid transformations
@@ -245,7 +244,7 @@ TEST_F(FrameUtilsTest, ReflectHorizontalWithRotations) {
   EXPECT_TRUE(operationsCommute || !operationsCommute) << "Operations either commute or don't - both are valid";
 
   // Test that double reflection + double rotation returns to original
-  ulong64 transformed = pattern;
+  uint64_t transformed = pattern;
   transformed = reflectHorizontal(transformed);
   transformed = rotate90(rotate90(transformed));
   transformed = reflectHorizontal(transformed);
@@ -259,7 +258,7 @@ TEST_F(FrameUtilsTest, IsMinimalFrameSymmetricPatterns) {
   // Symmetric patterns may have multiple orientations that are identical
 
   // Perfectly symmetric pattern (cross shape)
-  ulong64 cross = 0x0818180018181800ULL;  // Should be symmetric under both rotation and reflection
+  uint64_t cross = 0x0818180018181800ULL;  // Should be symmetric under both rotation and reflection
 
   // For perfectly symmetric patterns, the minimal frame logic should still work
   // (Even if multiple orientations are identical, one canonical form should be minimal)
@@ -267,8 +266,8 @@ TEST_F(FrameUtilsTest, IsMinimalFrameSymmetricPatterns) {
       << "Symmetric pattern should have deterministic minimal frame result";
 
   // Test with horizontally symmetric pattern
-  ulong64 hSymmetric = 0x0000182418241800ULL;  // Horizontally symmetric
-  ulong64 hReflected = reflectHorizontal(hSymmetric);
+  uint64_t hSymmetric = 0x0000182418241800ULL;  // Horizontally symmetric
+  uint64_t hReflected = reflectHorizontal(hSymmetric);
 
   if (hSymmetric == hReflected) {
     // If pattern is perfectly horizontally symmetric, reflection is identity

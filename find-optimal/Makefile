@@ -42,7 +42,7 @@ endif
 
 all: setup format-check explore-cachability find-optimal
 
-$(BUILDDIR)/find-optimal.o: $(SRCDIR)/find-optimal.cpp $(INCLUDEDIR)/mt.h $(INCLUDEDIR)/gol.h $(INCLUDEDIR)/frame_utils.h $(INCLUDEDIR)/types.h $(INCLUDEDIR)/display_utils.h $(INCLUDEDIR)/airtable_client.h
+$(BUILDDIR)/find-optimal.o: $(SRCDIR)/find-optimal.cpp $(INCLUDEDIR)/mt.h $(INCLUDEDIR)/gol.h $(INCLUDEDIR)/frame_utils.h $(INCLUDEDIR)/display_utils.h $(INCLUDEDIR)/airtable_client.h
 	$(NVCC) $(if $(NVCFLAGS), $(NVCFLAGS), $(CFLAGS)) -I$(INCLUDEDIR) -c $< -o $@
 
 find-optimal: $(BUILDDIR)/find-optimal.o

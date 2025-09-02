@@ -7,7 +7,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "types.h"
+#include <cstdint>
 
 #define MAX_URL_LENGTH 1024
 #define MAX_JSON_LENGTH 2048
@@ -138,8 +138,8 @@ static const char* airtableFindJsonValue(const char* json, const char* key) {
   return pos;
 }
 
-static bool airtableSendProgress(bool frameComplete, ulong64 frameIdx, int kernelIdx, int chunkIdx,
-                                 ulong64 patternsPerSecond, int bestGenerations, ulong64 bestPattern,
+static bool airtableSendProgress(bool frameComplete, uint64_t frameIdx, int kernelIdx, int chunkIdx,
+                                 uint64_t patternsPerSecond, int bestGenerations, uint64_t bestPattern,
                                  const char* bestPatternBin, bool isTest) {
   AirtableConfig config;
   if (airtableGetConfig(&config) != AIRTABLE_SUCCESS) {
@@ -218,7 +218,7 @@ static int airtableGetBestResult() {
   return bestGenerations;
 }
 
-static ulong64 airtableGetBestCompleteFrame() {
+static uint64_t airtableGetBestCompleteFrame() {
   AirtableConfig config;
   if (airtableGetConfig(&config) != AIRTABLE_SUCCESS) {
     printf("[WARN] Cannot query best complete frame\n");
@@ -235,7 +235,7 @@ static ulong64 airtableGetBestCompleteFrame() {
   CurlResponse response = {0};
   AirtableResult result = airtableHttpRequest(url, NULL, config.api_key, &response, false);
 
-  ulong64 bestFrameIdx = ULLONG_MAX;
+  uint64_t bestFrameIdx = ULLONG_MAX;
   if (result == AIRTABLE_SUCCESS && response.memory) {
     const char* framePos = airtableFindJsonValue(response.memory, "frameIdx");
     if (framePos) {

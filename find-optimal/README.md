@@ -165,9 +165,9 @@ To determine your thread's starting pattern, you'll need to define your evaluate
 In other words, you'll have something like this in your host code which launches the 16 kernels for a given task:
 
   for (int i = 0; i < 16; i++) {
-    ulong64 kernel_id = frame; // this contains the 24 'F' bits
-    kernel_id += ((ulong64) (i & 3)) << 3; // set the lower pair of 'K' bits
-    kernel_id += ((ulong64) (i >> 2)) << 59; // set the upper pair of 'K' bits
+    uint64_t kernel_id = frame; // this contains the 24 'F' bits
+    kernel_id += ((uint64_t) (i & 3)) << 3; // set the lower pair of 'K' bits
+    kernel_id += ((uint64_t) (i >> 2)) << 59; // set the upper pair of 'K' bits
     evaluateRange<<<1024, 1024>>>(kernel_id, other_parameters);
   }
 
@@ -175,12 +175,12 @@ In other words, you'll have something like this in your host code which launches
 
 Then, at the beginning of your evaluateRange kernel you can incorporate the thread and block bits into the starting pattern:
 
-  ulong64 startingPattern = kernel_id;
-  startingPattern += ((ulong64) (threadIdx.x & 15)) << 10; // set the lower row of 4 'T' bits
-  startingPattern += ((ulong64) (threadIdx.x >> 4)) << 17; // set the upper row of 6 'T' bits
-  startingPattern += ((ulong64) (blockIdx.x & 63)) << 41; // set the lower row of 6 'B' bits
-  startingPattern += ((ulong64) (blockIdx.x >> 6)) << 50; // set the upper row of 4 'B' bits
-  ulong64 endAt = startingPattern + 0x10000000000ull;
+  uint64_t startingPattern = kernel_id;
+  startingPattern += ((uint64_t) (threadIdx.x & 15)) << 10; // set the lower row of 4 'T' bits
+  startingPattern += ((uint64_t) (threadIdx.x >> 4)) << 17; // set the upper row of 6 'T' bits
+  startingPattern += ((uint64_t) (blockIdx.x & 63)) << 41; // set the lower row of 6 'B' bits
+  startingPattern += ((uint64_t) (blockIdx.x >> 6)) << 50; // set the upper row of 4 'B' bits
+  uint64_t endAt = startingPattern + 0x10000000000ull;
 
 By counting from startingPattern to endAt (excluding the latter endpoint) in increments of 0x1000000 (2^24), you'll iterate over the 2^16 different choices of the middle 16 bits whilst holding the other 48 bits constant.
 
@@ -194,7 +194,7 @@ and not:
 
 because the following assignment can overflow the 64-bit integer (wrapping round modulo 2^64), thereby causing endAt to be numerically less than startingPattern:
 
-  ulong64 endAt = startingPattern + 0x10000000000ull;
+  uint64_t endAt = startingPattern + 0x10000000000ull;
 
 
 Before you do spend 1.3 years running this, I'd recommend writing a bunch of unit tests to make sure that all of your functions are implemented correctly (lest it would be a very expensive and time-consuming mistake!). Here's the unit-testing library that I use for C++ and CUDA:
@@ -248,8 +248,8 @@ Thinking about this some more, I think that you can completely avoid reordering 
 The idea is as follows: instead of having 2 nested loops in evaluateRange() (namely an outer loop iterating over starting patterns, and an inner loop iterating over generations) where the inner loop has variable length, collapse this into a single loop of the following form:
 
 
-ulong64 pattern = beginAt + (blockIdx.x * blockDim.x + threadIdx.x);
-ulong64 g1 = pattern;
+uint64_t pattern = beginAt + (blockIdx.x * blockDim.x + threadIdx.x);
+uint64_t g1 = pattern;
 int generations = 0;
 
 while (pattern < endAt) {
@@ -361,7 +361,7 @@ diff --git find-optimal/gol.h find-optimal/gol.h
 index 19b187f..f27d37f 100644
 --- find-optimal/gol.h
 +++ find-optimal/gol.h
-@@ -100,13 +100,9 @@ __device__ int countGenerations(ulong64 pattern) {
+@@ -100,13 +100,9 @@ __device__ int countGenerations(uint64_t pattern) {
      g4 = computeNextGeneration(g3);
      g5 = computeNextGeneration(g4);
      g6 = computeNextGeneration(g5);
@@ -377,7 +377,7 @@ index 19b187f..f27d37f 100644
        ended = true; // died out
 
        // Adjust the age
-@@ -118,6 +114,11 @@ __device__ int countGenerations(ulong64 pattern) {
+@@ -118,6 +114,11 @@ __device__ int countGenerations(uint64_t pattern) {
 
        break;
      }

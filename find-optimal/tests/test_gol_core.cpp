@@ -19,8 +19,8 @@ class GOLComputationTest : public ::testing::Test {
   }
 
   // Helper function to create a pattern from a 2D array
-  ulong64 createPattern(const char grid[8][8]) {
-    ulong64 pattern = 0;
+  uint64_t createPattern(const char grid[8][8]) {
+    uint64_t pattern = 0;
     for (int row = 0; row < 8; row++) {
       for (int col = 0; col < 8; col++) {
         if (grid[row][col] == '1') {
@@ -32,7 +32,7 @@ class GOLComputationTest : public ::testing::Test {
   }
 
   // Helper to verify a pattern matches expected grid
-  void verifyPattern(ulong64 pattern, const char expected[8][8]) {
+  void verifyPattern(uint64_t pattern, const char expected[8][8]) {
     for (int row = 0; row < 8; row++) {
       for (int col = 0; col < 8; col++) {
         bool bitSet = (pattern & (1ULL << (row * 8 + col))) != 0;
@@ -45,15 +45,15 @@ class GOLComputationTest : public ::testing::Test {
 
 TEST_F(GOLComputationTest, ComputeNextGenerationEmpty) {
   // Empty grid should stay empty
-  ulong64 empty = 0;
-  ulong64 next = computeNextGeneration(empty);
+  uint64_t empty = 0;
+  uint64_t next = computeNextGeneration(empty);
   EXPECT_EQ(next, 0);
 }
 
 TEST_F(GOLComputationTest, ComputeNextGenerationSingleCell) {
   // Single cell should die (underpopulation)
-  ulong64 single = 1ULL << (4 * 8 + 4);  // Center cell
-  ulong64 next = computeNextGeneration(single);
+  uint64_t single = 1ULL << (4 * 8 + 4);  // Center cell
+  uint64_t next = computeNextGeneration(single);
   EXPECT_EQ(next, 0);
 }
 
@@ -64,8 +64,8 @@ TEST_F(GOLComputationTest, ComputeNextGenerationBlock) {
                             {'0', '0', '0', '1', '1', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'},
                             {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'}};
 
-  ulong64 pattern = createPattern(block);
-  ulong64 next = computeNextGeneration(pattern);
+  uint64_t pattern = createPattern(block);
+  uint64_t next = computeNextGeneration(pattern);
 
   // Should remain unchanged
   EXPECT_EQ(next, pattern);
@@ -85,8 +85,8 @@ TEST_F(GOLComputationTest, ComputeNextGenerationBlinker) {
       {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'},
       {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'}};
 
-  ulong64 vertical = createPattern(verticalBlinker);
-  ulong64 next = computeNextGeneration(vertical);
+  uint64_t vertical = createPattern(verticalBlinker);
+  uint64_t next = computeNextGeneration(vertical);
 
   verifyPattern(next, horizontalBlinker);
 }
@@ -103,8 +103,8 @@ TEST_F(GOLComputationTest, ComputeNextGenerationGlider) {
                                  {'0', '0', '1', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'},
                                  {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'}};
 
-  ulong64 pattern = createPattern(glider);
-  ulong64 next = computeNextGeneration(pattern);
+  uint64_t pattern = createPattern(glider);
+  uint64_t next = computeNextGeneration(pattern);
 
   verifyPattern(next, gliderNext);
 }
@@ -116,8 +116,8 @@ TEST_F(GOLComputationTest, ComputeNextGenerationBeehive) {
                               {'0', '0', '0', '1', '1', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'},
                               {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'}};
 
-  ulong64 pattern = createPattern(beehive);
-  ulong64 next = computeNextGeneration(pattern);
+  uint64_t pattern = createPattern(beehive);
+  uint64_t next = computeNextGeneration(pattern);
 
   // Should remain unchanged
   EXPECT_EQ(next, pattern);
@@ -126,12 +126,12 @@ TEST_F(GOLComputationTest, ComputeNextGenerationBeehive) {
 TEST_F(GOLComputationTest, ComputeNextGenerationBoundaryConditions) {
   // Test that cells at edges are treated as having dead neighbors
   // Single cell at corner should die
-  ulong64 corner = 1ULL << (0 * 8 + 0);  // Top-left corner
-  ulong64 next = computeNextGeneration(corner);
+  uint64_t corner = 1ULL << (0 * 8 + 0);  // Top-left corner
+  uint64_t next = computeNextGeneration(corner);
   EXPECT_EQ(next, 0);
 
   // Single cell at edge should die
-  ulong64 edge = 1ULL << (0 * 8 + 4);  // Top edge
+  uint64_t edge = 1ULL << (0 * 8 + 4);  // Top edge
   next = computeNextGeneration(edge);
   EXPECT_EQ(next, 0);
 }
@@ -149,8 +149,8 @@ TEST_F(GOLComputationTest, ComputeNextGenerationOvercrowding) {
       {'1', '0', '0', '0', '1', '0', '0', '0'}, {'0', '1', '0', '1', '0', '0', '0', '0'},
       {'0', '0', '1', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'},
       {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'}};
-  ulong64 pattern = createPattern(overcrowded);
-  ulong64 next = computeNextGeneration(pattern);
+  uint64_t pattern = createPattern(overcrowded);
+  uint64_t next = computeNextGeneration(pattern);
 
   verifyPattern(next, overcrowdedNext);
 }
@@ -167,15 +167,15 @@ TEST_F(GOLComputationTest, ComputeNextGenerationBirth) {
                                  {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'},
                                  {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'}};
 
-  ulong64 pattern = createPattern(birthSetup);
-  ulong64 next = computeNextGeneration(pattern);
+  uint64_t pattern = createPattern(birthSetup);
+  uint64_t next = computeNextGeneration(pattern);
 
   verifyPattern(next, afterBirth);
 }
 
 // Test the fundamental math building blocks
 TEST(GOLMathTest, Add2BasicOperation) {
-  ulong64 s0, s1;
+  uint64_t s0, s1;
 
   // Test basic binary addition: 5 + 3 = 8 (101 + 011 = 1000)
   add2(5, 3, s0, s1);
@@ -186,7 +186,7 @@ TEST(GOLMathTest, Add2BasicOperation) {
 }
 
 TEST(GOLMathTest, Add2ZeroOperands) {
-  ulong64 s0, s1;
+  uint64_t s0, s1;
 
   // Adding zero should work correctly
   add2(0, 0, s0, s1);
@@ -203,7 +203,7 @@ TEST(GOLMathTest, Add2ZeroOperands) {
 }
 
 TEST(GOLMathTest, Add2MaxValues) {
-  ulong64 s0, s1;
+  uint64_t s0, s1;
 
   // Test with maximum values
   add2(ULLONG_MAX, ULLONG_MAX, s0, s1);
@@ -212,7 +212,7 @@ TEST(GOLMathTest, Add2MaxValues) {
 }
 
 TEST(GOLMathTest, Add3BasicOperation) {
-  ulong64 s0, s1;
+  uint64_t s0, s1;
 
   // Test 3-input addition: 5 + 3 + 2 = 10 (101 + 011 + 010 = 1010)
   add3(5, 3, 2, s0, s1);
@@ -223,7 +223,7 @@ TEST(GOLMathTest, Add3BasicOperation) {
 }
 
 TEST(GOLMathTest, Add3ZeroOperands) {
-  ulong64 s0, s1;
+  uint64_t s0, s1;
 
   add3(0, 0, 0, s0, s1);
   EXPECT_EQ(s0, 0);
@@ -235,13 +235,13 @@ TEST(GOLMathTest, Add3ZeroOperands) {
 }
 
 TEST(GOLMathTest, Add3NeighborCounting) {
-  ulong64 s0, s1;
+  uint64_t s0, s1;
 
   // Test typical neighbor counting scenario
   // In GOL, we often need to add 3 neighbor values
-  ulong64 neighbors1 = 0x0101010101010101ULL;  // Alternating pattern
-  ulong64 neighbors2 = 0x1010101010101010ULL;  // Complementary pattern
-  ulong64 neighbors3 = 0x0000000000000000ULL;  // No neighbors
+  uint64_t neighbors1 = 0x0101010101010101ULL;  // Alternating pattern
+  uint64_t neighbors2 = 0x1010101010101010ULL;  // Complementary pattern
+  uint64_t neighbors3 = 0x0000000000000000ULL;  // No neighbors
 
   add3(neighbors1, neighbors2, neighbors3, s0, s1);
   EXPECT_EQ(s0, 0x1111111111111111ULL);  // All positions have 1 neighbor
@@ -277,7 +277,7 @@ TEST_F(GOLLifecycleTest, CountGenerationsEmpty) {
 
 TEST_F(GOLLifecycleTest, CountGenerationsSingleCell) {
   // Single cell dies from underpopulation - dies at generation 2, so countGenerations returns 1
-  ulong64 single = 1ULL << (4 * 8 + 4);  // Center cell
+  uint64_t single = 1ULL << (4 * 8 + 4);  // Center cell
   EXPECT_EQ(countGenerations(single), 1);
 }
 
@@ -287,7 +287,7 @@ TEST_F(GOLLifecycleTest, CountGenerationsBlock) {
                             {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '1', '1', '0', '0', '0'},
                             {'0', '0', '0', '1', '1', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'},
                             {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'}};
-  ulong64 pattern = createPattern(block);
+  uint64_t pattern = createPattern(block);
   EXPECT_EQ(countGenerations(pattern), 0);  // Still life = infinite
 }
 
@@ -297,7 +297,7 @@ TEST_F(GOLLifecycleTest, CountGenerationsBlinker) {
                               {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '1', '1', '1', '0', '0', '0'},
                               {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'},
                               {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'}};
-  ulong64 pattern = createPattern(blinker);
+  uint64_t pattern = createPattern(blinker);
   EXPECT_EQ(countGenerations(pattern), 0);  // Oscillator = infinite
 }
 
@@ -308,7 +308,7 @@ TEST_F(GOLLifecycleTest, CountGenerationsRPentomino) {
                                  {'0', '0', '0', '1', '1', '0', '0', '0'}, {'0', '0', '1', '1', '0', '0', '0', '0'},
                                  {'0', '0', '0', '1', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'},
                                  {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'}};
-  ulong64 pattern = createPattern(rpentomino);
+  uint64_t pattern = createPattern(rpentomino);
   int generations = countGenerations(pattern);
   // R-pentomino typically stabilizes or becomes periodic
   // Should either return 0 (stable/periodic) or a positive number if it dies
@@ -322,7 +322,7 @@ TEST_F(GOLLifecycleTest, CountGenerationsSimpleDieout) {
                            {'0', '0', '1', '0', '0', '0', '0', '0'}, {'0', '0', '1', '0', '0', '0', '0', '0'},
                            {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'},
                            {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'}};
-  ulong64 pattern = createPattern(line);
+  uint64_t pattern = createPattern(line);
   int generations = countGenerations(pattern);
   EXPECT_GT(generations, 0);   // Should die out
   EXPECT_LT(generations, 10);  // But quickly
@@ -334,7 +334,7 @@ TEST_F(GOLLifecycleTest, CountGenerationsBeehive) {
                               {'0', '0', '0', '1', '1', '0', '0', '0'}, {'0', '0', '1', '0', '0', '1', '0', '0'},
                               {'0', '0', '0', '1', '1', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'},
                               {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'}};
-  ulong64 pattern = createPattern(beehive);
+  uint64_t pattern = createPattern(beehive);
   EXPECT_EQ(countGenerations(pattern), 0);  // Still life = infinite
 }
 
@@ -345,7 +345,7 @@ TEST_F(GOLLifecycleTest, CountGenerationsGlider) {
                              {'0', '0', '0', '1', '0', '0', '0', '0'}, {'0', '1', '1', '1', '0', '0', '0', '0'},
                              {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'},
                              {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'}};
-  ulong64 pattern = createPattern(glider);
+  uint64_t pattern = createPattern(glider);
   int generations = countGenerations(pattern);
   // In bounded grid, glider will either stabilize, become periodic, or die
   EXPECT_TRUE(generations >= 0);
@@ -355,42 +355,42 @@ TEST_F(GOLLifecycleTest, CountGenerationsGlider) {
 TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern209a) {
   // Pattern that runs for exactly 209 generations
   // 0111000001011100100001100001010011111010110101100010000101110100
-  ulong64 pattern = 8096493654771114356ULL;
+  uint64_t pattern = 8096493654771114356ULL;
   EXPECT_EQ(countGenerations(pattern), 209);
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern209b) {
   // Another pattern that runs for exactly 209 generations
   // 1000000010010011100101000010001110000010011011011000111111001010
-  ulong64 pattern = 9264911738664226762ULL;
+  uint64_t pattern = 9264911738664226762ULL;
   EXPECT_EQ(countGenerations(pattern), 209);
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern205) {
   // Pattern that runs for exactly 205 generations
   // 0101111010010001101011001010010110011101110001000011100100010101
-  ulong64 pattern = 6814417538504734997ULL;
+  uint64_t pattern = 6814417538504734997ULL;
   EXPECT_EQ(countGenerations(pattern), 205);
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern199) {
   // Pattern that runs for exactly 199 generations
   // 0011100100111010001001000101011011000001000110100001100110001010
-  ulong64 pattern = 4123648363836610954ULL;
+  uint64_t pattern = 4123648363836610954ULL;
   EXPECT_EQ(countGenerations(pattern), 199);
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern197) {
   // Pattern that runs for exactly 197 generations
   // 0000000100100101011100011110000110110010101101001010100111010011
-  ulong64 pattern = 82597382355986899ULL;
+  uint64_t pattern = 82597382355986899ULL;
   EXPECT_EQ(countGenerations(pattern), 197);
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern193) {
   // Pattern that runs for exactly 193 generations
   // 1010110110011101001110101101100100001001010101010011011001000100
-  ulong64 pattern = 12510220043743999556ULL;
+  uint64_t pattern = 12510220043743999556ULL;
   EXPECT_EQ(countGenerations(pattern), 193);
 }
 
@@ -401,9 +401,9 @@ class GOLStep6Test : public GOLComputationTest {
 
 TEST_F(GOLStep6Test, Step6GenerationsAndCheckCycleDetection) {
   // Test cycle detection after 6 generations
-  ulong64 candidates[100];
-  ulong64 numCandidates = 0;
-  ulong64 generations = 0;
+  uint64_t candidates[100];
+  uint64_t numCandidates = 0;
+  uint64_t generations = 0;
 
   // Use a blinker pattern that cycles every 2 generations
   // After 6 generations (g1), it should detect g1 == g3 (both vertical)
@@ -412,8 +412,8 @@ TEST_F(GOLStep6Test, Step6GenerationsAndCheckCycleDetection) {
                               {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'},
                               {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'}};
 
-  ulong64 pattern = createPattern(blinker);
-  ulong64 g1 = pattern;
+  uint64_t pattern = createPattern(blinker);
+  uint64_t g1 = pattern;
 
   bool shouldAdvance = step6GenerationsAndCheck(&g1, pattern, &generations, candidates, &numCandidates);
 
@@ -424,13 +424,13 @@ TEST_F(GOLStep6Test, Step6GenerationsAndCheckCycleDetection) {
 
 TEST_F(GOLStep6Test, Step6GenerationsAndCheckCandidateGeneration) {
   // Test candidate generation when reaching MIN_CANDIDATE_GENERATIONS
-  ulong64 candidates[100];
-  ulong64 numCandidates = 0;
-  ulong64 generations = MIN_CANDIDATE_GENERATIONS - 6;  // Will reach exactly MIN_CANDIDATE_GENERATIONS
+  uint64_t candidates[100];
+  uint64_t numCandidates = 0;
+  uint64_t generations = MIN_CANDIDATE_GENERATIONS - 6;  // Will reach exactly MIN_CANDIDATE_GENERATIONS
 
   // Use a pattern we know runs for 193+ generations
-  ulong64 pattern = 12510220043743999556ULL;  // Known 193-generation pattern
-  ulong64 g1 = pattern;
+  uint64_t pattern = 12510220043743999556ULL;  // Known 193-generation pattern
+  uint64_t g1 = pattern;
 
   bool shouldAdvance = step6GenerationsAndCheck(&g1, pattern, &generations, candidates, &numCandidates);
 
@@ -442,13 +442,13 @@ TEST_F(GOLStep6Test, Step6GenerationsAndCheckCandidateGeneration) {
 
 TEST_F(GOLStep6Test, Step6GenerationsAndCheckContinuePattern) {
   // Test continuing with pattern that hasn't reached criteria yet
-  ulong64 candidates[100];
-  ulong64 numCandidates = 0;
-  ulong64 generations = 50;  // Well below MIN_CANDIDATE_GENERATIONS
+  uint64_t candidates[100];
+  uint64_t numCandidates = 0;
+  uint64_t generations = 50;  // Well below MIN_CANDIDATE_GENERATIONS
 
   // Use a pattern we know runs for 193+ generations
-  ulong64 pattern = 12510220043743999556ULL;  // Known long-runner
-  ulong64 g1 = pattern;
+  uint64_t pattern = 12510220043743999556ULL;  // Known long-runner
+  uint64_t g1 = pattern;
 
   bool shouldAdvance = step6GenerationsAndCheck(&g1, pattern, &generations, candidates, &numCandidates);
 
@@ -460,13 +460,13 @@ TEST_F(GOLStep6Test, Step6GenerationsAndCheckContinuePattern) {
 
 TEST_F(GOLStep6Test, Step6GenerationsAndCheckDeadPattern) {
   // Test pattern that dies out within 6 generations
-  ulong64 candidates[100];
-  ulong64 numCandidates = 0;
-  ulong64 generations = 0;
+  uint64_t candidates[100];
+  uint64_t numCandidates = 0;
+  uint64_t generations = 0;
 
   // Single cell dies quickly
-  ulong64 pattern = 1ULL << (4 * 8 + 4);  // Center cell
-  ulong64 g1 = pattern;
+  uint64_t pattern = 1ULL << (4 * 8 + 4);  // Center cell
+  uint64_t g1 = pattern;
 
   bool shouldAdvance = step6GenerationsAndCheck(&g1, pattern, &generations, candidates, &numCandidates);
 
@@ -478,19 +478,19 @@ TEST_F(GOLStep6Test, Step6GenerationsAndCheckDeadPattern) {
 
 TEST_F(GOLStep6Test, Step6GenerationsAndCheckMultipleCandidates) {
   // Test multiple patterns being added as candidates
-  ulong64 candidates[100];
-  ulong64 numCandidates = 0;
-  ulong64 generations = MIN_CANDIDATE_GENERATIONS - 6;
+  uint64_t candidates[100];
+  uint64_t numCandidates = 0;
+  uint64_t generations = MIN_CANDIDATE_GENERATIONS - 6;
 
   // Add first candidate - use known long-running pattern
-  ulong64 pattern1 = 12510220043743999556ULL;  // 193-generation pattern
-  ulong64 g1_1 = pattern1;
+  uint64_t pattern1 = 12510220043743999556ULL;  // 193-generation pattern
+  uint64_t g1_1 = pattern1;
   step6GenerationsAndCheck(&g1_1, pattern1, &generations, candidates, &numCandidates);
 
   // Add second candidate - use another known long-running pattern
   generations = MIN_CANDIDATE_GENERATIONS - 6;  // Reset for next pattern
-  ulong64 pattern2 = 82597382355986899ULL;      // 197-generation pattern
-  ulong64 g1_2 = pattern2;
+  uint64_t pattern2 = 82597382355986899ULL;     // 197-generation pattern
+  uint64_t g1_2 = pattern2;
   step6GenerationsAndCheck(&g1_2, pattern2, &generations, candidates, &numCandidates);
 
   EXPECT_EQ(numCandidates, 2) << "Both patterns should be candidates";
@@ -500,9 +500,9 @@ TEST_F(GOLStep6Test, Step6GenerationsAndCheckMultipleCandidates) {
 
 TEST_F(GOLStep6Test, Step6GenerationsAndCheckExactCyclePeriods) {
   // Test detection of different cycle periods (2, 3, 4)
-  ulong64 candidates[100];
-  ulong64 numCandidates = 0;
-  ulong64 generations = 0;
+  uint64_t candidates[100];
+  uint64_t numCandidates = 0;
+  uint64_t generations = 0;
 
   // Test with a stable pattern (period 1)
   const char block[8][8] = {{'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'},
@@ -510,8 +510,8 @@ TEST_F(GOLStep6Test, Step6GenerationsAndCheckExactCyclePeriods) {
                             {'0', '0', '0', '1', '1', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'},
                             {'0', '0', '0', '0', '0', '0', '0', '0'}, {'0', '0', '0', '0', '0', '0', '0', '0'}};
 
-  ulong64 pattern = createPattern(block);
-  ulong64 g1 = pattern;
+  uint64_t pattern = createPattern(block);
+  uint64_t g1 = pattern;
 
   bool shouldAdvance = step6GenerationsAndCheck(&g1, pattern, &generations, candidates, &numCandidates);
 
@@ -523,15 +523,15 @@ TEST_F(GOLStep6Test, Step6GenerationsAndCheckExactCyclePeriods) {
 // Test constructKernel function - critical for CUDA pattern construction
 TEST(GOLKernelTest, ConstructKernelBasic) {
   // Test basic kernel construction with zero frame
-  ulong64 frame = 0;
+  uint64_t frame = 0;
 
   // kernelIndex 0: no bits added
-  ulong64 result = constructKernel(frame, 0);
+  uint64_t result = constructKernel(frame, 0);
   EXPECT_EQ(result, 0);
 
   // kernelIndex 1: adds 1 to bits 3-4 (lower 2 bits)
   result = constructKernel(frame, 1);
-  ulong64 expected = 1ULL << 3;  // bit 3 set
+  uint64_t expected = 1ULL << 3;  // bit 3 set
   EXPECT_EQ(result, expected);
 
   // kernelIndex 2: adds 2 to bits 3-4
@@ -547,11 +547,11 @@ TEST(GOLKernelTest, ConstructKernelBasic) {
 
 TEST(GOLKernelTest, ConstructKernelUpperBits) {
   // Test upper bits (kernelIndex >> 2) at positions 59-60
-  ulong64 frame = 0;
+  uint64_t frame = 0;
 
   // kernelIndex 4 (100 binary): upper bits = 1
-  ulong64 result = constructKernel(frame, 4);
-  ulong64 expected = 1ULL << 59;  // bit 59 set
+  uint64_t result = constructKernel(frame, 4);
+  uint64_t expected = 1ULL << 59;  // bit 59 set
   EXPECT_EQ(result, expected);
 
   // kernelIndex 8 (1000 binary): upper bits = 2
@@ -567,11 +567,11 @@ TEST(GOLKernelTest, ConstructKernelUpperBits) {
 
 TEST(GOLKernelTest, ConstructKernelCombined) {
   // Test both lower and upper bits together
-  ulong64 frame = 0;
+  uint64_t frame = 0;
 
   // kernelIndex 5 (0101 binary): lower=1, upper=1
-  ulong64 result = constructKernel(frame, 5);
-  ulong64 expected = (1ULL << 3) + (1ULL << 59);
+  uint64_t result = constructKernel(frame, 5);
+  uint64_t expected = (1ULL << 3) + (1ULL << 59);
   EXPECT_EQ(result, expected);
 
   // kernelIndex 15 (1111 binary): lower=3, upper=3
@@ -582,15 +582,15 @@ TEST(GOLKernelTest, ConstructKernelCombined) {
 
 TEST(GOLKernelTest, ConstructKernelWithFrame) {
   // Test with non-zero frame
-  ulong64 frame = 0xFF00FF00FF00FF00ULL;  // Alternating byte pattern
+  uint64_t frame = 0xFF00FF00FF00FF00ULL;  // Alternating byte pattern
 
   // kernelIndex 0: should just return frame
-  ulong64 result = constructKernel(frame, 0);
+  uint64_t result = constructKernel(frame, 0);
   EXPECT_EQ(result, frame);
 
   // kernelIndex 1: should add lower bits
   result = constructKernel(frame, 1);
-  ulong64 expected = frame + (1ULL << 3);
+  uint64_t expected = frame + (1ULL << 3);
   EXPECT_EQ(result, expected);
 
   // kernelIndex 4: should add upper bits
@@ -606,19 +606,19 @@ TEST(GOLKernelTest, ConstructKernelWithFrame) {
 
 TEST(GOLKernelTest, ConstructKernelValidRange) {
   // Test all valid kernel indices (0-15)
-  ulong64 frame = 0x1234567890ABCDEFULL;
+  uint64_t frame = 0x1234567890ABCDEFULL;
 
   for (int i = 0; i < 16; i++) {
-    ulong64 result = constructKernel(frame, i);
+    uint64_t result = constructKernel(frame, i);
 
     // Verify result is always >= frame (we only add bits)
     EXPECT_GE(result, frame);
 
     // Verify the added bits match expected pattern
-    ulong64 added = result - frame;
-    ulong64 expectedLower = ((ulong64)(i & 3)) << 3;    // Lower 2 bits at position 3
-    ulong64 expectedUpper = ((ulong64)(i >> 2)) << 59;  // Upper 2 bits at position 59
-    ulong64 expectedAdded = expectedLower + expectedUpper;
+    uint64_t added = result - frame;
+    uint64_t expectedLower = ((uint64_t)(i & 3)) << 3;    // Lower 2 bits at position 3
+    uint64_t expectedUpper = ((uint64_t)(i >> 2)) << 59;  // Upper 2 bits at position 59
+    uint64_t expectedAdded = expectedLower + expectedUpper;
 
     EXPECT_EQ(added, expectedAdded) << "Failed for kernelIndex " << i;
   }
@@ -626,11 +626,11 @@ TEST(GOLKernelTest, ConstructKernelValidRange) {
 
 TEST(GOLKernelTest, ConstructKernelBitPositions) {
   // Test specific bit positions are set correctly
-  ulong64 frame = 0;
+  uint64_t frame = 0;
 
   // Test each bit position that should be affected
   for (int kernelIndex = 0; kernelIndex < 16; kernelIndex++) {
-    ulong64 result = constructKernel(frame, kernelIndex);
+    uint64_t result = constructKernel(frame, kernelIndex);
 
     // Check bits 3-4 (lower pair)
     int lowerBits = kernelIndex & 3;

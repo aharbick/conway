@@ -3,10 +3,10 @@
 
 #include <stdio.h>
 
-#include "types.h"
+#include <cstdint>
 
 // Convert a 64-bit number to its binary string representation
-static inline void asBinary(ulong64 number, char *buf) {
+static inline void asBinary(uint64_t number, char *buf) {
   for (int i = 0; i < 64; i++) {
     buf[i] = (number >> (63 - i)) & 1 ? '1' : '0';
   }
@@ -14,7 +14,7 @@ static inline void asBinary(ulong64 number, char *buf) {
 }
 
 // Print a 64-bit pattern as an 8x8 grid
-static inline void printPattern(ulong64 number) {
+static inline void printPattern(uint64_t number) {
   char pat[65] = {'\0'};
   asBinary(number, pat);
   for (int i = 0; i < 64; i++) {
