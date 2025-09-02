@@ -42,10 +42,31 @@ endif
 
 all: setup format-check explore-cachability find-optimal
 
-$(BUILDDIR)/find-optimal.o: $(SRCDIR)/find-optimal.cpp $(INCLUDEDIR)/mt.h $(INCLUDEDIR)/gol.h $(INCLUDEDIR)/frame_utils.h $(INCLUDEDIR)/display_utils.h $(INCLUDEDIR)/airtable_client.h
+$(BUILDDIR)/cli_parser.o: $(SRCDIR)/cli_parser.cpp $(INCLUDEDIR)/cli_parser.h
+	$(CC) $(CFLAGS) -I$(INCLUDEDIR) -c $< -o $@
+
+$(BUILDDIR)/search_memory.o: $(SRCDIR)/search_memory.cpp $(INCLUDEDIR)/search_memory.h $(INCLUDEDIR)/cuda_utils.h
 	$(NVCC) $(if $(NVCFLAGS), $(NVCFLAGS), $(CFLAGS)) -I$(INCLUDEDIR) -c $< -o $@
 
-find-optimal: $(BUILDDIR)/find-optimal.o
+$(BUILDDIR)/utils.o: $(SRCDIR)/utils.cpp $(INCLUDEDIR)/utils.h
+	$(CC) $(CFLAGS) -I$(INCLUDEDIR) -c $< -o $@
+
+$(BUILDDIR)/gol.o: $(SRCDIR)/gol.cpp $(INCLUDEDIR)/gol.h
+	$(NVCC) $(if $(NVCFLAGS), $(NVCFLAGS), $(CFLAGS)) -I$(INCLUDEDIR) -c $< -o $@
+
+$(BUILDDIR)/find-optimal.o: $(SRCDIR)/find-optimal.cpp $(INCLUDEDIR)/gol.h
+	$(NVCC) $(if $(NVCFLAGS), $(NVCFLAGS), $(CFLAGS)) -I$(INCLUDEDIR) -c $< -o $@
+
+# CUDA-specific implementations (only compiled with NVCC)
+ifeq ($(NVCC),nvcc -x cu)
+$(BUILDDIR)/gol_cuda.o: $(SRCDIR)/gol_cuda.cu $(INCLUDEDIR)/gol.h
+	$(NVCC) $(NVCFLAGS) -I$(INCLUDEDIR) -c $< -o $@
+CUDA_OBJECTS = $(BUILDDIR)/gol_cuda.o
+else
+CUDA_OBJECTS = 
+endif
+
+find-optimal: $(BUILDDIR)/find-optimal.o $(BUILDDIR)/cli_parser.o $(BUILDDIR)/search_memory.o $(BUILDDIR)/gol.o $(BUILDDIR)/utils.o $(CUDA_OBJECTS)
 	$(CC) $^ -o $(BUILDDIR)/$@ $(LIBS)
 
 $(BUILDDIR)/explore-cachability.o: $(SRCDIR)/explore-cachability.cpp $(INCLUDEDIR)/mt.h
