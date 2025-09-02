@@ -115,6 +115,15 @@ __host__ __device__ static inline ulong64 constructKernel(ulong64 frame, int ker
   return kernel;
 }
 
+// Atomic increment helper - works in both device and host contexts
+__host__ __device__ static inline ulong64 getNextCandidateIndex(ulong64* numCandidates) {
+#ifdef __CUDA_ARCH__
+  return atomicAdd(numCandidates, 1);
+#else
+  return (*numCandidates)++;
+#endif
+}
+
 // Core 6-generation stepping and cycle detection logic
 // Used by both CPU tests and CUDA kernels
 __host__ __device__ static inline bool step6GenerationsAndCheck(ulong64* g1, ulong64 pattern, ulong64* generations,
@@ -135,11 +144,7 @@ __host__ __device__ static inline bool step6GenerationsAndCheck(ulong64* g1, ulo
 
   // Check if reached minimum candidate generations
   if (*generations >= MIN_CANDIDATE_GENERATIONS) {
-#ifdef __NVCC__
-    ulong64 idx = atomicAdd(numCandidates, 1);
-#else
-    ulong64 idx = (*numCandidates)++;
-#endif
+    ulong64 idx = getNextCandidateIndex(numCandidates);
     candidates[idx] = pattern;
     *generations = 0;
     return true; // Candidate found, advance to next

@@ -170,8 +170,8 @@ static void initializeDefaultArgs(prog_args* cli) {
   cli->threadsPerBlock = DEFAULT_CUDA_THREADS_PER_BLOCK;
   cli->beginAt = 0;
   cli->endAt = 0;
-  cli->frameBeginAt = 0;
-  cli->frameEndAt = 0;
+  cli->frameBeginIdx = 0;
+  cli->frameEndIdx = 0;
   cli->random = false;
   cli->verbose = false;
   cli->randomSamples = ULONG_MAX;
@@ -329,7 +329,7 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
 #endif
 
   case 'f':
-    if (!parseRange(arg, &a->frameBeginAt, &a->frameEndAt, FRAME_SEARCH_TOTAL_FRAMES)) {
+    if (!parseRange(arg, &a->frameBeginIdx, &a->frameEndIdx, FRAME_SEARCH_TOTAL_FRAMES)) {
       return ARGP_ERR_UNKNOWN;
     }
     break;
@@ -458,17 +458,17 @@ int main(int argc, char **argv) {
 #endif
 
   // Handle resume from database if requested
-  if (cli->frameBeginAt == ULLONG_MAX) {
+  if (cli->frameBeginIdx == ULLONG_MAX) {
     // User specified "resume" - query database for last completed frame
     ulong64 resumeFrame = airtable_get_best_complete_frame();
     if (resumeFrame == ULLONG_MAX) {
       // No completed frames found in database or error occurred
-      cli->frameBeginAt = 0;
+      cli->frameBeginIdx = 0;
       printf("Starting from frame 0\n");
     } else {
       // Found a completed frame, start from the next frame
-      cli->frameBeginAt = resumeFrame + 1;
-      printf("Resuming from frame: %llu\n", cli->frameBeginAt);
+      cli->frameBeginIdx = resumeFrame + 1;
+      printf("Resuming from frame: %llu\n", cli->frameBeginIdx);
     }
   }
 

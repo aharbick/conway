@@ -84,8 +84,8 @@ typedef struct prog_args {
   ulong64 randomSamples;
   ulong64 beginAt;
   ulong64 endAt;
-  ulong64 frameBeginAt;
-  ulong64 frameEndAt;
+  ulong64 frameBeginIdx;
+  ulong64 frameEndIdx;
   ulong64 chunkSize;
 } prog_args;
 
@@ -361,8 +361,8 @@ __host__ void searchAll(prog_args *cli) {
   // and 1024 threads otherwise we will not process all of the 2^40 patterns inside
   // the 2^24 frames.
 
-  ulong64 startFrame = (cli->frameBeginAt > 0) ? cli->frameBeginAt : 0;
-  ulong64 endFrame = (cli->frameEndAt > 0) ? cli->frameEndAt : FRAME_SEARCH_MAX_FRAMES;
+  ulong64 startFrame = (cli->frameBeginIdx > 0) ? cli->frameBeginIdx : 0;
+  ulong64 endFrame = (cli->frameEndIdx > 0) ? cli->frameEndIdx : FRAME_SEARCH_MAX_FRAMES;
   ulong64 totalFrames = endFrame - startFrame;
   ulong64 skippedFrames = 0;
   ulong64 processedFrames = 0;
@@ -408,8 +408,8 @@ __host__ void searchAll(prog_args *cli) {
 __host__ const char* getSearchDescription(prog_args* cli, char* buffer, size_t bufferSize) {
   if (cli->beginAt > 0 || cli->endAt > 0) {
     snprintf(buffer, bufferSize, "ALL in range (%llu - %llu)", cli->beginAt, cli->endAt);
-  } else if (cli->frameBeginAt > 0 || cli->frameEndAt > 0) {
-    snprintf(buffer, bufferSize, "ALL in frames (%llu - %llu)", cli->frameBeginAt, cli->frameEndAt);
+  } else if (cli->frameBeginIdx > 0 || cli->frameEndIdx > 0) {
+    snprintf(buffer, bufferSize, "ALL in frames (%llu - %llu)", cli->frameBeginIdx, cli->frameEndIdx);
   } else {
     strcpy(buffer, "ALL");
   }
