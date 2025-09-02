@@ -1,0 +1,38 @@
+---
+# clang-format configuration for Conway Game of Life project
+BasedOnStyle: Google
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+ColumnLimit: 120
+ContinuationIndentWidth: 4
+
+# Function and control statement formatting
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+
+# Brace formatting
+BreakBeforeBraces: Attach
+Cpp11BracedListStyle: true
+
+# Pointer alignment
+PointerAlignment: Left
+
+# Include formatting
+SortIncludes: true
+
+# Comments
+ReflowComments: true
+
+# Indentation
+IndentCaseLabels: false
+
+# Line breaks
+MaxEmptyLinesToKeep: 2
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+# Spacing
+SpaceAfterCStyleCast: false
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false

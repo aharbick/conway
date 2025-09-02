@@ -4,12 +4,21 @@ CFLAGS=
 LIBS=
 BUILDDIR=build
 TESTDIR=tests
+SRCDIR=src
+INCLUDEDIR=include
 
 # Test-specific variables
 TEST_LIBS=$(shell pkg-config --cflags --libs gtest) -lgtest_main -lpthread -lcurl
 TEST_SOURCES=$(wildcard $(TESTDIR)/*.cpp)
 TEST_OBJECTS=$(TEST_SOURCES:$(TESTDIR)/%.cpp=$(BUILDDIR)/%.o)
 TEST_EXECUTABLE=$(BUILDDIR)/run_tests
+
+# Formatting variables
+CLANG_FORMAT=clang-format
+CPP_SOURCES=$(wildcard $(SRCDIR)/*.cpp)
+HEADER_SOURCES=$(wildcard $(INCLUDEDIR)/*.h)
+TEST_SOURCES_FORMAT=$(wildcard $(TESTDIR)/*.cpp)
+ALL_SOURCES=$(CPP_SOURCES) $(HEADER_SOURCES) $(TEST_SOURCES_FORMAT)
 
 OS := $(shell uname -s)
 HAS_CUDA := $(shell which nvcc)
@@ -31,16 +40,16 @@ else
 	endif
 endif
 
-all: setup explore-cachability find-optimal
+all: setup format-check explore-cachability find-optimal
 
-$(BUILDDIR)/find-optimal.o: find-optimal.cpp mt.h gol.h frame_utils.h types.h display_utils.h airtable_client.h
-	$(NVCC) $(if $(NVCFLAGS), $(NVCFLAGS), $(CFLAGS)) -I. -c $< -o $@
+$(BUILDDIR)/find-optimal.o: $(SRCDIR)/find-optimal.cpp $(INCLUDEDIR)/mt.h $(INCLUDEDIR)/gol.h $(INCLUDEDIR)/frame_utils.h $(INCLUDEDIR)/types.h $(INCLUDEDIR)/display_utils.h $(INCLUDEDIR)/airtable_client.h
+	$(NVCC) $(if $(NVCFLAGS), $(NVCFLAGS), $(CFLAGS)) -I$(INCLUDEDIR) -c $< -o $@
 
 find-optimal: $(BUILDDIR)/find-optimal.o
 	$(CC) $^ -o $(BUILDDIR)/$@ $(LIBS)
 
-$(BUILDDIR)/explore-cachability.o: explore-cachability.cpp mt.h
-	$(CC) $(CFLAGS) -I. -c $< -o $@
+$(BUILDDIR)/explore-cachability.o: $(SRCDIR)/explore-cachability.cpp $(INCLUDEDIR)/mt.h
+	$(CC) $(CFLAGS) -I$(INCLUDEDIR) -c $< -o $@
 
 explore-cachability: $(BUILDDIR)/explore-cachability.o
 	$(CC) -o $(BUILDDIR)/$@ $^ $(CFLAGS)
@@ -51,6 +60,16 @@ setup:
 clean:
 	rm -rf build *~ core
 
+# Format targets
+format-check: $(ALL_SOURCES)
+	@echo "Checking if formatting is needed..."
+	@$(CLANG_FORMAT) --dry-run --Werror $(ALL_SOURCES) && echo "✓ Code is properly formatted" || (echo "✗ Code needs formatting - run 'make format-fix'" && exit 1)
+
+format-fix: $(ALL_SOURCES)
+	@echo "Formatting code..."
+	@$(CLANG_FORMAT) -i $(ALL_SOURCES)
+	@echo "✓ Code formatted"
+
 # Test targets
 test: setup $(TEST_EXECUTABLE)
 	$(TEST_EXECUTABLE)
@@ -59,6 +78,6 @@ $(TEST_EXECUTABLE): $(TEST_OBJECTS)
 	$(CC) $^ -o $@ $(TEST_LIBS)
 
 $(BUILDDIR)/%.o: $(TESTDIR)/%.cpp
-	$(CC) $(CFLAGS) -I. -c $< -o $@ $(shell pkg-config --cflags gtest)
+	$(CC) $(CFLAGS) -I$(INCLUDEDIR) -c $< -o $@ $(shell pkg-config --cflags gtest)
 
-.PHONY: test
+.PHONY: test format-fix format-check

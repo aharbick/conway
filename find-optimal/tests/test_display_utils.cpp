@@ -7,8 +7,8 @@
 #define __global__
 #endif
 
-#include "../types.h"
-#include "../display_utils.h"
+#include "types.h"
+#include "display_utils.h"
 #include <string.h>
 #include <climits>
 

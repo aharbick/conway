@@ -7,8 +7,8 @@
 #define __global__
 #endif
 
-#include "../types.h"
-#include "../frame_utils.h"
+#include "types.h"
+#include "frame_utils.h"
 
 // Test frame utility functions (these don't have problematic dependencies)
 class FrameUtilsTest : public ::testing::Test {

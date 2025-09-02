@@ -8,7 +8,7 @@
 #define __global__
 #endif
 
-#include "../gol_core.h"
+#include "gol_core.h"
 
 
 class GOLComputationTest : public ::testing::Test {
