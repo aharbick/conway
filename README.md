@@ -2,8 +2,7 @@
 
 ## 3D-Printed / Arduino Project
 
-Here's the fully assembled and working project:
-https://www.youtube.com/watch?v=GUKUeunvB_Y
+[![Fully assembled and working project](https://img.youtube.com/vi/GUKUeunvB_Y/maxresdefault.jpg)](https://www.youtube.com/watch?v=GUKUeunvB_Y)
 
 ###
 The code in the root of the project powers the arduino.
@@ -26,7 +25,7 @@ Here an in-progress video:
 
 https://www.youtube.com/watch?v=tJrgmwz3HJU
 
-## Find Optimal
+## find-optimal
 
 [Conway's Game of Life](https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life) is a simulation that follows some simple rules to manipulate a grid of pixels that are either alive or dead through successive generations until either everything dies OR there is an oscillation where repetition happens perpetually.
 
@@ -36,14 +35,10 @@ In an 8x8 grid such as the art project most random patterns die out or repeat in
 
 In other words...  I wanted to know a pattern that would evolve and ultimately die or become stable but would've lived longer than all other patterns.
 
-The code contained in find-optimal has the code to generate patterns, evolve them according to the default rules, and search for a solution.  There is code that uses pthreading so you can parallelize the search and code that uses CUDA to parallelize.  Both can randomly and sequentially.
+The code contained in find-optimal has the code to generate patterns, evolve them according to the default rules, and search for a solution. The code in the project is highly optimized CUDA code that can process BILLIONS of patterns per second.  But even with a reduced search space on advanced (expensive) hardware it looks to take years to complete an exhaustive search.
 
-BUT, as currently written, even on expensive AWS instances using multiple GPUs it won't finish for centuries.
+### Building and running the program
 
-So... It seems like a solution needs to improve compute speed or trim the search space by several orders of magnitude.
-
-### Seeing it in action
-
-Change into the find-optimal directory and run `make`.  NOTE on a mac you have to use Homebrew to install libargp.
+Change into the find-optimal directory and run `make`.  Depending on your platform you may have to install dependencies (the Makefile isn't smart enough to use autoconf or something)
 
 Run `./build/find-optimal --help` to see the arguments.
