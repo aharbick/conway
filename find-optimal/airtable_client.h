@@ -16,12 +16,12 @@
 typedef struct {
     char* memory;
     size_t size;
-} curl_response_t;
+} CurlResponse;
 
 typedef struct {
     const char* endpoint;
     const char* api_key;
-} airtable_config_t;
+} AirtableConfig;
 
 typedef enum {
     AIRTABLE_SUCCESS,
@@ -29,9 +29,9 @@ typedef enum {
     AIRTABLE_ERROR_CURL_INIT,
     AIRTABLE_ERROR_CURL_PERFORM,
     AIRTABLE_ERROR_HTTP
-} airtable_result_t;
+} AirtableResult;
 
-static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, curl_response_t *response) {
+static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, CurlResponse *response) {
     size_t realsize = size * nmemb;
     char *ptr = (char*)realloc(response->memory, response->size + realsize + 1);
 
@@ -48,7 +48,7 @@ static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, cur
     return realsize;
 }
 
-static airtable_result_t airtable_get_config(airtable_config_t* config) {
+static AirtableResult airtableGetConfig(AirtableConfig* config) {
     config->endpoint = getenv("AIRTABLE_END_POINT");
     config->api_key = getenv("AIRTABLE_API_KEY");
 
@@ -60,7 +60,7 @@ static airtable_result_t airtable_get_config(airtable_config_t* config) {
     return AIRTABLE_SUCCESS;
 }
 
-static void airtable_cleanup_response(curl_response_t* response) {
+static void airtableCleanupResponse(CurlResponse* response) {
     if (response->memory) {
         free(response->memory);
         response->memory = NULL;
@@ -68,25 +68,25 @@ static void airtable_cleanup_response(curl_response_t* response) {
     }
 }
 
-static airtable_result_t airtable_http_request(const char* url, const char* json_data, const char* api_key, curl_response_t* response, bool is_post) {
+static AirtableResult airtableHttpRequest(const char* url, const char* jsonData, const char* apiKey, CurlResponse* response, bool isPost) {
     CURL *curl = curl_easy_init();
     if (!curl) {
         printf("[ERROR] Failed to initialize curl\n");
         return AIRTABLE_ERROR_CURL_INIT;
     }
 
-    char auth_header[512];
-    snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", api_key);
+    char authHeader[512];
+    snprintf(authHeader, sizeof(authHeader), "Authorization: Bearer %s", apiKey);
 
     struct curl_slist *headers = NULL;
-    if (is_post) {
+    if (isPost) {
         headers = curl_slist_append(headers, "Content-Type: application/json");
     }
-    headers = curl_slist_append(headers, auth_header);
+    headers = curl_slist_append(headers, authHeader);
 
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    if (is_post && json_data) {
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_data);
+    if (isPost && jsonData) {
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonData);
     }
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
@@ -94,17 +94,17 @@ static airtable_result_t airtable_http_request(const char* url, const char* json
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, CURL_TIMEOUT);
 
     CURLcode res = curl_easy_perform(curl);
-    airtable_result_t result = AIRTABLE_SUCCESS;
+    AirtableResult result = AIRTABLE_SUCCESS;
 
     if (res != CURLE_OK) {
         printf("[ERROR] curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
         result = AIRTABLE_ERROR_CURL_PERFORM;
     } else {
-        long response_code;
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+        long responseCode;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &responseCode);
 
-        if (response_code != 200 && response_code != 201) {
-            printf("[ERROR] Airtable API returned HTTP %ld\n", response_code);
+        if (responseCode != 200 && responseCode != 201) {
+            printf("[ERROR] Airtable API returned HTTP %ld\n", responseCode);
             if (response->memory) {
                 printf("[ERROR] Response: %s\n", response->memory);
             }
@@ -118,24 +118,24 @@ static airtable_result_t airtable_http_request(const char* url, const char* json
     return result;
 }
 
-static const char* airtable_find_json_value(const char* json, const char* key) {
+static const char* airtableFindJsonValue(const char* json, const char* key) {
     if (!json || !key) return NULL;
 
-    char search_key[256];
-    snprintf(search_key, sizeof(search_key), "\"%s\":", key);
+    char searchKey[256];
+    snprintf(searchKey, sizeof(searchKey), "\"%s\":", key);
 
-    const char* pos = strstr(json, search_key);
+    const char* pos = strstr(json, searchKey);
     if (!pos) return NULL;
 
-    pos += strlen(search_key);
+    pos += strlen(searchKey);
     while (*pos == ' ' || *pos == '\t') pos++;
 
     return pos;
 }
 
-static bool airtable_send_progress(ulong64 frame_id, int kernel_id, int chunk_id, double patterns_per_second, bool is_frame_complete, bool is_test) {
-    airtable_config_t config;
-    if (airtable_get_config(&config) != AIRTABLE_SUCCESS) {
+static bool airtableSendProgress(bool frameComplete, ulong64 frameIdx, int kernelIdx, int chunkIdx, ulong64 patternsPerSecond, int bestGenerations, ulong64 bestPattern, const char* bestPatternBin, bool isTest) {
+    AirtableConfig config;
+    if (airtableGetConfig(&config) != AIRTABLE_SUCCESS) {
         printf("[WARN] Skipping progress upload\n");
         return false;
     }
@@ -143,62 +143,39 @@ static bool airtable_send_progress(ulong64 frame_id, int kernel_id, int chunk_id
     char url[MAX_URL_LENGTH];
     snprintf(url, sizeof(url), "%s/Progress", config.endpoint);
 
-    char json_data[MAX_JSON_LENGTH];
-    time_t current_time = time(NULL);
-    snprintf(json_data, sizeof(json_data),
+    char jsonData[MAX_JSON_LENGTH];
+    time_t currentTime = time(NULL);
+    snprintf(jsonData, sizeof(jsonData),
         "{"
         "\"fields\": {"
         "\"timestamp\": %ld,"
-        "\"frame_id\": %llu,"
-        "\"kernel_id\": %d,"
-        "\"chunk_id\": %d,"
-        "\"patterns_per_second\": %.2f,"
-        "\"frame_complete\": %s,"
+        "\"frameComplete\": %s,"
+        "\"frameIdx\": %llu,"
+        "\"kernelIdx\": %d,"
+        "\"chunkIdx\": %d,"
+        "\"patternsPerSecond\": %llu,"
+        "\"bestGenerations\": %d,"
+        "\"bestPattern\": \"%llu\","
+        "\"bestPatternBin\": \"%s\","
         "\"test\": %s"
         "}"
         "}",
-        current_time, frame_id, kernel_id, chunk_id, patterns_per_second,
-        is_frame_complete ? "true" : "false", is_test ? "true" : "false"
+        currentTime,
+        frameComplete ? "true" : "false",
+        frameIdx, kernelIdx, chunkIdx, patternsPerSecond,
+        bestGenerations, bestPattern, bestPatternBin,
+        isTest ? "true" : "false"
     );
 
-    curl_response_t response = {0};
-    airtable_result_t result = airtable_http_request(url, json_data, config.api_key, &response, true);
+    CurlResponse response = {0};
+    AirtableResult result = airtableHttpRequest(url, jsonData, config.api_key, &response, true);
 
-    airtable_cleanup_response(&response);
+    airtableCleanupResponse(&response);
     return (result == AIRTABLE_SUCCESS);
 }
 
-static bool airtable_send_result(int generations, ulong64 pattern, const char* pattern_bin, bool is_test) {
-    airtable_config_t config;
-    if (airtable_get_config(&config) != AIRTABLE_SUCCESS) {
-        printf("[WARN] Skipping result upload\n");
-        return false;
-    }
 
-    char url[MAX_URL_LENGTH];
-    snprintf(url, sizeof(url), "%s/Results", config.endpoint);
-
-    char json_data[MAX_JSON_LENGTH];
-    snprintf(json_data, sizeof(json_data),
-        "{"
-        "\"fields\": {"
-        "\"generations\": %d,"
-        "\"pattern\": \"%llu\","
-        "\"pattern_bin\": \"%s\","
-        "\"test\": %s"
-        "}"
-        "}",
-        generations, pattern, pattern_bin, is_test ? "true" : "false"
-    );
-
-    curl_response_t response = {0};
-    airtable_result_t result = airtable_http_request(url, json_data, config.api_key, &response, true);
-
-    airtable_cleanup_response(&response);
-    return (result == AIRTABLE_SUCCESS);
-}
-
-static bool airtable_init() {
+static bool airtableInit() {
     CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
     if (res != CURLE_OK) {
         printf("[ERROR] Failed to initialize libcurl: %s\n", curl_easy_strerror(res));
@@ -207,59 +184,59 @@ static bool airtable_init() {
     return true;
 }
 
-static int airtable_get_best_result() {
-    airtable_config_t config;
-    if (airtable_get_config(&config) != AIRTABLE_SUCCESS) {
+static int airtableGetBestResult() {
+    AirtableConfig config;
+    if (airtableGetConfig(&config) != AIRTABLE_SUCCESS) {
         printf("[WARN] Cannot query best result\n");
         return -1;
     }
 
     char url[MAX_URL_LENGTH];
-    snprintf(url, sizeof(url), "%s/Results?sort%%5B0%%5D%%5Bfield%%5D=generations&sort%%5B0%%5D%%5Bdirection%%5D=desc&maxRecords=1&filterByFormula=NOT(test)", config.endpoint);
+    snprintf(url, sizeof(url), "%s/Progress?sort%%5B0%%5D%%5Bfield%%5D=bestGenerations&sort%%5B0%%5D%%5Bdirection%%5D=desc&maxRecords=1&filterByFormula=NOT(test)", config.endpoint);
 
-    curl_response_t response = {0};
-    airtable_result_t result = airtable_http_request(url, NULL, config.api_key, &response, false);
+    CurlResponse response = {0};
+    AirtableResult result = airtableHttpRequest(url, NULL, config.api_key, &response, false);
 
-    int best_generations = -1;
+    int bestGenerations = -1;
     if (result == AIRTABLE_SUCCESS && response.memory) {
-        const char* gen_pos = airtable_find_json_value(response.memory, "generations");
-        if (gen_pos) {
-            best_generations = atoi(gen_pos);
+        const char* genPos = airtableFindJsonValue(response.memory, "bestGenerations");
+        if (genPos) {
+            bestGenerations = atoi(genPos);
         } else {
-            best_generations = 0;
+            bestGenerations = 0;
         }
     }
 
-    airtable_cleanup_response(&response);
-    return best_generations;
+    airtableCleanupResponse(&response);
+    return bestGenerations;
 }
 
-static ulong64 airtable_get_best_complete_frame() {
-    airtable_config_t config;
-    if (airtable_get_config(&config) != AIRTABLE_SUCCESS) {
+static ulong64 airtableGetBestCompleteFrame() {
+    AirtableConfig config;
+    if (airtableGetConfig(&config) != AIRTABLE_SUCCESS) {
         printf("[WARN] Cannot query best complete frame\n");
         return ULLONG_MAX;
     }
 
     char url[MAX_URL_LENGTH];
-    snprintf(url, sizeof(url), "%s/Progress?sort%%5B0%%5D%%5Bfield%%5D=frame_id&sort%%5B0%%5D%%5Bdirection%%5D=desc&maxRecords=1&filterByFormula=AND(NOT(test),frame_complete)", config.endpoint);
+    snprintf(url, sizeof(url), "%s/Progress?sort%%5B0%%5D%%5Bfield%%5D=frameIdx&sort%%5B0%%5D%%5Bdirection%%5D=desc&maxRecords=1&filterByFormula=AND(NOT(test),frameComplete)", config.endpoint);
 
-    curl_response_t response = {0};
-    airtable_result_t result = airtable_http_request(url, NULL, config.api_key, &response, false);
+    CurlResponse response = {0};
+    AirtableResult result = airtableHttpRequest(url, NULL, config.api_key, &response, false);
 
-    ulong64 best_frame_id = ULLONG_MAX;
+    ulong64 bestFrameIdx = ULLONG_MAX;
     if (result == AIRTABLE_SUCCESS && response.memory) {
-        const char* frame_pos = airtable_find_json_value(response.memory, "frame_id");
-        if (frame_pos) {
-            best_frame_id = strtoull(frame_pos, NULL, 10);
+        const char* framePos = airtableFindJsonValue(response.memory, "frameIdx");
+        if (framePos) {
+            bestFrameIdx = strtoull(framePos, NULL, 10);
         }
     }
 
-    airtable_cleanup_response(&response);
-    return best_frame_id;
+    airtableCleanupResponse(&response);
+    return bestFrameIdx;
 }
 
-static void airtable_cleanup() {
+static void airtableCleanup() {
     curl_global_cleanup();
 }
 

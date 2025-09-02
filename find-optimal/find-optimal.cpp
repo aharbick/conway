@@ -17,14 +17,14 @@
 const char *prog = "find-optimal v0.1";
 const char *prog_bug_email = "aharbick@aharbick.com";
 static char prog_doc[] = "Search for terminal and stable states in an 8x8 bounded Conway's Game of Life grid";
-static char prog_args_doc[] = "";
+static char ProgramArgs_doc[] = "";
 static struct argp_option argp_options[] = {
   { "cudaconfig", 'c', "config", 0, "CUDA kernel params numgpus:blocksize:threadsperblock (e.g. 1:1024:1024)"},
   { "threads", 't', "num", 0, "Number of CPU threads (if you use more than one GPU you should use matching threads)."},
 #ifndef __NVCC__
   { "range", 'r', "BEGIN[:END]", 0, "Range to search (e.g., 1: or 1:1012415). Default end is ULONG_MAX."},
 #endif
-  { "frame-range", 'f', "BEGIN[:END]", 0, "Frame range to search (e.g., 1: or 1:12515 or 'resume'). Use 'resume' to start from last completed frame in database. Default end is " STRINGIFY_CONSTANT(FRAME_SEARCH_TOTAL_FRAMES) "."},
+  { "frame-index-range", 'f', "BEGIN[:END]", 0, "Frame index range to search from 0 to " STRINGIFY_CONSTANT(FRAME_SEARCH_TOTAL_MINIMAL_FRAMES) " or 'resume' (e.g. 0: or 1:1234 or resume)"},
   { "chunk-size", 'k', "size", 0, "Chunk size for pattern processing (default: 32768)."},
   { "verbose", 'v', NULL, 0, "Enable verbose output."},
   { "random", 'R', NULL, 0, "Use random patterns."},
@@ -95,7 +95,7 @@ static bool validateRange(ulong64 begin, ulong64 end, const char* beginStr, cons
   return true;
 }
 
-static bool parseCudaConfig(const char *arg, prog_args *a) {
+static bool parseCudaConfig(const char *arg, ProgramArgs *a) {
   if (!arg || *arg == '\0') {
     printf("[ERROR] CUDA config cannot be empty\n");
     return false;
@@ -163,7 +163,7 @@ static bool parseCudaConfig(const char *arg, prog_args *a) {
   return true;
 }
 
-static void initializeDefaultArgs(prog_args* cli) {
+static void initializeDefaultArgs(ProgramArgs* cli) {
   cli->cpuThreads = 1;
   cli->gpusToUse = 1;
   cli->blockSize = DEFAULT_CUDA_GRID_SIZE;
@@ -181,7 +181,7 @@ static void initializeDefaultArgs(prog_args* cli) {
 }
 
 #ifdef __NVCC__
-static void printCudaDeviceInfo(prog_args* cli) {
+static void printCudaDeviceInfo(ProgramArgs* cli) {
   cudaDeviceProp prop;
   cudaGetDeviceProperties(&prop, 0);
   printf("Running on GPU: %s\n", prop.name);
@@ -192,9 +192,9 @@ static void printCudaDeviceInfo(prog_args* cli) {
 }
 #endif
 
-static prog_args* createThreadArgs(prog_args* cli, int threadId, ulong64 patternsPerThread) {
-  prog_args* targs = (prog_args*)malloc(sizeof(prog_args));
-  memcpy(targs, cli, sizeof(prog_args));
+static ProgramArgs* createThreadArgs(ProgramArgs* cli, int threadId, ulong64 patternsPerThread) {
+  ProgramArgs* targs = (ProgramArgs*)malloc(sizeof(ProgramArgs));
+  memcpy(targs, cli, sizeof(ProgramArgs));
   targs->threadId = threadId;
 #ifndef __NVCC__
   targs->beginAt = (cli->beginAt > 0) ? cli->beginAt : threadId * patternsPerThread + 1;
@@ -205,16 +205,16 @@ static prog_args* createThreadArgs(prog_args* cli, int threadId, ulong64 pattern
 
 typedef struct {
   pthread_t* threads;
-  prog_args** threadArgs;
+  ProgramArgs** threadArgs;
   int numThreads;
-} thread_context_t;
+} ThreadContext;
 
-static thread_context_t* createAndStartThreads(prog_args* cli) {
+static ThreadContext* createAndStartThreads(ProgramArgs* cli) {
   ulong64 patternsPerThread = ((cli->endAt > 0) ? cli->endAt - cli->beginAt : ULONG_MAX) / cli->cpuThreads;
 
-  thread_context_t* context = (thread_context_t*)malloc(sizeof(thread_context_t));
+  ThreadContext* context = (ThreadContext*)malloc(sizeof(ThreadContext));
   context->threads = (pthread_t*)malloc(sizeof(pthread_t) * cli->cpuThreads);
-  context->threadArgs = (prog_args**)malloc(sizeof(prog_args*) * cli->cpuThreads);
+  context->threadArgs = (ProgramArgs**)malloc(sizeof(ProgramArgs*) * cli->cpuThreads);
   context->numThreads = cli->cpuThreads;
 
   for (int t = 0; t < cli->cpuThreads; t++) {
@@ -229,7 +229,7 @@ static void printThreadCompletion(int threadId, const char* status) {
   printf("\n[Thread %d - %llu] %s\n", threadId, (ulong64)time(NULL), status);
 }
 
-static void joinAndCleanupThreads(thread_context_t* context) {
+static void joinAndCleanupThreads(ThreadContext* context) {
   for (int t = 0; t < context->numThreads; t++) {
     pthread_join(context->threads[t], NULL);
     printThreadCompletion(t, "COMPLETE");
@@ -240,7 +240,7 @@ static void joinAndCleanupThreads(thread_context_t* context) {
   free(context);
 }
 
-static void cleanupProgArgs(prog_args* cli) {
+static void cleanupProgArgs(ProgramArgs* cli) {
   free(cli);
 }
 
@@ -300,8 +300,8 @@ static bool parseRange(char *arg, ulong64 *begin, ulong64 *end, ulong64 defaultE
   return true;
 }
 
-static error_t parse_argp_options(int key, char *arg, struct argp_state *state) {
-  prog_args *a = (prog_args *)state->input;
+static error_t parseArgpOptions(int key, char *arg, struct argp_state *state) {
+  ProgramArgs *a = (ProgramArgs *)state->input;
 
   switch(key) {
   case 'c':
@@ -329,7 +329,7 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
 #endif
 
   case 'f':
-    if (!parseRange(arg, &a->frameBeginIdx, &a->frameEndIdx, FRAME_SEARCH_TOTAL_FRAMES)) {
+    if (!parseRange(arg, &a->frameBeginIdx, &a->frameEndIdx, FRAME_SEARCH_TOTAL_MINIMAL_FRAMES)) {
       return ARGP_ERR_UNKNOWN;
     }
     break;
@@ -375,7 +375,7 @@ static error_t parse_argp_options(int key, char *arg, struct argp_state *state) 
 }
 
 
-struct argp argp = {argp_options, parse_argp_options, prog_args_doc, prog_doc, 0, 0};
+struct argp argp = {argp_options, parseArgpOptions, ProgramArgs_doc, prog_doc, 0, 0};
 
 int main(int argc, char **argv) {
   // Set locale for number formatting with thousands separators
@@ -385,10 +385,10 @@ int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
 
   // Initialize Airtable client
-  airtable_init();
+  airtableInit();
 
   // Process the arguments
-  prog_args *cli = (prog_args *) malloc(sizeof(prog_args));
+  ProgramArgs *cli = (ProgramArgs *) malloc(sizeof(ProgramArgs));
   initializeDefaultArgs(cli);
   argp_parse(&argp, argc, argv, 0, 0, cli);
 
@@ -401,37 +401,32 @@ int main(int argc, char **argv) {
     srand(now);  // Seed random number generator with current time
 
     // Generate realistic progress data
-    ulong64 test_frame_id = 1000000 + (rand() % 1000000);  // Frame IDs in realistic range
-    int test_kernel_id = rand() % 16;  // Kernel IDs 0-15
-    int test_chunk_id = rand() % 100;  // Chunk IDs 0-99
-    double test_rate = 500000.0 + (rand() % 1000000);  // Realistic patterns/sec rate
-
-    // Test progress upload
-    printf("Testing progress upload (frame=%llu, kernel=%d, chunk=%d, rate=%.0f)...\n",
-           test_frame_id, test_kernel_id, test_chunk_id, test_rate);
-    bool progressResult = airtable_send_progress(test_frame_id, test_kernel_id, test_chunk_id, test_rate, false, true);
-    printf("Progress upload %s\n", progressResult ? "succeeded" : "failed");
+    ulong64 testFrameId = 1000000 + (rand() % 1000000);  // Frame IDs in realistic range
+    int testKernelId = rand() % 16;  // Kernel IDs 0-15
+    int testChunkId = rand() % 100;  // Chunk IDs 0-99
+    double testRate = 500000.0 + (rand() % 1000000);  // Realistic patterns/sec rate
 
     // Generate realistic result data
-    int test_generations = 180 + (rand() % 200);  // Generations 180-379 (realistic range)
-    ulong64 test_pattern = ((ulong64)rand() << 32) | rand();  // Random 64-bit pattern
+    int testGenerations = 180 + (rand() % 200);  // Generations 180-379 (realistic range)
+    ulong64 testPattern = ((ulong64)rand() << 32) | rand();  // Random 64-bit pattern
 
     // Generate a realistic 64-bit binary pattern string
-    char test_pattern_bin[65];
+    char testPatternBin[65];
     for (int i = 0; i < 64; i++) {
-      test_pattern_bin[i] = ((test_pattern >> (63 - i)) & 1) ? '1' : '0';
+      testPatternBin[i] = ((testPattern >> (63 - i)) & 1) ? '1' : '0';
     }
-    test_pattern_bin[64] = '\0';
+    testPatternBin[64] = '\0';
 
-    // Test result upload
-    printf("Testing result upload (generations=%d, pattern=%llX)...\n",
-           test_generations, test_pattern);
-    bool resultResult = airtable_send_result(test_generations, test_pattern, test_pattern_bin, true);
-    printf("Result upload %s\n", resultResult ? "succeeded" : "failed");
+    // Test unified progress upload with best result data
+    printf("Testing progress upload (frameIdx=%llu, kernelIdx=%d, chunkIdx=%d, rate=%.0f, generations=%d, pattern=%llX)...\n",
+           testFrameId, testKernelId, testChunkId, testRate, testGenerations, testPattern);
+    bool sendProgressResult = airtableSendProgress(false, testFrameId, testKernelId, testChunkId, (ulong64)testRate, 
+                                                    testGenerations, testPattern, testPatternBin, true);
+    printf("Progress upload %s\n", sendProgressResult ? "succeeded" : "failed");
 
     // Test querying best result
     printf("Testing best result query...\n");
-    int bestResult = airtable_get_best_result();
+    int bestResult = airtableGetBestResult();
     if (bestResult >= 0) {
         printf("Best result query succeeded: %d generations\n", bestResult);
     } else {
@@ -440,7 +435,7 @@ int main(int argc, char **argv) {
 
     // Test querying best complete frame
     printf("Testing best complete frame query...\n");
-    ulong64 bestFrame = airtable_get_best_complete_frame();
+    ulong64 bestFrame = airtableGetBestCompleteFrame();
     if (bestFrame == ULLONG_MAX) {
         printf("Best complete frame query: no completed frames found\n");
     } else {
@@ -449,8 +444,8 @@ int main(int argc, char **argv) {
 
     // Cleanup and exit
     cleanupProgArgs(cli);
-    airtable_cleanup();
-    return (progressResult && resultResult && bestResult >= 0) ? 0 : 1;
+    airtableCleanup();
+    return (sendProgressResult && bestResult >= 0) ? 0 : 1;
   }
 
 #ifdef __NVCC__
@@ -460,7 +455,7 @@ int main(int argc, char **argv) {
   // Handle resume from database if requested
   if (cli->frameBeginIdx == ULLONG_MAX) {
     // User specified "resume" - query database for last completed frame
-    ulong64 resumeFrame = airtable_get_best_complete_frame();
+    ulong64 resumeFrame = airtableGetBestCompleteFrame();
     if (resumeFrame == ULLONG_MAX) {
       // No completed frames found in database or error occurred
       cli->frameBeginIdx = 0;
@@ -473,19 +468,19 @@ int main(int argc, char **argv) {
   }
 
   // Initialize global best generations from Airtable database
-  int dbBestGenerations = airtable_get_best_result();
+  int dbBestGenerations = airtableGetBestResult();
   if (dbBestGenerations > 0) {
     gBestGenerations = dbBestGenerations;
     printf("Best generations so far: %d\n", gBestGenerations);
   }
 
   // Create and start threads, then wait for completion
-  thread_context_t *context = createAndStartThreads(cli);
+  ThreadContext *context = createAndStartThreads(cli);
   joinAndCleanupThreads(context);
   cleanupProgArgs(cli);
 
   // Cleanup Airtable client
-  airtable_cleanup();
+  airtableCleanup();
 
   return 0;
 }
