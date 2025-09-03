@@ -15,3 +15,28 @@ Pkg.add("IJulia")
 * Run notebook
 
 jupyter notebook
+
+* If you have trouble with the wrong kernel version...
+
+jupyter kernelspec list
+jupyter kernelspec remove <previous version>
+
+// Open julia REPL
+julia> using IJulia
+julia> installkernel("Julia 1.11.6")
+[ Info: Installing Julia 1.11.6 kernelspec in /Users/aharbick/Library/Jupyter/kernels/julia-1.11.6-1.11
+"/Users/aharbick/Library/Jupyter/kernels/julia-1.11.6-1.11"
+
+// Cursor helped... and it looks julia need to add/remove some packages
+julia> using Pkg;
+julia> Pkg.add("Conda")
+julia> Conda.rm("numpy")
+julia> Conda.rm("matplotlib")
+julia> Conda.add("numpy")
+julia> Conda.add("matplotlib")
+juila> Pkg.build("PyCall")
+
+
+
+
+
