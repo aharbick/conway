@@ -75,6 +75,12 @@ $(BUILDDIR)/explore-cachability.o: $(SRCDIR)/explore-cachability.cpp $(INCLUDEDI
 explore-cachability: $(BUILDDIR)/explore-cachability.o
 	$(CC) -o $(BUILDDIR)/$@ $^ $(CFLAGS)
 
+$(BUILDDIR)/validate_frame_search_completeness.o: $(SRCDIR)/validate_frame_search_completeness.cpp $(INCLUDEDIR)/frame_utils.h $(INCLUDEDIR)/gol_core.h
+	$(CC) $(CFLAGS) -I$(INCLUDEDIR) -c $< -o $@
+
+validate-frame-search-completeness: $(BUILDDIR)/validate_frame_search_completeness.o
+	$(CC) -o $(BUILDDIR)/$@ $^ $(CFLAGS)
+
 setup:
 	mkdir -p build
 
