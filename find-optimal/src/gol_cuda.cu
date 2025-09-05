@@ -2,6 +2,8 @@
 #include "gol.h"
 
 #include <iostream>
+#include <locale>
+#include <sstream>
 
 #ifdef __NVCC__
 
@@ -157,11 +159,16 @@ __host__ void reportChunkResults(gol::SearchMemory& mem, ProgramArgs *cli, doubl
   char bestPatternBin[BINARY_STRING_BUFFER_SIZE] = {'\0'};
   asBinary(*mem.h_bestPattern(), bestPatternBin);
 
+  // Format patternsPerSec with commas using a separate stringstream
+  std::ostringstream formattedRate;
+  formattedRate.imbue(std::locale(""));
+  formattedRate << patternsPerSec;
+  
   std::cout << "[Thread " << cli->threadId << " - " << (uint64_t)time(NULL) 
             << "] frameIdx=" << frameIdx << ", kernelIdx=" << kernelIdx 
             << ", chunkIdx=" << chunkIdx << ", bestGenerations=" << (int)*mem.h_bestGenerations()
             << ", bestPattern=" << *mem.h_bestPattern() << ", bestPatternBin=" << bestPatternBin 
-            << ", patternsPerSec=" << patternsPerSec << "\n";
+            << ", patternsPerSec=" << formattedRate.str() << "\n";
 
   airtableSendProgress(isFrameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSec, (int)*mem.h_bestGenerations(),
                        *mem.h_bestPattern(), bestPatternBin, false);
