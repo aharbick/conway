@@ -24,7 +24,7 @@
 #include "display_utils.h"
 #include "frame_utils.h"
 #include "gol_core.h"
-#include "search_memory.h"
+#include "gol_memory.h"
 #include "utils.h"
 
 // Global variables updated across threads
@@ -39,13 +39,13 @@ __host__ void searchRandom(ProgramArgs *cli);
 __host__ void searchAll(ProgramArgs *cli);
 __host__ void *search(void *args);
 
-// Search execution functions
-__host__ void executeCandidateSearch(SearchMemory *mem, ProgramArgs *cli, uint64_t start, uint64_t end);
-__host__ void executeKernelSearch(SearchMemory *mem, ProgramArgs *cli, uint64_t frame, uint64_t frameIdx);
-__host__ void reportChunkResults(SearchMemory *mem, ProgramArgs *cli, double startTime, uint64_t frame,
+// Search execution functions (using RAII memory management)
+__host__ void executeCandidateSearch(gol::SearchMemory &mem, ProgramArgs *cli, uint64_t start, uint64_t end);
+__host__ void executeKernelSearch(gol::SearchMemory &mem, ProgramArgs *cli, uint64_t frame, uint64_t frameIdx);
+__host__ void reportChunkResults(gol::SearchMemory &mem, ProgramArgs *cli, double startTime, uint64_t frame,
                                  uint64_t frameIdx, int kernelIdx, int chunkIdx, bool isFrameComplete);
 
 // Helper functions
-__host__ const char *getSearchDescription(ProgramArgs *cli, char *buffer, size_t bufferSize);
+__host__ std::string getSearchDescription(ProgramArgs *cli);
 
 #endif

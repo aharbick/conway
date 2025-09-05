@@ -89,7 +89,7 @@ TEST_F(SearchCompletenessTest, RotationReflectionEliminationReducesByFactor8) {
   // We randomly sample frames and expect that we should see about 1/8 frames where
   // isMinimalFrame() is true, since each frame has 8 equivalent orientations on average.
 
-  const int SAMPLE_SIZE = 100000;  // Sample size for statistical test
+  constexpr int SAMPLE_SIZE = 100000;  // Sample size for statistical test
   int minimalCount = 0;
 
   std::mt19937_64 rng(12345);  // Fixed seed for reproducibility

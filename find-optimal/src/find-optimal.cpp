@@ -7,29 +7,38 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <iostream>
+#include <memory>
+#include <vector>
+
 #include "cli_parser.h"
 #include "gol.h"
 
-// Thread context structure
-typedef struct {
-  pthread_t* threads;
-  ProgramArgs** threadArgs;
+// Thread context class with RAII
+class ThreadContext {
+ public:
+  std::vector<pthread_t> threads;
+  std::vector<std::unique_ptr<ProgramArgs>> threadArgs;
   int numThreads;
-} ThreadContext;
+
+  ThreadContext(int count) : numThreads(count) {
+    threads.resize(count);
+    threadArgs.reserve(count);
+  }
+};
 
 #ifdef __NVCC__
 static void printCudaDeviceInfo(ProgramArgs* cli) {
   int deviceCount;
   cudaGetDeviceCount(&deviceCount);
-  printf("CUDA devices available: %d\n", deviceCount);
-  printf("Using %d GPU(s) with blockSize=%d, threadsPerBlock=%d\n", cli->gpusToUse, cli->blockSize,
-         cli->threadsPerBlock);
+  std::cout << "CUDA devices available: " << deviceCount << "\n";
+  std::cout << "Using " << cli->gpusToUse << " GPU(s) with blockSize=" << cli->blockSize
+            << ", threadsPerBlock=" << cli->threadsPerBlock << "\n";
 }
 #endif
 
-static ProgramArgs* createThreadArgs(ProgramArgs* cli, int threadId, uint64_t patternsPerThread) {
-  ProgramArgs* targs = (ProgramArgs*)malloc(sizeof(ProgramArgs));
-  memcpy(targs, cli, sizeof(ProgramArgs));
+static std::unique_ptr<ProgramArgs> createThreadArgs(ProgramArgs* cli, int threadId, uint64_t patternsPerThread) {
+  auto targs = std::make_unique<ProgramArgs>(*cli);
   targs->threadId = threadId;
 
   // Each thread has the same endAt but different beginAt offsets
@@ -44,33 +53,26 @@ static ProgramArgs* createThreadArgs(ProgramArgs* cli, int threadId, uint64_t pa
   return targs;
 }
 
-static ThreadContext* createAndStartThreads(ProgramArgs* cli) {
+static std::unique_ptr<ThreadContext> createAndStartThreads(ProgramArgs* cli) {
   uint64_t patternsPerThread = ((cli->endAt > 0) ? cli->endAt - cli->beginAt : ULONG_MAX) / cli->cpuThreads;
 
-  ThreadContext* context = (ThreadContext*)malloc(sizeof(ThreadContext));
-  context->threads = (pthread_t*)malloc(sizeof(pthread_t) * cli->cpuThreads);
-  context->threadArgs = (ProgramArgs**)malloc(sizeof(ProgramArgs*) * cli->cpuThreads);
-  context->numThreads = cli->cpuThreads;
+  auto context = std::make_unique<ThreadContext>(cli->cpuThreads);
 
   // Start threads
-  for (int t = 0; t < cli->cpuThreads; t++) {
-    context->threadArgs[t] = createThreadArgs(cli, t, patternsPerThread);
-    pthread_create(&context->threads[t], NULL, search, context->threadArgs[t]);
+  for (int t = 0; t < cli->cpuThreads; ++t) {
+    context->threadArgs.emplace_back(createThreadArgs(cli, t, patternsPerThread));
+    pthread_create(&context->threads[t], NULL, search, context->threadArgs[t].get());
   }
 
   return context;
 }
 
 
-static void joinAndCleanupThreads(ThreadContext* context) {
-  for (int t = 0; t < context->numThreads; t++) {
+static void joinAndCleanupThreads(std::unique_ptr<ThreadContext>& context) {
+  for (int t = 0; t < context->numThreads; ++t) {
     pthread_join(context->threads[t], NULL);
     printThreadStatus(t, "COMPLETE");
-    free(context->threadArgs[t]);
   }
-  free(context->threads);
-  free(context->threadArgs);
-  free(context);
 }
 
 int main(int argc, char** argv) {
@@ -84,16 +86,16 @@ int main(int argc, char** argv) {
   airtableInit();
 
   // Process the arguments using CLI parser
-  ProgramArgs* cli = parseCommandLineArgs(argc, argv);
+  auto* cli = parseCommandLineArgs(argc, argv);
   if (!cli) {
-    printf("[ERROR] Failed to parse command line arguments\n");
+    std::cerr << "[ERROR] Failed to parse command line arguments\n";
     airtableCleanup();
     return 1;
   }
 
   // Handle test-airtable flag
   if (cli->testAirtable) {
-    printf("Testing Airtable API with fake data...\n");
+    std::cout << "Testing Airtable API with fake data...\n";
 
     // Generate realistic but varying test data based on current time
     time_t now = time(NULL);
@@ -117,25 +119,24 @@ int main(int argc, char** argv) {
     testPatternBin[64] = '\0';
 
     // Test unified progress upload with best result data
-    printf(
-        "Testing progress upload (frameIdx=%llu, kernelIdx=%d, chunkIdx=%d, rate=%.0f, generations=%d, "
-        "pattern=%llX)...\n",
-        testFrameId, testKernelId, testChunkId, testRate, testGenerations, testPattern);
+    std::cout << "Testing progress upload (frameIdx=" << testFrameId << ", kernelIdx=" << testKernelId
+              << ", chunkIdx=" << testChunkId << ", rate=" << testRate << ", generations=" << testGenerations
+              << ", pattern=" << std::hex << testPattern << std::dec << ")...\n";
     bool sendProgressResult = airtableSendProgress(false, testFrameId, testKernelId, testChunkId, (uint64_t)testRate,
                                                    testGenerations, testPattern, testPatternBin, true);
-    printf("Progress upload %s\n", sendProgressResult ? "succeeded" : "failed");
+    std::cout << "Progress upload " << (sendProgressResult ? "succeeded" : "failed") << "\n";
 
     // Test querying best result
     int bestResult = airtableGetBestResult();
-    printf("Best result query: %d\n", bestResult);
+    std::cout << "Best result query: " << bestResult << "\n";
 
     // Test querying best complete frame
-    printf("Testing best complete frame query...\n");
+    std::cout << "Testing best complete frame query...\n";
     uint64_t bestFrame = airtableGetBestCompleteFrame();
     if (bestFrame == ULLONG_MAX) {
-      printf("Best complete frame query: no completed frames found\n");
+      std::cout << "Best complete frame query: no completed frames found\n";
     } else {
-      printf("Best complete frame query result: %llu\n", bestFrame);
+      std::cout << "Best complete frame query result: " << bestFrame << "\n";
     }
 
     // Cleanup and exit
@@ -152,18 +153,18 @@ int main(int argc, char** argv) {
   int dbBestGenerations = airtableGetBestResult();
   if (dbBestGenerations > 0) {
     gBestGenerations = dbBestGenerations;
-    printf("Best generations so far: %d\n", gBestGenerations);
+    std::cout << "Best generations so far: " << gBestGenerations << "\n";
   }
 
   // Print resume message if frame-based search is being used
   if (cli->frameBeginIdx > 0 && cli->frameEndIdx > 0) {
-    printf("Resuming from frame: %lu\n", cli->frameBeginIdx);
+    std::cout << "Resuming from frame: " << cli->frameBeginIdx << "\n";
   } else if (cli->frameBeginIdx == 0 && cli->frameEndIdx > 0) {
-    printf("Starting from frame 0\n");
+    std::cout << "Starting from frame 0\n";
   }
 
   // Create and start threads, then wait for completion
-  ThreadContext* context = createAndStartThreads(cli);
+  auto context = createAndStartThreads(cli);
   joinAndCleanupThreads(context);
   cleanupProgramArgs(cli);
 

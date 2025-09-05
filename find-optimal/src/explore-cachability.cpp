@@ -7,6 +7,8 @@
 #include <unistd.h>
 
 #include <cstdint>
+#include <iomanip>
+#include <iostream>
 #include <random>
 #include <set>
 
@@ -216,6 +218,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  printf("Total generations: %lu, saved generations: %lu (%2.2f%%)\n", totalGenerations, savedGenerations,
-         (float)savedGenerations / totalGenerations * 100);
+  std::cout << "Total generations: " << totalGenerations << ", saved generations: " << savedGenerations << " ("
+            << std::fixed << std::setprecision(2) << ((float)savedGenerations / totalGenerations * 100) << "%%)\n";
 }

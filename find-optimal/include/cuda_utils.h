@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <iostream>
 
 #ifdef __NVCC__
 #include <cuda.h>
@@ -13,7 +14,7 @@
 
 inline void cudaAssert(cudaError_t code, const char *file, int line) {
   if (code != cudaSuccess) {
-    fprintf(stderr, "CUDA Error: %s %s %d\n", cudaGetErrorString(code), file, line);
+    std::cerr << "CUDA Error: " << cudaGetErrorString(code) << " " << file << " " << line << "\n";
     exit(code);
   }
 }

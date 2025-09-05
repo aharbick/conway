@@ -7,6 +7,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
+#include <memory>
+#include <string>
 
 #include "airtable_client.h"
 #include "constants.h"
@@ -35,7 +38,7 @@ static struct argp_option argp_options[] = {
 // Validation functions
 static bool validatePositiveInteger(long value, const char* name, const char* str) {
   if (value <= 0) {
-    printf("[ERROR] %s '%s' must be positive\n", name, str);
+    std::cerr << "[ERROR] " << name << " '" << str << "' must be positive\n";
     return false;
   }
   return true;
@@ -43,7 +46,7 @@ static bool validatePositiveInteger(long value, const char* name, const char* st
 
 static bool validateIntegerString(const char* str, const char* name) {
   if (!str || *str == '\0') {
-    printf("[ERROR] %s cannot be empty\n", name);
+    std::cerr << "[ERROR] " << name << " cannot be empty\n";
     return false;
   }
 
@@ -52,12 +55,12 @@ static bool validateIntegerString(const char* str, const char* name) {
   long value = strtol(str, &end, 10);
 
   if (errno == ERANGE || value == LONG_MAX || value == LONG_MIN) {
-    printf("[ERROR] %s '%s' is out of range\n", name, str);
+    std::cerr << "[ERROR] " << name << " '" << str << "' is out of range\n";
     return false;
   }
 
   if (*end != '\0') {
-    printf("[ERROR] %s '%s' contains invalid characters\n", name, str);
+    std::cerr << "[ERROR] " << name << " '" << str << "' contains invalid characters\n";
     return false;
   }
 
@@ -66,7 +69,7 @@ static bool validateIntegerString(const char* str, const char* name) {
 
 static bool validateUnsignedLongString(const char* str, const char* name) {
   if (!str || *str == '\0') {
-    printf("[ERROR] %s cannot be empty\n", name);
+    std::cerr << "[ERROR] " << name << " cannot be empty\n";
     return false;
   }
 
@@ -75,12 +78,12 @@ static bool validateUnsignedLongString(const char* str, const char* name) {
   unsigned long long value = strtoull(str, &end, 10);
 
   if (errno == ERANGE || value == ULLONG_MAX) {
-    printf("[ERROR] %s '%s' is out of range\n", name, str);
+    std::cerr << "[ERROR] " << name << " '" << str << "' is out of range\n";
     return false;
   }
 
   if (*end != '\0') {
-    printf("[ERROR] %s '%s' contains invalid characters\n", name, str);
+    std::cerr << "[ERROR] " << name << " '" << str << "' contains invalid characters\n";
     return false;
   }
 
@@ -89,7 +92,7 @@ static bool validateUnsignedLongString(const char* str, const char* name) {
 
 static bool validateRange(uint64_t begin, uint64_t end, const char* beginStr, const char* endStr) {
   if (end <= begin) {
-    printf("[WARN] invalid range '%s:%s', end must be greater than begin\n", beginStr, endStr);
+    std::cout << "[WARN] invalid range '" << beginStr << ":" << endStr << "', end must be greater than begin\n";
     return false;
   }
   return true;
@@ -97,45 +100,35 @@ static bool validateRange(uint64_t begin, uint64_t end, const char* beginStr, co
 
 static bool parseCudaConfig(const char* arg, ProgramArgs* a) {
   if (!arg || *arg == '\0') {
-    printf("[ERROR] CUDA config cannot be empty\n");
+    std::cerr << "[ERROR] CUDA config cannot be empty\n";
     return false;
   }
 
-  char* argCopy = strdup(arg);
-  if (!argCopy) {
-    printf("[ERROR] Memory allocation failed\n");
-    return false;
-  }
-
+  std::string argCopy(arg);
   char* saveptr;
-  char* gpuStr = strtok_r(argCopy, ":", &saveptr);
+  char* gpuStr = strtok_r(&argCopy[0], ":", &saveptr);
 
   if (!gpuStr) {
-    printf("[ERROR] Invalid CUDA config format '%s', expected numgpus:blocksize:threadsperblock\n", arg);
-    free(argCopy);
+    std::cerr << "[ERROR] Invalid CUDA config format '" << arg << "', expected numgpus:blocksize:threadsperblock\n";
     return false;
   }
 
   if (!validateIntegerString(gpuStr, "gpusToUse")) {
-    free(argCopy);
     return false;
   }
 
   a->gpusToUse = strtol(gpuStr, NULL, 10);
   if (!validatePositiveInteger(a->gpusToUse, "gpusToUse", gpuStr)) {
-    free(argCopy);
     return false;
   }
 
   char* blockStr = strtok_r(NULL, ":", &saveptr);
   if (blockStr) {
     if (!validateIntegerString(blockStr, "blockSize")) {
-      free(argCopy);
       return false;
     }
     a->blockSize = strtol(blockStr, NULL, 10);
     if (!validatePositiveInteger(a->blockSize, "blockSize", blockStr)) {
-      free(argCopy);
       return false;
     }
   }
@@ -145,24 +138,21 @@ static bool parseCudaConfig(const char* arg, ProgramArgs* a) {
     char* threadsStr = strtok_r(NULL, ":", &saveptr);
     if (threadsStr) {
       if (!validateIntegerString(threadsStr, "threadsPerBlock")) {
-        free(argCopy);
         return false;
       }
       a->threadsPerBlock = strtol(threadsStr, NULL, 10);
       if (!validatePositiveInteger(a->threadsPerBlock, "threadsPerBlock", threadsStr)) {
-        free(argCopy);
         return false;
       }
     }
   }
 
-  free(argCopy);
   return true;
 }
 
 static bool parseRangeArg(const char* arg, uint64_t* begin, uint64_t* end) {
   if (!arg || *arg == '\0') {
-    printf("[ERROR] Range argument cannot be empty\n");
+    std::cerr << "[ERROR] Range argument cannot be empty\n";
     return false;
   }
 
@@ -174,45 +164,35 @@ static bool parseRangeArg(const char* arg, uint64_t* begin, uint64_t* end) {
     return true;
   }
 
-  char* argCopy = strdup(arg);
-  if (!argCopy) {
-    printf("[ERROR] Memory allocation failed\n");
-    return false;
-  }
-
-  char* colon = strchr(argCopy, ':');
+  std::string argCopy(arg);
+  char* colon = strchr(&argCopy[0], ':');
   if (colon == NULL) {
-    printf("[ERROR] invalid range format '%s', expected BEGIN: or BEGIN:END or 'resume'\n", arg);
-    free(argCopy);
+    std::cerr << "[ERROR] invalid range format '" << arg << "', expected BEGIN: or BEGIN:END or 'resume'\n";
     return false;
   }
 
   *colon = '\0';  // Split the string
 
   // Validate begin value
-  if (!validateUnsignedLongString(argCopy, "range begin")) {
-    free(argCopy);
+  if (!validateUnsignedLongString(&argCopy[0], "range begin")) {
     return false;
   }
 
-  *begin = strtoull(argCopy, NULL, 10);
+  *begin = strtoull(&argCopy[0], NULL, 10);
 
   // Check if end is specified
   if (*(colon + 1) == '\0') {
     *end = 0;  // No end specified
   } else {
     if (!validateUnsignedLongString(colon + 1, "range end")) {
-      free(argCopy);
       return false;
     }
     *end = strtoull(colon + 1, NULL, 10);
-    if (!validateRange(*begin, *end, argCopy, colon + 1)) {
-      free(argCopy);
+    if (!validateRange(*begin, *end, &argCopy[0], colon + 1)) {
       return false;
     }
   }
 
-  free(argCopy);
   return true;
 }
 
@@ -299,24 +279,21 @@ void initializeDefaultArgs(ProgramArgs* args) {
 }
 
 ProgramArgs* parseCommandLineArgs(int argc, char** argv) {
-  ProgramArgs* args = (ProgramArgs*)malloc(sizeof(ProgramArgs));
+  auto args = std::make_unique<ProgramArgs>();
   if (!args) {
-    printf("[ERROR] Memory allocation failed\n");
+    std::cerr << "[ERROR] Memory allocation failed\n";
     return nullptr;
   }
 
-  initializeDefaultArgs(args);
+  initializeDefaultArgs(args.get());
 
-  if (argp_parse(&argp, argc, argv, 0, 0, args) != 0) {
-    free(args);
+  if (argp_parse(&argp, argc, argv, 0, 0, args.get()) != 0) {
     return nullptr;
   }
 
-  return args;
+  return args.release();
 }
 
 void cleanupProgramArgs(ProgramArgs* args) {
-  if (args) {
-    free(args);
-  }
+  delete args;
 }

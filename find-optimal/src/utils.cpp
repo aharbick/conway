@@ -1,5 +1,8 @@
 #include "utils.h"
 
+#include <iostream>
+#include <sstream>
+
 // Time utilities for performance measurement
 __host__ double getCurrentTime() {
   struct timespec ts;
@@ -11,8 +14,11 @@ __host__ double getCurrentTime() {
 __host__ void printThreadStatus(int threadId, const char *format, ...) {
   va_list args;
   va_start(args, format);
-  printf("[Thread %d - %lu] ", threadId, (uint64_t)time(NULL));
-  vprintf(format, args);
-  printf("\n");
+
+  char buffer[1024];
+  vsnprintf(buffer, sizeof(buffer), format, args);
+
+  std::cout << "[Thread " << threadId << " - " << (uint64_t)time(NULL) << "] " << buffer << "\n";
+
   va_end(args);
 }

@@ -37,14 +37,14 @@ __host__ __device__ inline uint64_t reflectHorizontal(uint64_t pattern) {
 // Extract frame bits from a pattern
 __host__ __device__ inline uint64_t extractFrame(uint64_t pattern) {
   // Frame mask - 1s for frame positions, 0s elsewhere
-  static const uint64_t FRAME_MASK = 0xE7ULL << 56 |  // FFFooFFF
-                                     0xC3ULL << 48 |  // FFooooFF
-                                     0x81ULL << 40 |  // FooooooF
-                                                      // oooooooo
-                                                      // oooooooo
-                                     0x81ULL << 16 |  // FooooooF
-                                     0xC3ULL << 8 |   // FFooooFF
-                                     0xE7ULL;         // FFFooFFF
+  static constexpr uint64_t FRAME_MASK = 0xE7ULL << 56 |  // FFFooFFF
+                                         0xC3ULL << 48 |  // FFooooFF
+                                         0x81ULL << 40 |  // FooooooF
+                                                          // oooooooo
+                                                          // oooooooo
+                                         0x81ULL << 16 |  // FooooooF
+                                         0xC3ULL << 8 |   // FFooooFF
+                                         0xE7ULL;         // FFFooFFF
 
   return pattern & FRAME_MASK;
 }

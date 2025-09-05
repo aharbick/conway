@@ -45,8 +45,6 @@ all: setup format-check explore-cachability find-optimal
 $(BUILDDIR)/cli_parser.o: $(SRCDIR)/cli_parser.cpp $(INCLUDEDIR)/cli_parser.h
 	$(CC) $(CFLAGS) -I$(INCLUDEDIR) -c $< -o $@
 
-$(BUILDDIR)/search_memory.o: $(SRCDIR)/search_memory.cpp $(INCLUDEDIR)/search_memory.h $(INCLUDEDIR)/cuda_utils.h
-	$(NVCC) $(if $(NVCFLAGS), $(NVCFLAGS), $(CFLAGS)) -I$(INCLUDEDIR) -c $< -o $@
 
 $(BUILDDIR)/utils.o: $(SRCDIR)/utils.cpp $(INCLUDEDIR)/utils.h
 	$(CC) $(CFLAGS) -I$(INCLUDEDIR) -c $< -o $@
@@ -66,7 +64,7 @@ else
 CUDA_OBJECTS = 
 endif
 
-find-optimal: $(BUILDDIR)/find-optimal.o $(BUILDDIR)/cli_parser.o $(BUILDDIR)/search_memory.o $(BUILDDIR)/gol.o $(BUILDDIR)/utils.o $(CUDA_OBJECTS)
+find-optimal: $(BUILDDIR)/find-optimal.o $(BUILDDIR)/cli_parser.o $(BUILDDIR)/gol.o $(BUILDDIR)/utils.o $(CUDA_OBJECTS)
 	$(CC) $^ -o $(BUILDDIR)/$@ $(LIBS)
 
 $(BUILDDIR)/explore-cachability.o: $(SRCDIR)/explore-cachability.cpp
