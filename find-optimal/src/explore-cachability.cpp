@@ -1,5 +1,4 @@
 #include <limits.h>
-#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,45 +7,44 @@
 #include <unistd.h>
 
 #include <cstdint>
+#include <random>
 #include <set>
 
 #include "display_utils.h"
-#include "mt.h"
 using namespace std;
 
 static const uint64_t gNeighborFilters[64] = {
     // Row 0 pixels
-    (uint64_t)770, (uint64_t)1797 << 0, (uint64_t)1797 << 1, (uint64_t)1797 << 2, (uint64_t)1797 << 3,
-    (uint64_t)1797 << 4, (uint64_t)1797 << 5, (uint64_t)49216,
+    770ULL, 1797ULL << 0, 1797ULL << 1, 1797ULL << 2, 1797ULL << 3, 1797ULL << 4, 1797ULL << 5, 49216ULL,
 
     // Row 1 pixels
-    (uint64_t)197123, (uint64_t)460039 << 0, (uint64_t)460039 << 1, (uint64_t)460039 << 2, (uint64_t)460039 << 3,
-    (uint64_t)460039 << 4, (uint64_t)460039 << 5, (uint64_t)12599488,
+    197123ULL, 460039ULL << 0, 460039ULL << 1, 460039ULL << 2, 460039ULL << 3, 460039ULL << 4, 460039ULL << 5,
+    12599488ULL,
 
 
     // Row 2 pixels
-    (uint64_t)197123 << 8, (uint64_t)460039 << 8 << 0, (uint64_t)460039 << 8 << 1, (uint64_t)460039 << 8 << 2,
-    (uint64_t)460039 << 8 << 3, (uint64_t)460039 << 8 << 4, (uint64_t)460039 << 8 << 5, (uint64_t)12599488 << 8,
+    197123ULL << 8, 460039ULL << 8 << 0, 460039ULL << 8 << 1, 460039ULL << 8 << 2, 460039ULL << 8 << 3,
+    460039ULL << 8 << 4, 460039ULL << 8 << 5, 12599488ULL << 8,
 
     // Row 3 pixels
-    (uint64_t)197123 << 16, (uint64_t)460039 << 16 << 0, (uint64_t)460039 << 16 << 1, (uint64_t)460039 << 16 << 2,
-    (uint64_t)460039 << 16 << 3, (uint64_t)460039 << 16 << 4, (uint64_t)460039 << 16 << 5, (uint64_t)12599488 << 16,
+    197123ULL << 16, 460039ULL << 16 << 0, 460039ULL << 16 << 1, 460039ULL << 16 << 2, 460039ULL << 16 << 3,
+    460039ULL << 16 << 4, 460039ULL << 16 << 5, 12599488ULL << 16,
 
     // Row 4 pixels
-    (uint64_t)197123 << 24, (uint64_t)460039 << 24 << 0, (uint64_t)460039 << 24 << 1, (uint64_t)460039 << 24 << 2,
-    (uint64_t)460039 << 24 << 3, (uint64_t)460039 << 24 << 4, (uint64_t)460039 << 24 << 5, (uint64_t)12599488 << 24,
+    197123ULL << 24, 460039ULL << 24 << 0, 460039ULL << 24 << 1, 460039ULL << 24 << 2, 460039ULL << 24 << 3,
+    460039ULL << 24 << 4, 460039ULL << 24 << 5, 12599488ULL << 24,
 
     // Row 5 pixels
-    (uint64_t)197123 << 32, (uint64_t)460039 << 32 << 0, (uint64_t)460039 << 32 << 1, (uint64_t)460039 << 32 << 2,
-    (uint64_t)460039 << 32 << 3, (uint64_t)460039 << 32 << 4, (uint64_t)460039 << 32 << 5, (uint64_t)12599488 << 32,
+    197123ULL << 32, 460039ULL << 32 << 0, 460039ULL << 32 << 1, 460039ULL << 32 << 2, 460039ULL << 32 << 3,
+    460039ULL << 32 << 4, 460039ULL << 32 << 5, 12599488ULL << 32,
 
     // Row 6 pixels
-    (uint64_t)197123 << 40, (uint64_t)460039 << 40 << 0, (uint64_t)460039 << 40 << 1, (uint64_t)460039 << 40 << 2,
-    (uint64_t)460039 << 40 << 3, (uint64_t)460039 << 40 << 4, (uint64_t)460039 << 40 << 5, (uint64_t)12599488 << 40,
+    197123ULL << 40, 460039ULL << 40 << 0, 460039ULL << 40 << 1, 460039ULL << 40 << 2, 460039ULL << 40 << 3,
+    460039ULL << 40 << 4, 460039ULL << 40 << 5, 12599488ULL << 40,
 
     // Row 7 pixels
-    (uint64_t)515 << 48, (uint64_t)1287 << 48 << 0, (uint64_t)1287 << 48 << 1, (uint64_t)1287 << 48 << 2,
-    (uint64_t)1287 << 48 << 3, (uint64_t)1287 << 48 << 4, (uint64_t)1287 << 48 << 5, (uint64_t)16576 << 48};
+    515ULL << 48, 1287ULL << 48 << 0, 1287ULL << 48 << 1, 1287ULL << 48 << 2, 1287ULL << 48 << 3, 1287ULL << 48 << 4,
+    1287ULL << 48 << 5, 16576ULL << 48};
 
 uint64_t computeNextGeneration(uint64_t currentGeneration) {
   uint64_t nextGeneration = currentGeneration;
@@ -171,7 +169,7 @@ int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
 
   // Initialize Random number generator
-  init_genrand64((uint64_t)time(NULL));
+  std::mt19937_64 rng(static_cast<uint64_t>(time(nullptr)));
 
   int x = 7;
   int y = 5;
@@ -185,7 +183,7 @@ int main(int argc, char **argv) {
 
   // Check 1m random numbers
   for (uint64_t i = 0; i < 1000 * 1000; i++) {
-    uint64_t pattern = genrand64_int64() % ULONG_MAX;
+    uint64_t pattern = rng() % ULONG_MAX;
 
     uint64_t generations = 0;
     uint64_t shortcutGenerations = 0;

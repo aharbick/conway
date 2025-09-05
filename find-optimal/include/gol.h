@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include <cstdint>
+#include <mutex>
 
 // Project modules (organized logically)
 #include "airtable_client.h"
@@ -27,7 +28,7 @@
 #include "utils.h"
 
 // Global variables updated across threads
-extern pthread_mutex_t gMutex;
+extern std::mutex gMutex;
 extern int gBestGenerations;
 
 // Global state management

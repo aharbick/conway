@@ -69,7 +69,7 @@ endif
 find-optimal: $(BUILDDIR)/find-optimal.o $(BUILDDIR)/cli_parser.o $(BUILDDIR)/search_memory.o $(BUILDDIR)/gol.o $(BUILDDIR)/utils.o $(CUDA_OBJECTS)
 	$(CC) $^ -o $(BUILDDIR)/$@ $(LIBS)
 
-$(BUILDDIR)/explore-cachability.o: $(SRCDIR)/explore-cachability.cpp $(INCLUDEDIR)/mt.h
+$(BUILDDIR)/explore-cachability.o: $(SRCDIR)/explore-cachability.cpp
 	$(CC) $(CFLAGS) -I$(INCLUDEDIR) -c $< -o $@
 
 explore-cachability: $(BUILDDIR)/explore-cachability.o

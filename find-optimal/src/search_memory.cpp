@@ -1,7 +1,7 @@
 #include "search_memory.h"
 
 __host__ SearchMemory *allocateSearchMemory(size_t candidateSize) {
-  SearchMemory *mem = (SearchMemory *)malloc(sizeof(SearchMemory));
+  SearchMemory *mem = static_cast<SearchMemory *>(malloc(sizeof(SearchMemory)));
 
   // Allocate device memory
   cudaCheckError(cudaMalloc((void **)&mem->d_candidates, sizeof(uint64_t) * candidateSize));
@@ -10,10 +10,10 @@ __host__ SearchMemory *allocateSearchMemory(size_t candidateSize) {
   cudaCheckError(cudaMalloc((void **)&mem->d_bestGenerations, sizeof(uint64_t)));
 
   // Allocate host memory
-  mem->h_candidates = (uint64_t *)calloc(candidateSize, sizeof(uint64_t));
-  mem->h_numCandidates = (uint64_t *)malloc(sizeof(uint64_t));
-  mem->h_bestPattern = (uint64_t *)malloc(sizeof(uint64_t));
-  mem->h_bestGenerations = (uint64_t *)malloc(sizeof(uint64_t));
+  mem->h_candidates = static_cast<uint64_t *>(calloc(candidateSize, sizeof(uint64_t)));
+  mem->h_numCandidates = static_cast<uint64_t *>(malloc(sizeof(uint64_t)));
+  mem->h_bestPattern = static_cast<uint64_t *>(malloc(sizeof(uint64_t)));
+  mem->h_bestGenerations = static_cast<uint64_t *>(malloc(sizeof(uint64_t)));
 
   return mem;
 }

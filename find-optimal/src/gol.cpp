@@ -1,25 +1,25 @@
 #include "gol.h"
 
-#include "mt.h"
+#include <mutex>
+#include <random>
 
 // Global variables updated across threads
-pthread_mutex_t gMutex = PTHREAD_MUTEX_INITIALIZER;
+std::mutex gMutex;
 int gBestGenerations = 0;
 
 __host__ bool updateBestGenerations(int generations) {
-  pthread_mutex_lock(&gMutex);
+  std::lock_guard<std::mutex> lock(gMutex);
 
   bool isNewGlobalBest = (gBestGenerations < generations);
   if (isNewGlobalBest) {
     gBestGenerations = generations;
   }
 
-  pthread_mutex_unlock(&gMutex);
   return isNewGlobalBest;
 }
 
 __host__ void *search(void *args) {
-  ProgramArgs *cli = (ProgramArgs *)args;
+  ProgramArgs *cli = static_cast<ProgramArgs *>(args);
 
   printThreadStatus(cli->threadId, "Running with CUDA enabled");
 
@@ -37,7 +37,7 @@ __host__ void *search(void *args) {
 }
 
 __host__ void searchRandom(ProgramArgs *cli) {
-  init_genrand64((uint64_t)time(NULL));
+  std::mt19937_64 rng(static_cast<uint64_t>(time(nullptr)));
 
   SearchMemory *mem = allocateSearchMemory(RANDOM_SEARCH_MAX_CANDIDATES);
 
@@ -46,7 +46,7 @@ __host__ void searchRandom(ProgramArgs *cli) {
   uint64_t chunkSize = RANDOM_SEARCH_CHUNK_SIZE;
   uint64_t iterations = cli->randomSamples / chunkSize;
   for (uint64_t i = 0; i < iterations; i++) {
-    uint64_t start = genrand64_int64();
+    uint64_t start = rng();
     uint64_t end = start + chunkSize;
     executeCandidateSearch(mem, cli, start, end);
   }
