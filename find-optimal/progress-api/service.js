@@ -73,7 +73,7 @@ function googleSendProgress(e, spreadsheetId) {
     const chunkIdx = parseInt(data.chunkIdx) || 0;
     const patternsPerSecond = parseInt(data.patternsPerSecond) || 0;
     const bestGenerations = parseInt(data.bestGenerations) || 0;
-    const bestPattern = data.bestPattern || '';
+    const bestPattern = data.bestPattern ? "'" + data.bestPattern : '';  // Prefix with ' to force text format
     const bestPatternBin = data.bestPatternBin || '';
     const isTest = data.test === 'true' ? true : null;
 
