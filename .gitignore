@@ -37,7 +37,6 @@
 # Directories
 logs
 analysis
-bin
 build
 third-party
 .vscode

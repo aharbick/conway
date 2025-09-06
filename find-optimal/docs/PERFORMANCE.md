@@ -1,3 +1,36 @@
+## Claude Cloud vs. Owned Analysis
+
+  | GPU          | CUDA Cores | Memory | Bandwidth  | Est. Performance       | Cost            |
+  |--------------|------------|--------|------------|------------------------|-----------------|
+  | Jetson Orin  | 2,048      | 64GB   | 204 GB/s   | 260M patterns/sec      | ~$800 (owned)   |
+  | RTX 4070 Ti  | 8,448      | 16GB   | 672 GB/s   | ~800M patterns/sec     | ~$800 (owned)   |
+  | L4 (Cloud)   | 7,424      | 24GB   | 300 GB/s   | ~400-500M patterns/sec | ~$0.60/hour     |
+  | V100 (Cloud) | 5,120      | 16GB   | 900 GB/s   | ~600-800M patterns/sec | ~$2.50/hour     |
+  | RTX 5090     | ~21,760    | 32GB   | 1,792 GB/s | ~2-3B patterns/sec     | ~$2,000 (owned) |
+
+### Actuals
+
+Testing on L4
+
+```
+aharbick@conway-gpu-vm:~/conway/find-optimal$ ./build/find-optimal -f 10000:10001 -v
+CUDA devices available: 1
+Using 1 GPU(s) with blockSize=1024, threadsPerBlock=1024
+Best generations so far: 206
+Resuming from frame: 10000
+[Thread 0 - 1757123303] Running with CUDA enabled
+[Thread 0 - 1757123303] searching ALL in frames (10000 - 10001)
+[Thread 0 - 1757123316] frameIdx=10000, kernelIdx=0, chunkIdx=0, bestGenerations=196, bestPattern=121164286024753984, bestPatternBin=0000000110101110011101100100011010110011111110000010001101000000, patternsPerSec=5354807460
+[Thread 0 - 1757123329] frameIdx=10000, kernelIdx=1, chunkIdx=0, bestGenerations=197, bestPattern=124482395516969800, bestPatternBin=0000000110111010010000000001010001000101100101000010001101001000, patternsPerSec=5261557652
+[Thread 0 - 1757123343] frameIdx=10000, kernelIdx=2, chunkIdx=0, bestGenerations=205, bestPattern=108709153201324880, bestPatternBin=0000000110000010001101100110011000011100011001100000001101010000, patternsPerSec=5201557390
+[Thread 0 - 1757123357] frameIdx=10000, kernelIdx=3, chunkIdx=0, bestGenerations=202, bestPattern=113245416975775576, bestPatternBin=0000000110010010010101000001101101010011010010000011011101011000, patternsPerSec=5177582419
+[Thread 0 - 1757123370] frameIdx=10000, kernelIdx=4, chunkIdx=0, bestGenerations=199, bestPattern=700888277469893440, bestPatternBin=0000100110111010000011100010110011000101110101000001001101000000, patternsPerSec=5154540927
+[Thread 0 - 1757123384] frameIdx=10000, kernelIdx=5, chunkIdx=0, bestGenerations=198, bestPattern=691936324663908168, bestPatternBin=0000100110011010010000000110101111010110110010000001011101001000, patternsPerSec=5060420099
+...
+```
+
+So best was: 5,354,807,460 (about 10-12x better)
+
 ## Testing on AWS g5.48xlarge Instances
 
 The most recent code suffered warp divergence such that it was only getting about 25% efficiency. See code at: e3b2d4bdd2433db6cf673333d084d20679b31008
