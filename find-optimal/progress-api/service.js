@@ -65,7 +65,7 @@ function googleSendProgress(e, spreadsheetId) {
     const data = e.parameter;
     
     // Extract parameters (matching the C++ function signature)
-    const frameComplete = data.frameComplete === 'true';
+    const frameComplete = data.frameComplete === 'true' ? true : null;
     const frameIdx = parseInt(data.frameIdx) || 0;
     const kernelIdx = parseInt(data.kernelIdx) || 0;
     const chunkIdx = parseInt(data.chunkIdx) || 0;
@@ -73,7 +73,7 @@ function googleSendProgress(e, spreadsheetId) {
     const bestGenerations = parseInt(data.bestGenerations) || 0;
     const bestPattern = data.bestPattern || '';
     const bestPatternBin = data.bestPatternBin || '';
-    const isTest = data.test === 'true';
+    const isTest = data.test === 'true' ? true : null;
     
     // Get the spreadsheet and worksheet
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
@@ -170,6 +170,7 @@ function googleGetBestResult(e, spreadsheetId) {
       const isTest = testCol !== -1 ? (row[testCol] === true || row[testCol] === 'true') : false;
       const generations = parseInt(row[bestGenerationsCol]) || 0;
       
+      // Skip test records (where test is true) and null/empty test values are considered non-test
       if (!isTest && generations > maxGenerations) {
         maxGenerations = generations;
       }
@@ -238,6 +239,7 @@ function googleGetBestCompleteFrame(e, spreadsheetId) {
       const frameComplete = row[frameCompleteCol] === true || row[frameCompleteCol] === 'true';
       const frameIdx = parseInt(row[frameIdxCol]) || 0;
       
+      // Skip test records (where test is true) and null/empty test values are considered non-test
       if (!isTest && frameComplete && (maxFrameIdx === null || frameIdx > maxFrameIdx)) {
         maxFrameIdx = frameIdx;
       }
