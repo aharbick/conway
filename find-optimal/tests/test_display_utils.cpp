@@ -56,8 +56,8 @@ TEST_F(DisplayUtilsTest, AsBinaryPowerOfTwo) {
   EXPECT_EQ(strlen(buffer), 64);
 }
 
-TEST_F(DisplayUtilsTest, AsBinaryProblematicAirtableValue) {
-  // Test the specific value that was problematic with Airtable precision
+TEST_F(DisplayUtilsTest, AsBinaryProblematicLargeValue) {
+  // Test a specific large value that could be problematic with precision
   char buffer[65];
   uint64_t problematic_value = 1736161183231225856ULL;
   asBinary(problematic_value, buffer);

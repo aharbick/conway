@@ -11,7 +11,7 @@ typedef struct ProgramArgs {
   int threadsPerBlock;
   bool random;
   bool verbose;
-  bool testAirtable;
+  bool testGoogleApi;
   bool resumeFromDatabase;
   uint64_t randomSamples;
   uint64_t beginAt;

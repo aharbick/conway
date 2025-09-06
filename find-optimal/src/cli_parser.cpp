@@ -11,8 +11,8 @@
 #include <memory>
 #include <string>
 
-#include "airtable_client.h"
 #include "constants.h"
+#include "google_client.h"
 
 // Program information
 const char* prog = "find-optimal v0.1";
@@ -32,7 +32,7 @@ static struct argp_option argp_options[] = {
     {"chunk-size", 'k', "size", 0, "Chunk size for pattern processing (default: 65536)."},
     {"random", 'R', "samples", 0, "Random search mode with specified number of samples."},
     {"verbose", 'v', 0, 0, "Verbose output."},
-    {"test-airtable", 'T', 0, 0, "Test Airtable API functionality and exit."},
+    {"test-google-api", 'T', 0, 0, "Test Google Sheets API functionality and exit."},
     {0}};
 
 // Validation functions
@@ -158,7 +158,7 @@ static bool parseRangeArg(const char* arg, uint64_t* begin, uint64_t* end) {
 
   // Handle special 'resume' case
   if (strcmp(arg, "resume") == 0) {
-    uint64_t resumeFrame = airtableGetBestCompleteFrame();
+    uint64_t resumeFrame = googleGetBestCompleteFrame();
     *begin = (resumeFrame == ULLONG_MAX) ? 0 : resumeFrame + 1;
     *end = FRAME_SEARCH_TOTAL_MINIMAL_FRAMES;
     return true;
@@ -249,7 +249,7 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
     a->verbose = true;
     break;
   case 'T':
-    a->testAirtable = true;
+    a->testGoogleApi = true;
     break;
   default:
     return ARGP_ERR_UNKNOWN;
@@ -268,7 +268,7 @@ void initializeDefaultArgs(ProgramArgs* args) {
   args->threadsPerBlock = 1024;
   args->random = false;
   args->verbose = false;
-  args->testAirtable = false;
+  args->testGoogleApi = false;
   args->resumeFromDatabase = false;
   args->randomSamples = 0;
   args->beginAt = 1;

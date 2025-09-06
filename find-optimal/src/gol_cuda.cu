@@ -152,7 +152,7 @@ __host__ void reportChunkResults(gol::SearchMemory& mem, ProgramArgs *cli, doubl
               << "] WARN: NO PATTERNS FOUND frameIdx=" << frameIdx 
               << ", kernelIdx=" << kernelIdx << ", chunkIdx=" << chunkIdx << "\n";
 
-    airtableSendProgress(isFrameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSec, 0, 0, "ERROR", false);
+    googleSendProgress(isFrameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSec, 0, 0, "ERROR", false);
     return;
   }
 
@@ -170,7 +170,7 @@ __host__ void reportChunkResults(gol::SearchMemory& mem, ProgramArgs *cli, doubl
             << ", bestPattern=" << *mem.h_bestPattern() << ", bestPatternBin=" << bestPatternBin 
             << ", patternsPerSec=" << formattedRate.str() << "\n";
 
-  airtableSendProgress(isFrameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSec, (int)*mem.h_bestGenerations(),
+  googleSendProgress(isFrameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSec, (int)*mem.h_bestGenerations(),
                        *mem.h_bestPattern(), bestPatternBin, false);
 }
 

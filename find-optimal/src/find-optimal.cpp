@@ -82,26 +82,26 @@ int main(int argc, char** argv) {
   // Change stdout to not buffered
   setvbuf(stdout, NULL, _IONBF, 0);
 
-  // Initialize Airtable client
-  airtableInit();
+  // Initialize Google client
+  googleInit();
 
-  // Check Airtable configuration and warn once if not configured
-  AirtableConfig airtableConfig;
-  if (airtableGetConfig(&airtableConfig) != AIRTABLE_SUCCESS) {
-    std::cout << "[WARN] Progress will not be saved to Airtable\n";
+  // Check Google configuration and warn once if not configured
+  GoogleConfig googleConfig;
+  if (googleGetConfig(&googleConfig) != GOOGLE_SUCCESS) {
+    std::cout << "[WARN] Progress will not be saved to Google Sheets\n";
   }
 
   // Process the arguments using CLI parser
   auto* cli = parseCommandLineArgs(argc, argv);
   if (!cli) {
     std::cerr << "[ERROR] Failed to parse command line arguments\n";
-    airtableCleanup();
+    googleCleanup();
     return 1;
   }
 
-  // Handle test-airtable flag
-  if (cli->testAirtable) {
-    std::cout << "Testing Airtable API with fake data...\n";
+  // Handle test-google-api flag
+  if (cli->testGoogleApi) {
+    std::cout << "Testing Google Sheets API with fake data...\n";
 
     // Generate realistic but varying test data based on current time
     time_t now = time(NULL);
@@ -128,17 +128,18 @@ int main(int argc, char** argv) {
     std::cout << "Testing progress upload (frameIdx=" << testFrameId << ", kernelIdx=" << testKernelId
               << ", chunkIdx=" << testChunkId << ", rate=" << testRate << ", generations=" << testGenerations
               << ", pattern=" << std::hex << testPattern << std::dec << ")...\n";
-    bool sendProgressResult = airtableSendProgress(false, testFrameId, testKernelId, testChunkId, (uint64_t)testRate,
-                                                   testGenerations, testPattern, testPatternBin, true);
-    std::cout << "Progress upload " << (sendProgressResult ? "succeeded" : "failed") << "\n";
+    std::string progressResponse =
+        googleSendProgressWithResponse(false, testFrameId, testKernelId, testChunkId, (uint64_t)testRate,
+                                       testGenerations, testPattern, testPatternBin, true);
+    std::cout << "Progress upload response: " << progressResponse << "\n";
 
     // Test querying best result
-    int bestResult = airtableGetBestResult();
+    int bestResult = googleGetBestResult();
     std::cout << "Best result query: " << bestResult << "\n";
 
     // Test querying best complete frame
     std::cout << "Testing best complete frame query...\n";
-    uint64_t bestFrame = airtableGetBestCompleteFrame();
+    uint64_t bestFrame = googleGetBestCompleteFrame();
     if (bestFrame == ULLONG_MAX) {
       std::cout << "Best complete frame query: no completed frames found\n";
     } else {
@@ -147,8 +148,8 @@ int main(int argc, char** argv) {
 
     // Cleanup and exit
     cleanupProgramArgs(cli);
-    airtableCleanup();
-    // Always return success - Airtable errors shouldn't fail the program
+    googleCleanup();
+    // Always return success - Google Sheets errors shouldn't fail the program
     return 0;
   }
 
@@ -156,8 +157,8 @@ int main(int argc, char** argv) {
   printCudaDeviceInfo(cli);
 #endif
 
-  // Initialize global best generations from Airtable database
-  int dbBestGenerations = airtableGetBestResult();
+  // Initialize global best generations from Google Sheets database
+  int dbBestGenerations = googleGetBestResult();
   if (dbBestGenerations > 0) {
     gBestGenerations = dbBestGenerations;
     std::cout << "Best generations so far: " << gBestGenerations << "\n";
@@ -175,8 +176,8 @@ int main(int argc, char** argv) {
   joinAndCleanupThreads(context);
   cleanupProgramArgs(cli);
 
-  // Cleanup Airtable client
-  airtableCleanup();
+  // Cleanup Google client
+  googleCleanup();
 
   return 0;
 }

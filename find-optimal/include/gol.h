@@ -17,7 +17,6 @@
 #include <mutex>
 
 // Project modules (organized logically)
-#include "airtable_client.h"
 #include "cli_parser.h"
 #include "constants.h"
 #include "cuda_utils.h"
@@ -25,6 +24,7 @@
 #include "frame_utils.h"
 #include "gol_core.h"
 #include "gol_memory.h"
+#include "google_client.h"
 #include "utils.h"
 
 // Global variables updated across threads
