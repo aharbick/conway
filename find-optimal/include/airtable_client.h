@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+
 #define CURL_TIMEOUT 30L
 
 class CurlResponse {
@@ -59,7 +60,6 @@ static AirtableResult airtableGetConfig(AirtableConfig* config) {
   config->api_key = getenv("AIRTABLE_API_KEY");
 
   if (!config->endpoint || !config->api_key) {
-    std::cout << "[WARN] Airtable environment variables not set\n";
     return AIRTABLE_ERROR_CONFIG;
   }
 
@@ -142,7 +142,6 @@ static bool airtableSendProgress(bool frameComplete, uint64_t frameIdx, int kern
                                  const char* bestPatternBin, bool isTest) {
   AirtableConfig config;
   if (airtableGetConfig(&config) != AIRTABLE_SUCCESS) {
-    std::cout << "[WARN] Skipping progress upload\n";
     return false;
   }
 
@@ -185,7 +184,6 @@ static bool airtableInit() {
 static int airtableGetBestResult() {
   AirtableConfig config;
   if (airtableGetConfig(&config) != AIRTABLE_SUCCESS) {
-    std::cout << "[WARN] Cannot query best result\n";
     return -1;
   }
 
@@ -214,7 +212,6 @@ static int airtableGetBestResult() {
 static uint64_t airtableGetBestCompleteFrame() {
   AirtableConfig config;
   if (airtableGetConfig(&config) != AIRTABLE_SUCCESS) {
-    std::cout << "[WARN] Cannot query best complete frame\n";
     return ULLONG_MAX;
   }
 

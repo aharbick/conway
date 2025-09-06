@@ -85,6 +85,12 @@ int main(int argc, char** argv) {
   // Initialize Airtable client
   airtableInit();
 
+  // Check Airtable configuration and warn once if not configured
+  AirtableConfig airtableConfig;
+  if (airtableGetConfig(&airtableConfig) != AIRTABLE_SUCCESS) {
+    std::cout << "[WARN] Progress will not be saved to Airtable\n";
+  }
+
   // Process the arguments using CLI parser
   auto* cli = parseCommandLineArgs(argc, argv);
   if (!cli) {
@@ -142,7 +148,8 @@ int main(int argc, char** argv) {
     // Cleanup and exit
     cleanupProgramArgs(cli);
     airtableCleanup();
-    return (sendProgressResult && bestResult >= 0) ? 0 : 1;
+    // Always return success - Airtable errors shouldn't fail the program
+    return 0;
   }
 
 #ifdef __NVCC__
