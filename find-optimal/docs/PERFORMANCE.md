@@ -8,9 +8,7 @@
   | V100 (Cloud) | 5,120      | 16GB   | 900 GB/s   | ~600-800M patterns/sec | ~$2.50/hour     |
   | RTX 5090     | ~21,760    | 32GB   | 1,792 GB/s | ~2-3B patterns/sec     | ~$2,000 (owned) |
 
-### Actuals
-
-Testing on L4
+### Testing on L4 (g2-standard-4: 4vCPU, 2 core, 16GB memory)
 
 ```
 aharbick@conway-gpu-vm:~/conway/find-optimal$ ./build/find-optimal -f 10000:10001 -v
@@ -31,7 +29,11 @@ Resuming from frame: 10000
 
 So best was: 5,354,807,460 (about 10-12x better)
 
-## Testing on AWS g5.48xlarge Instances
+### Testing on L4 (g2-standard-4: 4vCPU, 2 core, 16GB memory)
+
+## 2024 Testing On AWS
+
+### Testing on AWS g5.48xlarge Instances
 
 The most recent code suffered warp divergence such that it was only getting about 25% efficiency. See code at: e3b2d4bdd2433db6cf673333d084d20679b31008
 
@@ -100,7 +102,9 @@ x = 8, y = 8, rule = B3/S23:P8,8
 o7b$o2bo2b2o$o2bobo2b$2bo3b2o$o5bob$b2ob2obo$o3b4o$2o2bobob!
 ```
 
-## Testing on Jetson Nano
+## Testing on Jetson
+
+### Jetson Nano 2GB
 
 Before the implementation of Adam's suggestions below
 
@@ -114,7 +118,7 @@ aharbick@aharbick-jetson:~/Projects/conway/find-optimal$ for i in 1 2 3 4 5; do 
 AVG = 32,284,800 per second
 ```
 
-## Test in Jetson Orin
+### Test in Jetson AGX Orin
 
 Before the implementation of Adam's suggestions below
 
