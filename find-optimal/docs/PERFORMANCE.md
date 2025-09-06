@@ -1,12 +1,11 @@
-## Claude Cloud vs. Owned Analysis
+## Claude Analysis
 
-  | GPU          | CUDA Cores | Memory | Bandwidth  | Est. Performance       | Cost            |
-  |--------------|------------|--------|------------|------------------------|-----------------|
-  | Jetson Orin  | 2,048      | 64GB   | 204 GB/s   | 260M patterns/sec      | ~$800 (owned)   |
-  | RTX 4070 Ti  | 8,448      | 16GB   | 672 GB/s   | ~800M patterns/sec     | ~$800 (owned)   |
-  | L4 (Cloud)   | 7,424      | 24GB   | 300 GB/s   | ~400-500M patterns/sec | ~$0.60/hour     |
-  | V100 (Cloud) | 5,120      | 16GB   | 900 GB/s   | ~600-800M patterns/sec | ~$2.50/hour     |
-  | RTX 5090     | ~21,760    | 32GB   | 1,792 GB/s | ~2-3B patterns/sec     | ~$2,000 (owned) |
+  | GPU          | CUDA Cores | Memory | Bandwidth  | Predicted Performance  | Actual Performance | Cost           |
+  |--------------|------------|--------|------------|------------------------|--------------------|----------------|
+  | Jetson Orin  | 2,048      | 64GB   | 204 GB/s   | Not predicted          | 260M patterns/sec  | $2,000 (owned) |
+  | L4 (Cloud)   | 7,424      | 24GB   | 300 GB/s   | ~400-500M patterns/sec | 5.35B patterns/sec | ~$0.71/hour    |
+  | V100 (Cloud) | 5,120      | 16GB   | 900 GB/s   | ~600-800M patterns/sec | 3.16B patterns/sec | ~$1.78/hour    |
+  | RTX 5090     | 21,760     | 24GB   | 1,792 GB/s | 12-18B patterns/sec    | Not tested         | $3,500 (owned) |
 
 ### Testing on L4 (g2-standard-4: 4vCPU, 2 core, 16GB memory)
 
@@ -29,7 +28,23 @@ Resuming from frame: 10000
 
 So best was: 5,354,807,460 (about 10-12x better)
 
-### Testing on L4 (g2-standard-4: 4vCPU, 2 core, 16GB memory)
+### Testing on V100 (n1-highmem-2: 2vCPU, 1 core, 13GB memory)
+```
+CUDA devices available: 1
+Using 1 GPU(s) with blockSize=1024, threadsPerBlock=1024
+Resuming from frame: 10000
+[Thread 0 - 1757131157] Running with CUDA enabled
+[Thread 0 - 1757131157] searching ALL in frames (10000 - 10001)
+[Thread 0 - 1757131180] frameIdx=10000, kernelIdx=0, chunkIdx=0, bestGenerations=196, bestPattern=111008893702781760, bestPatternBin=0000000110001010011000100000000000101100000100000011101101000000, patternsPerSec=3150424453
+[Thread 0 - 1757131201] frameIdx=10000, kernelIdx=1, chunkIdx=0, bestGenerations=197, bestPattern=124482395516969800, bestPatternBin=0000000110111010010000000001010001000101100101000010001101001000, patternsPerSec=3148282772
+[Thread 0 - 1757131223] frameIdx=10000, kernelIdx=2, chunkIdx=0, bestGenerations=205, bestPattern=108709153201324880, bestPatternBin=0000000110000010001101100110011000011100011001100000001101010000, patternsPerSec=3145630332
+[Thread 0 - 1757131245] frameIdx=10000, kernelIdx=3, chunkIdx=0, bestGenerations=202, bestPattern=113245416975775576, bestPatternBin=0000000110010010010101000001101101010011010010000011011101011000, patternsPerSec=3160440813
+[Thread 0 - 1757131267] frameIdx=10000, kernelIdx=4, chunkIdx=0, bestGenerations=199, bestPattern=700888277469893440, bestPatternBin=0000100110111010000011100010110011000101110101000001001101000000, patternsPerSec=3158670502
+[Thread 0 - 1757131289] frameIdx=10000, kernelIdx=5, chunkIdx=0, bestGenerations=198, bestPattern=691936324663908168, bestPatternBin=0000100110011010010000000110101111010110110010000001011101001000, patternsPerSec=3147340574
+...
+```
+
+So best was: 3,160,440,813 (about 5x better)
 
 ## 2024 Testing On AWS
 
