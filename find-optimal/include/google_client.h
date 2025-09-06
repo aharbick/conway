@@ -274,6 +274,34 @@ static uint64_t googleGetBestCompleteFrame() {
   return bestFrameIdx;
 }
 
+static bool googleGetIsFrameComplete(uint64_t frameIdx) {
+  GoogleConfig config;
+  if (googleGetConfig(&config) != GOOGLE_SUCCESS) {
+    return false;
+  }
+
+  std::ostringstream urlStream;
+  urlStream << config.webapp_url << "?action=getIsFrameComplete";
+  urlStream << "&spreadsheetId=" << googleUrlEncode(config.spreadsheet_id);
+  urlStream << "&frameIdx=" << frameIdx;
+  const std::string url = urlStream.str();
+
+  CurlResponse response;
+  GoogleResult result = googleHttpRequest(url.c_str(), &response);
+
+  bool isComplete = false;
+  if (result == GOOGLE_SUCCESS && !response.data.empty()) {
+    const char* completePos = googleFindJsonValue(response.memory(), "isComplete");
+    if (completePos) {
+      // Check if the value is "true"
+      isComplete = (strncmp(completePos, "true", 4) == 0);
+    }
+  }
+
+  googleCleanupResponse(&response);
+  return isComplete;
+}
+
 static void googleCleanup() {
   curl_global_cleanup();
 }

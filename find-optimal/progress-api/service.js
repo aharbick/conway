@@ -20,7 +20,7 @@ function handleRequest(e) {
   try {
     // Use GET parameters only
     const data = e.parameter;
-    
+
     // Extract spreadsheetId (acts as API key)
     const spreadsheetId = data.spreadsheetId;
     if (!spreadsheetId) {
@@ -30,9 +30,9 @@ function handleRequest(e) {
         }))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    
+
     const action = data.action;
-    
+
     switch (action) {
       case 'sendProgress':
         return googleSendProgress(e, spreadsheetId);
@@ -40,10 +40,12 @@ function handleRequest(e) {
         return googleGetBestResult(e, spreadsheetId);
       case 'getBestCompleteFrame':
         return googleGetBestCompleteFrame(e, spreadsheetId);
+      case 'getIsFrameComplete':
+        return googleGetIsFrameComplete(e, spreadsheetId);
       default:
         return ContentService
           .createTextOutput(JSON.stringify({
-            error: 'Invalid action. Use "sendProgress", "getBestResult", or "getBestCompleteFrame"'
+            error: 'Invalid action. Use "sendProgress", "getBestResult", "getBestCompleteFrame", or "getIsFrameComplete"'
           }))
           .setMimeType(ContentService.MimeType.JSON);
     }
@@ -63,7 +65,7 @@ function googleSendProgress(e, spreadsheetId) {
   try {
     // Use GET parameters only
     const data = e.parameter;
-    
+
     // Extract parameters (matching the C++ function signature)
     const frameComplete = data.frameComplete === 'true' ? true : null;
     const frameIdx = parseInt(data.frameIdx) || 0;
@@ -74,11 +76,11 @@ function googleSendProgress(e, spreadsheetId) {
     const bestPattern = data.bestPattern || '';
     const bestPatternBin = data.bestPatternBin || '';
     const isTest = data.test === 'true' ? true : null;
-    
+
     // Get the spreadsheet and worksheet
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
     let sheet = spreadsheet.getSheetByName(PROGRESS_SHEET_NAME);
-    
+
     // Create sheet if it doesn't exist
     if (!sheet) {
       sheet = spreadsheet.insertSheet(PROGRESS_SHEET_NAME);
@@ -87,8 +89,10 @@ function googleSendProgress(e, spreadsheetId) {
         'timestamp', 'frameComplete', 'frameIdx', 'kernelIdx', 'chunkIdx',
         'patternsPerSecond', 'bestGenerations', 'bestPattern', 'bestPatternBin', 'test'
       ]]);
+      // Format bestPattern column (column H, index 8) as text to prevent scientific notation
+      sheet.getRange('H:H').setNumberFormat('@');
     }
-    
+
     // Add the new row
     const timestamp = Math.floor(Date.now() / 1000); // Unix timestamp
     const newRow = [
@@ -103,9 +107,13 @@ function googleSendProgress(e, spreadsheetId) {
       bestPatternBin,
       isTest
     ];
-    
+
     sheet.appendRow(newRow);
-    
+
+    // Ensure the bestPattern cell is formatted as text to prevent scientific notation
+    const lastRow = sheet.getLastRow();
+    sheet.getRange(lastRow, 8).setNumberFormat('@');  // Column H (bestPattern)
+
     return ContentService
       .createTextOutput(JSON.stringify({
         success: true,
@@ -113,7 +121,7 @@ function googleSendProgress(e, spreadsheetId) {
         timestamp: timestamp
       }))
       .setMimeType(ContentService.MimeType.JSON);
-      
+
   } catch (error) {
     return ContentService
       .createTextOutput(JSON.stringify({
@@ -131,7 +139,7 @@ function googleGetBestResult(e, spreadsheetId) {
   try {
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
     const sheet = spreadsheet.getSheetByName(PROGRESS_SHEET_NAME);
-    
+
     if (!sheet) {
       return ContentService
         .createTextOutput(JSON.stringify({
@@ -140,10 +148,10 @@ function googleGetBestResult(e, spreadsheetId) {
         }))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    
+
     // Get all data from the sheet
     const data = sheet.getDataRange().getValues();
-    
+
     if (data.length <= 1) { // Only header row or empty
       return ContentService
         .createTextOutput(JSON.stringify({
@@ -152,36 +160,36 @@ function googleGetBestResult(e, spreadsheetId) {
         }))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    
+
     // Find the column indices (assuming first row contains headers)
     const headers = data[0];
     const bestGenerationsCol = headers.indexOf('bestGenerations');
     const testCol = headers.indexOf('test');
-    
+
     if (bestGenerationsCol === -1) {
       throw new Error('bestGenerations column not found');
     }
-    
+
     // Find the maximum bestGenerations value from non-test records
     let maxGenerations = 0;
-    
+
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
       const isTest = testCol !== -1 ? (row[testCol] === true || row[testCol] === 'true') : false;
       const generations = parseInt(row[bestGenerationsCol]) || 0;
-      
+
       // Skip test records (where test is true) and null/empty test values are considered non-test
       if (!isTest && generations > maxGenerations) {
         maxGenerations = generations;
       }
     }
-    
+
     return ContentService
       .createTextOutput(JSON.stringify({
         bestGenerations: maxGenerations
       }))
       .setMimeType(ContentService.MimeType.JSON);
-      
+
   } catch (error) {
     return ContentService
       .createTextOutput(JSON.stringify({
@@ -199,7 +207,7 @@ function googleGetBestCompleteFrame(e, spreadsheetId) {
   try {
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
     const sheet = spreadsheet.getSheetByName(PROGRESS_SHEET_NAME);
-    
+
     if (!sheet) {
       return ContentService
         .createTextOutput(JSON.stringify({
@@ -208,9 +216,9 @@ function googleGetBestCompleteFrame(e, spreadsheetId) {
         }))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    
+
     const data = sheet.getDataRange().getValues();
-    
+
     if (data.length <= 1) {
       return ContentService
         .createTextOutput(JSON.stringify({
@@ -219,42 +227,130 @@ function googleGetBestCompleteFrame(e, spreadsheetId) {
         }))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    
+
     // Find column indices
     const headers = data[0];
     const frameIdxCol = headers.indexOf('frameIdx');
     const frameCompleteCol = headers.indexOf('frameComplete');
     const testCol = headers.indexOf('test');
-    
+
     if (frameIdxCol === -1 || frameCompleteCol === -1) {
       throw new Error('Required columns not found');
     }
-    
+
     // Find the maximum frameIdx value from completed, non-test records
     let maxFrameIdx = null;
-    
+
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
       const isTest = testCol !== -1 ? (row[testCol] === true || row[testCol] === 'true') : false;
       const frameComplete = row[frameCompleteCol] === true || row[frameCompleteCol] === 'true';
       const frameIdx = parseInt(row[frameIdxCol]) || 0;
-      
+
       // Skip test records (where test is true) and null/empty test values are considered non-test
       if (!isTest && frameComplete && (maxFrameIdx === null || frameIdx > maxFrameIdx)) {
         maxFrameIdx = frameIdx;
       }
     }
-    
+
     return ContentService
       .createTextOutput(JSON.stringify({
         bestFrameIdx: maxFrameIdx
       }))
       .setMimeType(ContentService.MimeType.JSON);
-      
+
   } catch (error) {
     return ContentService
       .createTextOutput(JSON.stringify({
         bestFrameIdx: null,
+        error: error.toString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * Check if a specific frame is complete
+ * Returns true if there's a row with the given frameIdx and frameComplete=true
+ */
+function googleGetIsFrameComplete(e, spreadsheetId) {
+  try {
+    const data = e.parameter;
+    const frameIdx = parseInt(data.frameIdx);
+
+    if (isNaN(frameIdx)) {
+      return ContentService
+        .createTextOutput(JSON.stringify({
+          isComplete: false,
+          error: 'Invalid or missing frameIdx parameter'
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    const sheet = spreadsheet.getSheetByName(PROGRESS_SHEET_NAME);
+
+    if (!sheet) {
+      return ContentService
+        .createTextOutput(JSON.stringify({
+          isComplete: false,
+          message: 'No progress sheet found'
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const dataRange = sheet.getDataRange().getValues();
+
+    if (dataRange.length <= 1) {
+      return ContentService
+        .createTextOutput(JSON.stringify({
+          isComplete: false,
+          message: 'No data found'
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Find column indices
+    const headers = dataRange[0];
+    const frameIdxCol = headers.indexOf('frameIdx');
+    const frameCompleteCol = headers.indexOf('frameComplete');
+    const testCol = headers.indexOf('test');
+
+    if (frameIdxCol === -1 || frameCompleteCol === -1) {
+      throw new Error('Required columns not found');
+    }
+
+    // Check if frame is complete
+    for (let i = 1; i < dataRange.length; i++) {
+      const row = dataRange[i];
+      const rowFrameIdx = parseInt(row[frameIdxCol]) || 0;
+      const isTest = testCol !== -1 ? (row[testCol] === true || row[testCol] === 'true') : false;
+      const frameComplete = row[frameCompleteCol] === true || row[frameCompleteCol] === 'true';
+
+      // Skip test records and check for matching frameIdx with frameComplete=true
+      if (!isTest && rowFrameIdx === frameIdx && frameComplete) {
+        return ContentService
+          .createTextOutput(JSON.stringify({
+            isComplete: true,
+            frameIdx: frameIdx
+          }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
+    // Frame not found as complete
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        isComplete: false,
+        frameIdx: frameIdx,
+        message: 'Frame not found or not complete'
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (error) {
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        isComplete: false,
         error: error.toString()
       }))
       .setMimeType(ContentService.MimeType.JSON);
