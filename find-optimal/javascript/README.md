@@ -1,3 +1,7 @@
+# Progress API
+
+The code in progress-api.js provides an API to our C++ code for storing progress data through a simple REST API implemented in AppScript.
+
 ## Installation
 
 1. Create the Apps Script:
@@ -21,3 +25,11 @@ curl -L "https://script.google.com/macros/s/AKfycbxU11EoXYKwgckXVfONFJdvM_QOVvTK
 
 Get Best Result (GET) - unchanged:
 curl -L "https://script.google.com/macros/s/AKfycbxU11EoXYKwgckXVfONFJdvM_QOVvTKwxzTzbwwwTUsqWMDpOx67yOfH5RsKhfTekpiow/exec?action=getBestResult&spreadsheetId=HIDDEN_SHEET_ID"
+
+# Utilities
+
+The code in utils.js can be added to an app script similar to above and provide a variety of utilities usable in Google Sheets:
+
+* bestPatternBinToDecimal(binaryString) - converts a string like 0011010110101001111101000010000000011101110000010011110111000110 to 3866890173849615814
+* bestPatternBinToRLE(binaryString) - converts the string to RLE format that works in Golly, etc.
+
