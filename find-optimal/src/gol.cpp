@@ -98,7 +98,9 @@ __host__ void searchAll(ProgramArgs *cli) {
 
 
 __host__ std::string getSearchDescription(ProgramArgs *cli) {
-  if (cli->frameBeginIdx > 0 || cli->frameEndIdx > 0) {
+  if (cli->randomFrameMode) {
+    return "RANDOMLY among all incomplete frames";
+  } else if (cli->frameBeginIdx > 0 || cli->frameEndIdx > 0) {
     std::ostringstream oss;
     oss << "ALL in frames (" << cli->frameBeginIdx << " - " << cli->frameEndIdx << ")";
     return oss.str();

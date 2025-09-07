@@ -160,9 +160,7 @@ static bool googleSendProgress(bool frameComplete, uint64_t frameIdx, int kernel
   if (isTest) {
     urlStream << "&test=true";
   }
-  if (randomFrame) {
-    urlStream << "&randomFrame=true";
-  }
+  urlStream << "&randomFrame=" << (randomFrame ? "true" : "false");
 
   const std::string url = urlStream.str();
 
@@ -198,9 +196,7 @@ static std::string googleSendProgressWithResponse(bool frameComplete, uint64_t f
   if (isTest) {
     urlStream << "&test=true";
   }
-  if (randomFrame) {
-    urlStream << "&randomFrame=true";
-  }
+  urlStream << "&randomFrame=" << (randomFrame ? "true" : "false");
 
   const std::string url = urlStream.str();
 

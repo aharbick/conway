@@ -76,7 +76,7 @@ function googleSendProgress(e, spreadsheetId) {
     const bestPattern = data.bestPattern ? "'" + data.bestPattern : '';  // Prefix with ' to force text format
     const bestPatternBin = data.bestPatternBin || '';
     const isTest = data.test === 'true' ? true : null;
-    const randomFrame = data.randomFrame === 'true' ? true : null;
+    const randomFrame = data.randomFrame === 'true' ? true : (data.randomFrame === 'false' ? false : null);
 
     // Get the spreadsheet and worksheet
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
