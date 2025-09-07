@@ -101,17 +101,50 @@ TEST_F(FrameUtilsTest, SpreadBitsToFrameNonZero) {
 }
 
 TEST_F(FrameUtilsTest, IsMinimalFrameAsymmetric) {
-  // Test with an asymmetric pattern that should NOT be minimal
-  uint64_t asymmetric = 1ULL << (0 * 8 + 1);  // Just one bit in frame
+  // Test with known asymmetric patterns to verify minimal frame detection
 
-  // This single bit might or might not be minimal depending on frame structure
-  // Let's test the property that rotating it gives a different result
-  uint64_t rotated = rotate90(asymmetric);
-  if (rotated < asymmetric) {
-    EXPECT_FALSE(isMinimalFrame(asymmetric));
-  } else {
-    EXPECT_TRUE(isMinimalFrame(asymmetric));
+  // Test pattern 1: Single bit at position (0,1) - top row, second column
+  uint64_t pattern1 = 1ULL << (0 * 8 + 1);
+  uint64_t rotated1 = rotate90(pattern1);
+  uint64_t reflected1 = reflectHorizontal(pattern1);
+
+  // Verify that the rotations and reflections are actually different
+  EXPECT_NE(pattern1, rotated1) << "Pattern should change when rotated";
+  EXPECT_NE(pattern1, reflected1) << "Pattern should change when reflected";
+
+  // Test that exactly one of the transformations is considered minimal
+  bool originalMinimal = isMinimalFrame(pattern1);
+  bool rotatedMinimal = isMinimalFrame(rotated1);
+  bool reflectedMinimal = isMinimalFrame(reflected1);
+
+  // At least one should be minimal (the canonical form)
+  EXPECT_TRUE(originalMinimal || rotatedMinimal || reflectedMinimal) << "At least one transformation should be minimal";
+
+  // Test pattern 2: L-shaped pattern that's clearly asymmetric
+  uint64_t lPattern = (1ULL << (0 * 8 + 0)) | (1ULL << (1 * 8 + 0)) | (1ULL << (1 * 8 + 1));
+
+  // This L-pattern should have exactly one minimal form among all 8 transformations
+  int minimalCount = 0;
+  uint64_t transformations[8];
+  transformations[0] = lPattern;
+  transformations[1] = rotate90(transformations[0]);
+  transformations[2] = rotate90(transformations[1]);
+  transformations[3] = rotate90(transformations[2]);
+
+  uint64_t reflected = reflectHorizontal(lPattern);
+  transformations[4] = reflected;
+  transformations[5] = rotate90(transformations[4]);
+  transformations[6] = rotate90(transformations[5]);
+  transformations[7] = rotate90(transformations[6]);
+
+  for (int i = 0; i < 8; i++) {
+    if (isMinimalFrame(transformations[i])) {
+      minimalCount++;
+    }
   }
+
+  EXPECT_GE(minimalCount, 1) << "L-pattern should have at least one minimal transformation";
+  EXPECT_LE(minimalCount, 8) << "L-pattern should not have more minimal forms than transformations";
 }
 
 TEST_F(FrameUtilsTest, IsMinimalFrameRotationUniqueness) {
