@@ -13,6 +13,7 @@ typedef struct ProgramArgs {
   bool verbose;
   bool testGoogleApi;
   bool resumeFromDatabase;
+  bool randomFrameMode;
   uint64_t randomSamples;
   uint64_t beginAt;
   uint64_t endAt;

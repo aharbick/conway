@@ -150,7 +150,7 @@ static bool parseCudaConfig(const char* arg, ProgramArgs* a) {
   return true;
 }
 
-static bool parseRangeArg(const char* arg, uint64_t* begin, uint64_t* end) {
+static bool parseRangeArg(const char* arg, uint64_t* begin, uint64_t* end, ProgramArgs* args = nullptr) {
   if (!arg || *arg == '\0') {
     std::cerr << "[ERROR] Range argument cannot be empty\n";
     return false;
@@ -161,6 +161,16 @@ static bool parseRangeArg(const char* arg, uint64_t* begin, uint64_t* end) {
     uint64_t resumeFrame = googleGetBestCompleteFrame();
     *begin = (resumeFrame == ULLONG_MAX) ? 0 : resumeFrame + 1;
     *end = FRAME_SEARCH_TOTAL_MINIMAL_FRAMES;
+    return true;
+  }
+
+  // Handle special 'random' case
+  if (strcmp(arg, "random") == 0) {
+    *begin = 0;
+    *end = FRAME_SEARCH_TOTAL_MINIMAL_FRAMES;
+    if (args) {
+      args->randomFrameMode = true;
+    }
     return true;
   }
 
@@ -222,7 +232,7 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
 #endif
     break;
   case 'f':
-    if (!parseRangeArg(arg, &a->frameBeginIdx, &a->frameEndIdx)) {
+    if (!parseRangeArg(arg, &a->frameBeginIdx, &a->frameEndIdx, a)) {
       argp_failure(state, 1, 0, "Invalid frame index range");
     }
     break;
@@ -270,6 +280,7 @@ void initializeDefaultArgs(ProgramArgs* args) {
   args->verbose = false;
   args->testGoogleApi = false;
   args->resumeFromDatabase = false;
+  args->randomFrameMode = false;
   args->randomSamples = 0;
   args->beginAt = 1;
   args->endAt = 0;

@@ -279,3 +279,73 @@ TEST_F(FrameUtilsTest, IsMinimalFrameSymmetricPatterns) {
     EXPECT_NE(originalMinimal, reflectedMinimal) << "Exactly one of a pattern and its reflection should be minimal";
   }
 }
+
+// Tests for getFrameByIndex function
+TEST_F(FrameUtilsTest, GetFrameByIndexReturnsValidFrame) {
+  // Test a frame index in the middle of the valid range
+  uint64_t testIndex = 50000;
+  uint64_t frame = getFrameByIndex(testIndex);
+
+  EXPECT_NE(frame, 0) << "getFrameByIndex should return a valid frame for index " << testIndex;
+  EXPECT_TRUE(isMinimalFrame(frame)) << "Frame returned by getFrameByIndex should be minimal";
+}
+
+TEST_F(FrameUtilsTest, GetFrameByIndexConsistentWithEnumeration) {
+  // Test that getFrameByIndex returns the same frame as manual enumeration
+  uint64_t testIndex = 1000;
+  uint64_t frameFromHelper = getFrameByIndex(testIndex);
+
+  // Manually enumerate to the same index
+  uint64_t currentIdx = 0;
+  uint64_t frameFromEnumeration = 0;
+
+  for (uint64_t i = 0; i < FRAME_SEARCH_MAX_FRAMES && currentIdx <= testIndex; ++i) {
+    const uint64_t frame = spreadBitsToFrame(i);
+    if (isMinimalFrame(frame)) {
+      if (currentIdx == testIndex) {
+        frameFromEnumeration = frame;
+        break;
+      }
+      ++currentIdx;
+    }
+  }
+
+  EXPECT_EQ(frameFromHelper, frameFromEnumeration)
+      << "getFrameByIndex should return same frame as manual enumeration for index " << testIndex;
+}
+
+TEST_F(FrameUtilsTest, GetFrameByIndexOutOfBounds) {
+  uint64_t invalidFrame = getFrameByIndex(FRAME_SEARCH_TOTAL_MINIMAL_FRAMES + 1000);
+  EXPECT_EQ(invalidFrame, 0) << "getFrameByIndex should return 0 for out-of-bounds index";
+}
+
+TEST_F(FrameUtilsTest, GetFrameByIndexAtBoundaries) {
+  // Test first frame (empty frame is minimal and equals 0)
+  uint64_t firstFrame = getFrameByIndex(0);
+  EXPECT_EQ(firstFrame, 0) << "First frame should be empty frame (0)";
+  EXPECT_TRUE(isMinimalFrame(firstFrame)) << "First frame should be minimal";
+
+  // Test last valid frame
+  uint64_t lastFrame = getFrameByIndex(FRAME_SEARCH_TOTAL_MINIMAL_FRAMES - 1);
+  EXPECT_NE(lastFrame, 0) << "Last frame should be valid";
+  EXPECT_TRUE(isMinimalFrame(lastFrame)) << "Last frame should be minimal";
+
+  // Test that first and last are different
+  EXPECT_NE(firstFrame, lastFrame) << "First and last frames should be different";
+}
+
+TEST_F(FrameUtilsTest, GetFrameByIndexSequentialFramesDiffer) {
+  // Test that sequential indices return different frames
+  uint64_t frame1 = getFrameByIndex(100);
+  uint64_t frame2 = getFrameByIndex(101);
+  uint64_t frame3 = getFrameByIndex(102);
+
+  EXPECT_NE(frame1, 0) << "Frame at index 100 should be valid";
+  EXPECT_NE(frame2, 0) << "Frame at index 101 should be valid";
+  EXPECT_NE(frame3, 0) << "Frame at index 102 should be valid";
+
+  // All should be different
+  EXPECT_NE(frame1, frame2) << "Sequential frames should be different";
+  EXPECT_NE(frame2, frame3) << "Sequential frames should be different";
+  EXPECT_NE(frame1, frame3) << "Sequential frames should be different";
+}

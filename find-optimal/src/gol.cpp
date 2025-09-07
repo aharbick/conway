@@ -56,14 +56,42 @@ __host__ void searchRandom(ProgramArgs *cli) {
 __host__ void searchAll(ProgramArgs *cli) {
   gol::SearchMemory mem(FRAME_SEARCH_MAX_CANDIDATES);
 
-  // Iterate through frame range or all possible 24-bit numbers and use spreadBitsToFrame to cover all 64-bit "frames"
-  for (uint64_t i = 0, currentFrameIdx = 0; i < FRAME_SEARCH_MAX_FRAMES && currentFrameIdx < cli->frameEndIdx; ++i) {
-    const uint64_t frame = spreadBitsToFrame(i);
-    if (isMinimalFrame(frame)) {
-      if (currentFrameIdx >= cli->frameBeginIdx) {
-        executeKernelSearch(mem, cli, frame, currentFrameIdx);
+  if (cli->randomFrameMode) {
+    // Random frame processing
+    std::mt19937_64 rng(static_cast<uint64_t>(time(nullptr)) + cli->threadId);
+    std::uniform_int_distribution<uint64_t> dist(0, cli->frameEndIdx - 1);
+
+    while (true) {
+      // Generate random frame index
+      uint64_t randomFrameIdx = dist(rng);
+
+      // Check if this frame is already complete
+      if (googleGetIsFrameComplete(randomFrameIdx)) {
+        continue;  // Skip completed frames
       }
-      ++currentFrameIdx;
+
+      // Get the actual frame value for this index
+      uint64_t frame = getFrameByIndex(randomFrameIdx);
+      if (frame != 0) {
+        printThreadStatus(cli->threadId, "Processing random frame %llu", randomFrameIdx);
+        executeKernelSearch(mem, cli, frame, randomFrameIdx);
+      }
+    }
+  } else {
+    // Sequential frame processing
+    for (uint64_t i = 0, currentFrameIdx = 0; i < FRAME_SEARCH_MAX_FRAMES && currentFrameIdx < cli->frameEndIdx; ++i) {
+      const uint64_t frame = spreadBitsToFrame(i);
+      if (isMinimalFrame(frame)) {
+        if (currentFrameIdx >= cli->frameBeginIdx) {
+          // Check if this frame is already complete (for sequential processing too)
+          if (googleGetIsFrameComplete(currentFrameIdx)) {
+            printThreadStatus(cli->threadId, "Skipping completed frame %llu", currentFrameIdx);
+          } else {
+            executeKernelSearch(mem, cli, frame, currentFrameIdx);
+          }
+        }
+        ++currentFrameIdx;
+      }
     }
   }
 }

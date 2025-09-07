@@ -5,6 +5,8 @@
 
 #include <cstdint>
 
+#include "constants.h"
+
 // See the algorithm described in PERFORMANCE under "Eliminating Rotations"
 
 // Rotates a pattern 90 degrees clockwise
@@ -107,6 +109,21 @@ __host__ __device__ inline bool isMinimalFrame(uint64_t frame) {
   }
 
   return true;
+}
+
+// Get the actual frame value for a given frame index
+__host__ inline uint64_t getFrameByIndex(uint64_t frameIdx) {
+  uint64_t currentIdx = 0;
+  for (uint64_t i = 0; i < FRAME_SEARCH_MAX_FRAMES; ++i) {
+    const uint64_t frame = spreadBitsToFrame(i);
+    if (isMinimalFrame(frame)) {
+      if (currentIdx == frameIdx) {
+        return frame;
+      }
+      ++currentIdx;
+    }
+  }
+  return 0;  // Frame not found
 }
 
 #endif

@@ -137,7 +137,7 @@ static std::string googleUrlEncode(const std::string& value) {
 
 static bool googleSendProgress(bool frameComplete, uint64_t frameIdx, int kernelIdx, int chunkIdx,
                                uint64_t patternsPerSecond, int bestGenerations, uint64_t bestPattern,
-                               const char* bestPatternBin, bool isTest) {
+                               const char* bestPatternBin, bool isTest, bool randomFrame = false) {
   GoogleConfig config;
   if (googleGetConfig(&config) != GOOGLE_SUCCESS) {
     return false;
@@ -160,6 +160,9 @@ static bool googleSendProgress(bool frameComplete, uint64_t frameIdx, int kernel
   if (isTest) {
     urlStream << "&test=true";
   }
+  if (randomFrame) {
+    urlStream << "&randomFrame=true";
+  }
 
   const std::string url = urlStream.str();
 
@@ -172,7 +175,7 @@ static bool googleSendProgress(bool frameComplete, uint64_t frameIdx, int kernel
 
 static std::string googleSendProgressWithResponse(bool frameComplete, uint64_t frameIdx, int kernelIdx, int chunkIdx,
                                                   uint64_t patternsPerSecond, int bestGenerations, uint64_t bestPattern,
-                                                  const char* bestPatternBin, bool isTest) {
+                                                  const char* bestPatternBin, bool isTest, bool randomFrame = false) {
   GoogleConfig config;
   if (googleGetConfig(&config) != GOOGLE_SUCCESS) {
     return "{\"error\": \"Configuration failed\"}";
@@ -194,6 +197,9 @@ static std::string googleSendProgressWithResponse(bool frameComplete, uint64_t f
   urlStream << "&bestPatternBin=" << googleUrlEncode(bestPatternBin);
   if (isTest) {
     urlStream << "&test=true";
+  }
+  if (randomFrame) {
+    urlStream << "&randomFrame=true";
   }
 
   const std::string url = urlStream.str();

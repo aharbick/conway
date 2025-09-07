@@ -76,6 +76,7 @@ function googleSendProgress(e, spreadsheetId) {
     const bestPattern = data.bestPattern ? "'" + data.bestPattern : '';  // Prefix with ' to force text format
     const bestPatternBin = data.bestPatternBin || '';
     const isTest = data.test === 'true' ? true : null;
+    const randomFrame = data.randomFrame === 'true' ? true : null;
 
     // Get the spreadsheet and worksheet
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
@@ -85,9 +86,9 @@ function googleSendProgress(e, spreadsheetId) {
     if (!sheet) {
       sheet = spreadsheet.insertSheet(PROGRESS_SHEET_NAME);
       // Add headers
-      sheet.getRange(1, 1, 1, 10).setValues([[
+      sheet.getRange(1, 1, 1, 11).setValues([[
         'timestamp', 'frameComplete', 'frameIdx', 'kernelIdx', 'chunkIdx',
-        'patternsPerSecond', 'bestGenerations', 'bestPattern', 'bestPatternBin', 'test'
+        'patternsPerSecond', 'bestGenerations', 'bestPattern', 'bestPatternBin', 'test', 'randomFrame'
       ]]);
       // Format bestPattern column (column H, index 8) as text to prevent scientific notation
       sheet.getRange('H:H').setNumberFormat('@');
@@ -105,7 +106,8 @@ function googleSendProgress(e, spreadsheetId) {
       bestGenerations,
       bestPattern,
       bestPatternBin,
-      isTest
+      isTest,
+      randomFrame
     ];
 
     sheet.appendRow(newRow);
@@ -233,12 +235,13 @@ function googleGetBestCompleteFrame(e, spreadsheetId) {
     const frameIdxCol = headers.indexOf('frameIdx');
     const frameCompleteCol = headers.indexOf('frameComplete');
     const testCol = headers.indexOf('test');
+    const randomFrameCol = headers.indexOf('randomFrame');
 
     if (frameIdxCol === -1 || frameCompleteCol === -1) {
       throw new Error('Required columns not found');
     }
 
-    // Find the maximum frameIdx value from completed, non-test records
+    // Find the maximum frameIdx value from completed, non-test, sequential (non-random) records
     let maxFrameIdx = null;
 
     for (let i = 1; i < data.length; i++) {
@@ -246,9 +249,10 @@ function googleGetBestCompleteFrame(e, spreadsheetId) {
       const isTest = testCol !== -1 ? (row[testCol] === true || row[testCol] === 'true') : false;
       const frameComplete = row[frameCompleteCol] === true || row[frameCompleteCol] === 'true';
       const frameIdx = parseInt(row[frameIdxCol]) || 0;
+      const isRandomFrame = randomFrameCol !== -1 ? (row[randomFrameCol] === true || row[randomFrameCol] === 'true') : false;
 
-      // Skip test records (where test is true) and null/empty test values are considered non-test
-      if (!isTest && frameComplete && (maxFrameIdx === null || frameIdx > maxFrameIdx)) {
+      // Skip test records and random frame records - only consider sequential processing
+      if (!isTest && !isRandomFrame && frameComplete && (maxFrameIdx === null || frameIdx > maxFrameIdx)) {
         maxFrameIdx = frameIdx;
       }
     }
