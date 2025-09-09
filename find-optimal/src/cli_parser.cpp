@@ -33,6 +33,7 @@ static struct argp_option argp_options[] = {
     {"random", 'R', "samples", 0, "Random search mode with specified number of samples."},
     {"verbose", 'v', 0, 0, "Verbose output."},
     {"test-google-api", 'T', 0, 0, "Test Google Sheets API functionality and exit."},
+    {"log-file", 'l', "PATH", 0, "Path to log file for progress output."},
     {0}};
 
 // Validation functions
@@ -92,7 +93,7 @@ static bool validateUnsignedLongString(const char* str, const char* name) {
 
 static bool validateRange(uint64_t begin, uint64_t end, const char* beginStr, const char* endStr) {
   if (end <= begin) {
-    std::cout << "[WARN] invalid range '" << beginStr << ":" << endStr << "', end must be greater than begin\n";
+    std::cerr << "[ERROR] invalid range '" << beginStr << ":" << endStr << "', end must be greater than begin\n";
     return false;
   }
   return true;
@@ -261,6 +262,12 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
   case 'T':
     a->testGoogleApi = true;
     break;
+  case 'l':
+    if (!arg || *arg == '\0') {
+      argp_failure(state, 1, 0, "Log file path cannot be empty");
+    }
+    a->logFilePath = std::string(arg);
+    break;
   default:
     return ARGP_ERR_UNKNOWN;
   }
@@ -287,6 +294,7 @@ void initializeDefaultArgs(ProgramArgs* args) {
   args->frameBeginIdx = 0;
   args->frameEndIdx = 0;
   args->chunkSize = FRAME_SEARCH_DEFAULT_CHUNK_SIZE;
+  args->logFilePath = "";
 }
 
 ProgramArgs* parseCommandLineArgs(int argc, char** argv) {

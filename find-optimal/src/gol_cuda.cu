@@ -1,5 +1,6 @@
 // CUDA-specific implementations
 #include "gol.h"
+#include "logging.h"
 
 #include <iostream>
 #include <locale>
@@ -148,8 +149,8 @@ __host__ void reportChunkResults(gol::SearchMemory& mem, ProgramArgs *cli, doubl
   const uint64_t patternsPerSec = (FRAME_SEARCH_TOTAL_THREADS * cli->chunkSize) / chunkTime;
 
   if (*mem.h_numCandidates() <= 0) {
-    std::cout << "[Thread " << cli->threadId << " - " << (uint64_t)time(NULL) 
-              << "] WARN: NO PATTERNS FOUND frameIdx=" << frameIdx 
+    std::cerr << "[Thread " << cli->threadId << " - " << (uint64_t)time(NULL) 
+              << "] ERROR: NO PATTERNS FOUND frameIdx=" << frameIdx 
               << ", kernelIdx=" << kernelIdx << ", chunkIdx=" << chunkIdx << "\n";
 
     googleSendProgress(isFrameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSec, 0, 0, "ERROR", false, cli->randomFrameMode);
@@ -164,7 +165,7 @@ __host__ void reportChunkResults(gol::SearchMemory& mem, ProgramArgs *cli, doubl
   formattedRate.imbue(std::locale(""));
   formattedRate << patternsPerSec;
   
-  std::cout << "[Thread " << cli->threadId << " - " << (uint64_t)time(NULL) 
+  Logging::out() << "[Thread " << cli->threadId << " - " << (uint64_t)time(NULL) 
             << "] frameIdx=" << frameIdx << ", kernelIdx=" << kernelIdx 
             << ", chunkIdx=" << chunkIdx << ", bestGenerations=" << (int)*mem.h_bestGenerations()
             << ", bestPattern=" << *mem.h_bestPattern() << ", bestPatternBin=" << bestPatternBin 

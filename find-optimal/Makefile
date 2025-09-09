@@ -54,6 +54,9 @@ $(BUILDDIR)/cli_parser.o: $(SRCDIR)/cli_parser.cpp $(INCLUDEDIR)/cli_parser.h
 $(BUILDDIR)/utils.o: $(SRCDIR)/utils.cpp $(INCLUDEDIR)/utils.h
 	$(CC) $(CFLAGS) -I$(INCLUDEDIR) -c $< -o $@
 
+$(BUILDDIR)/logging.o: $(SRCDIR)/logging.cpp $(INCLUDEDIR)/logging.h
+	$(CC) $(CFLAGS) -I$(INCLUDEDIR) -c $< -o $@
+
 $(BUILDDIR)/gol.o: $(SRCDIR)/gol.cpp $(INCLUDEDIR)/gol.h
 	$(NVCC) $(if $(NVCFLAGS), $(NVCFLAGS), $(CFLAGS)) -I$(INCLUDEDIR) -c $< -o $@
 
@@ -69,7 +72,7 @@ else
 CUDA_OBJECTS = 
 endif
 
-find-optimal: $(BUILDDIR)/find-optimal.o $(BUILDDIR)/cli_parser.o $(BUILDDIR)/gol.o $(BUILDDIR)/utils.o $(CUDA_OBJECTS)
+find-optimal: $(BUILDDIR)/find-optimal.o $(BUILDDIR)/cli_parser.o $(BUILDDIR)/gol.o $(BUILDDIR)/utils.o $(BUILDDIR)/logging.o $(CUDA_OBJECTS)
 	$(CC) $^ -o $(BUILDDIR)/$@ $(LIBS)
 
 $(BUILDDIR)/explore-cachability.o: $(SRCDIR)/explore-cachability.cpp

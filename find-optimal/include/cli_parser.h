@@ -2,6 +2,7 @@
 #define _CLI_PARSER_H_
 
 #include <cstdint>
+#include <string>
 
 typedef struct ProgramArgs {
   int threadId;
@@ -20,6 +21,7 @@ typedef struct ProgramArgs {
   uint64_t frameBeginIdx;
   uint64_t frameEndIdx;
   uint64_t chunkSize;
+  std::string logFilePath;
 } ProgramArgs;
 
 // Initialize ProgramArgs with default values

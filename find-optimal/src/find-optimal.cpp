@@ -13,6 +13,7 @@
 
 #include "cli_parser.h"
 #include "gol.h"
+#include "logging.h"
 
 // Thread context class with RAII
 class ThreadContext {
@@ -88,7 +89,7 @@ int main(int argc, char** argv) {
   // Check Google configuration and warn once if not configured
   GoogleConfig googleConfig;
   if (googleGetConfig(&googleConfig) != GOOGLE_SUCCESS) {
-    std::cout << "[WARN] Progress will not be saved to Google Sheets\n";
+    std::cerr << "[ERROR] Progress will not be saved to Google Sheets\n";
   }
 
   // Process the arguments using CLI parser
@@ -98,6 +99,9 @@ int main(int argc, char** argv) {
     googleCleanup();
     return 1;
   }
+
+  // Initialize logging system
+  Logging::LogManager::initialize(cli);
 
   // Handle test-google-api flag
   if (cli->testGoogleApi) {

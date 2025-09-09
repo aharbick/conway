@@ -3,6 +3,8 @@
 #include <iostream>
 #include <sstream>
 
+#include "logging.h"
+
 // Time utilities for performance measurement
 __host__ double getCurrentTime() {
   struct timespec ts;
@@ -18,7 +20,7 @@ __host__ void printThreadStatus(int threadId, const char *format, ...) {
   char buffer[1024];
   vsnprintf(buffer, sizeof(buffer), format, args);
 
-  std::cout << "[Thread " << threadId << " - " << (uint64_t)time(NULL) << "] " << buffer << "\n";
+  Logging::out() << "[Thread " << threadId << " - " << (uint64_t)time(NULL) << "] " << buffer << "\n";
 
   va_end(args);
 }
