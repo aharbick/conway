@@ -34,7 +34,7 @@ static void printCudaDeviceInfo(ProgramArgs* cli) {
   cudaGetDeviceCount(&deviceCount);
   Logging::out() << "CUDA devices available: " << deviceCount << "\n";
   Logging::out() << "Using " << cli->gpusToUse << " GPU(s) with blockSize=" << cli->blockSize
-            << ", threadsPerBlock=" << cli->threadsPerBlock << "\n";
+                 << ", threadsPerBlock=" << cli->threadsPerBlock << "\n";
 }
 #endif
 
