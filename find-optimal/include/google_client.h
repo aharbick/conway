@@ -11,6 +11,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 
@@ -306,6 +307,22 @@ static bool googleGetIsFrameComplete(uint64_t frameIdx) {
 
 static void googleCleanup() {
   curl_global_cleanup();
+}
+
+// Async version of googleSendProgress - "send and forget"
+static void googleSendProgressAsync(bool frameComplete, uint64_t frameIdx, int kernelIdx, int chunkIdx,
+                                    uint64_t patternsPerSecond, int bestGenerations, uint64_t bestPattern,
+                                    const char* bestPatternBin, bool isTest, bool randomFrame = false) {
+  // Copy the bestPatternBin string since the original may be destroyed
+  std::string patternBinCopy(bestPatternBin ? bestPatternBin : "");
+
+  // Launch detached thread using C++11 lambda with capture list
+  // [=] captures all variables by value (copy) to ensure thread safety
+  // The lambda runs googleSendProgress in a separate thread, then thread is detached
+  std::thread([=]() {
+    googleSendProgress(frameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSecond, bestGenerations, bestPattern,
+                       patternBinCopy.c_str(), isTest, randomFrame);
+  }).detach();
 }
 
 #endif

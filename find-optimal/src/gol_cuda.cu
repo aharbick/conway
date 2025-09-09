@@ -153,7 +153,7 @@ __host__ void reportChunkResults(gol::SearchMemory& mem, ProgramArgs *cli, doubl
               << "] ERROR: NO PATTERNS FOUND frameIdx=" << frameIdx 
               << ", kernelIdx=" << kernelIdx << ", chunkIdx=" << chunkIdx << "\n";
 
-    googleSendProgress(isFrameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSec, 0, 0, "ERROR", false, cli->randomFrameMode);
+    googleSendProgressAsync(isFrameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSec, 0, 0, "ERROR", false, cli->randomFrameMode);
     return;
   }
 
@@ -171,8 +171,8 @@ __host__ void reportChunkResults(gol::SearchMemory& mem, ProgramArgs *cli, doubl
             << ", bestPattern=" << *mem.h_bestPattern() << ", bestPatternBin=" << bestPatternBin 
             << ", patternsPerSec=" << formattedRate.str() << "\n";
 
-  googleSendProgress(isFrameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSec, (int)*mem.h_bestGenerations(),
-                       *mem.h_bestPattern(), bestPatternBin, false, cli->randomFrameMode);
+  googleSendProgressAsync(isFrameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSec, (int)*mem.h_bestGenerations(),
+                          *mem.h_bestPattern(), bestPatternBin, false, cli->randomFrameMode);
 }
 
 #endif
