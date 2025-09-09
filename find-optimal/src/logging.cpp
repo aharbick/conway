@@ -13,6 +13,9 @@ LogManager::LogManager(const ProgramArgs* args) {
     if (!logFile || !logFile->is_open()) {
       std::cerr << "[ERROR] Could not open log file: " << args->logFilePath << std::endl;
       logFile.reset();  // Clear the failed file pointer
+    } else {
+      // Enable auto-flush for immediate output
+      *logFile << std::unitbuf;
     }
   }
 }

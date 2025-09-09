@@ -32,8 +32,8 @@ class ThreadContext {
 static void printCudaDeviceInfo(ProgramArgs* cli) {
   int deviceCount;
   cudaGetDeviceCount(&deviceCount);
-  std::cout << "CUDA devices available: " << deviceCount << "\n";
-  std::cout << "Using " << cli->gpusToUse << " GPU(s) with blockSize=" << cli->blockSize
+  Logging::out() << "CUDA devices available: " << deviceCount << "\n";
+  Logging::out() << "Using " << cli->gpusToUse << " GPU(s) with blockSize=" << cli->blockSize
             << ", threadsPerBlock=" << cli->threadsPerBlock << "\n";
 }
 #endif
@@ -165,14 +165,14 @@ int main(int argc, char** argv) {
   int dbBestGenerations = googleGetBestResult();
   if (dbBestGenerations > 0) {
     gBestGenerations = dbBestGenerations;
-    std::cout << "Best generations so far: " << gBestGenerations << "\n";
+    Logging::out() << "Best generations so far: " << gBestGenerations << "\n";
   }
 
   // Print resume message if frame-based search is being used
   if (cli->frameBeginIdx > 0 && cli->frameEndIdx > 0) {
-    std::cout << "Resuming from frame: " << cli->frameBeginIdx << "\n";
+    Logging::out() << "Resuming from frame: " << cli->frameBeginIdx << "\n";
   } else if (cli->frameBeginIdx == 0 && cli->frameEndIdx > 0) {
-    std::cout << "Starting from frame 0\n";
+    Logging::out() << "Starting from frame 0\n";
   }
 
   // Create and start threads, then wait for completion
