@@ -3,6 +3,42 @@
  */
 
 const PROGRESS_SHEET_NAME = 'Progress';
+const LOCK_TIMEOUT_MS = 30000; // 30 seconds timeout for locks
+
+/**
+ * Execute a function with script-level locking for concurrency safety
+ * @param {Function} operation - The function to execute under lock
+ * @returns {Object} ContentService response object
+ */
+function withLock(operation) {
+  const lock = LockService.getScriptLock();
+
+  try {
+    // Acquire lock with timeout
+    if (!lock.tryLock(LOCK_TIMEOUT_MS)) {
+      return ContentService
+        .createTextOutput(JSON.stringify({
+          success: false,
+          error: 'Could not acquire lock - operation timed out'
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Execute the operation
+    return operation();
+
+  } catch (error) {
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: false,
+        error: error.toString()
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    // Always release the lock
+    lock.releaseLock();
+  }
+}
 
 /**
  * Main entry point for the WebApp
@@ -62,7 +98,7 @@ function handleRequest(e) {
  * Adds progress data to the Google Sheet
  */
 function googleSendProgress(e, spreadsheetId) {
-  try {
+  return withLock(() => {
     // Use GET parameters only
     const data = e.parameter;
 
@@ -123,22 +159,14 @@ function googleSendProgress(e, spreadsheetId) {
         timestamp: timestamp
       }))
       .setMimeType(ContentService.MimeType.JSON);
-
-  } catch (error) {
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        success: false,
-        error: error.toString()
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+  });
 }
 
 /**
  * Returns the highest bestGenerations value from non-test records
  */
 function googleGetBestResult(e, spreadsheetId) {
-  try {
+  return withLock(() => {
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
     const sheet = spreadsheet.getSheetByName(PROGRESS_SHEET_NAME);
 
@@ -191,22 +219,14 @@ function googleGetBestResult(e, spreadsheetId) {
         bestGenerations: maxGenerations
       }))
       .setMimeType(ContentService.MimeType.JSON);
-
-  } catch (error) {
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        bestGenerations: -1,
-        error: error.toString()
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+  });
 }
 
 /**
  * Returns the highest frameIdx value from completed, non-test records
  */
 function googleGetBestCompleteFrame(e, spreadsheetId) {
-  try {
+  return withLock(() => {
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
     const sheet = spreadsheet.getSheetByName(PROGRESS_SHEET_NAME);
 
@@ -262,15 +282,7 @@ function googleGetBestCompleteFrame(e, spreadsheetId) {
         bestFrameIdx: maxFrameIdx
       }))
       .setMimeType(ContentService.MimeType.JSON);
-
-  } catch (error) {
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        bestFrameIdx: null,
-        error: error.toString()
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+  });
 }
 
 /**
@@ -278,7 +290,7 @@ function googleGetBestCompleteFrame(e, spreadsheetId) {
  * Returns true if there's a row with the given frameIdx and frameComplete=true
  */
 function googleGetIsFrameComplete(e, spreadsheetId) {
-  try {
+  return withLock(() => {
     const data = e.parameter;
     const frameIdx = parseInt(data.frameIdx);
 
@@ -350,13 +362,5 @@ function googleGetIsFrameComplete(e, spreadsheetId) {
         message: 'Frame not found or not complete'
       }))
       .setMimeType(ContentService.MimeType.JSON);
-
-  } catch (error) {
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        isComplete: false,
-        error: error.toString()
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+  });
 }
