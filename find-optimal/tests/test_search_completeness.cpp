@@ -158,67 +158,44 @@ TEST_F(SearchCompletenessTest, AllPatternsHaveCanonicalForm) {
 }
 
 TEST_F(SearchCompletenessTest, FrameKernelDecompositionIsComplete) {
-  // Test that the frame + kernel decomposition can reconstruct any arbitrary pattern
+  // Test that any pattern can be reached through frame + kernel + interior bits
 
   const int SAMPLE_SIZE = 10000;
   std::mt19937_64 rng(98765);
-
   int reconstructableCount = 0;
 
   for (int i = 0; i < SAMPLE_SIZE; i++) {
     uint64_t originalPattern = rng();
-
-    // Extract frame from the pattern
     uint64_t frame = extractFrame(originalPattern);
 
-    // The kernel construction should be able to build any pattern with this frame
-    // by trying all 16 possible kernel indices
+    // Check if there exists some kernel that, combined with interior bits,
+    // could reconstruct this pattern
     bool canReconstruct = false;
 
     for (int kernelIdx = 0; kernelIdx < 16; kernelIdx++) {
-      uint64_t reconstructed = constructKernel(frame, kernelIdx);
+      uint64_t kernelPattern = constructKernel(frame, kernelIdx);
 
-      // Check if we can reach the original pattern through the search process
-      // The key insight is that patterns with the same frame can be reached
-      // by different kernel+interior bit combinations
-      if (extractFrame(reconstructed) == frame) {
-        // We can reach patterns with the same frame structure
-        // The full search would vary the interior bits to cover all possibilities
+      // Define masks for different bit regions
+      uint64_t frameMask = extractFrame(0xFFFFFFFFFFFFFFFFULL);
+      uint64_t kernelMask = (3ULL << 3) | (3ULL << 59);
+
+      // The pattern can be reconstructed if frame+kernel bits match exactly
+      // and the interior bits can be set independently
+      uint64_t frameKernelBits = originalPattern & (frameMask | kernelMask);
+
+      if (frameKernelBits == kernelPattern) {
         canReconstruct = true;
         break;
       }
     }
 
-    // Actually, let's test something more precise:
-    // Can we reconstruct the exact pattern using frame + some kernel?
-    bool exactReconstruction = false;
-
-    for (int kernelIdx = 0; kernelIdx < 16; kernelIdx++) {
-      // Start with frame, add kernel bits
-      uint64_t kernelPattern = constructKernel(frame, kernelIdx);
-
-      // The remaining bits would be filled by the interior search
-      // For this test, check if the frame + kernel leaves room for the pattern
-      uint64_t kernelMask = (3ULL << 3) | (3ULL << 59);          // K bits
-      uint64_t frameMask = extractFrame(0xFFFFFFFFFFFFFFFFULL);  // Frame mask
-
-      uint64_t nonFrameKernelMask = ~(frameMask | kernelMask);
-
-      // The pattern can be exactly reconstructed if frame+kernel match
-      // and the remaining bits can be set by interior search
-      if ((originalPattern & (frameMask | kernelMask)) == kernelPattern) {
-        exactReconstruction = true;
-        break;
-      }
-    }
-
-    if (exactReconstruction || canReconstruct) {
+    if (canReconstruct) {
       reconstructableCount++;
     }
   }
 
   double reconstructability = (double)reconstructableCount / SAMPLE_SIZE;
-  EXPECT_GT(reconstructability, 0.99) << "Should be able to reconstruct >99% of patterns";
+  EXPECT_EQ(reconstructability, 1.0) << "Should be able to reconstruct 100% of patterns";
 }
 
 TEST_F(SearchCompletenessTest, FrameMaskIsCorrect) {
@@ -378,8 +355,7 @@ TEST_F(SearchCompletenessTest, SearchSpaceReductionFactor) {
   // The frame has 24 bits, so 2^24 = 16,777,216 possible frame configurations
   // After rotation+reflection elimination, we expect ~2^24 / 8 = 2^21 = 2,097,152 minimal frames
 
-  const uint64_t TOTAL_FRAME_CONFIGS = 1ULL << 24;            // 2^24
-  const uint64_t EXPECTED_MINIMAL = TOTAL_FRAME_CONFIGS / 8;  // 2^21
+  const uint64_t TOTAL_FRAME_CONFIGS = 1ULL << 24;  // 2^24
 
   // Count minimal frames (this is expensive, so we'll estimate from a sample)
   const int SAMPLE_SIZE = 100000;

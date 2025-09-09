@@ -477,6 +477,13 @@ TEST_F(GOLLifecycleTest, CountGenerationsGlider) {
 }
 
 // Test known patterns with verified generation counts
+TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern212) {
+  // Pattern that runs for exactly 212 generations
+  // 1000001111101001000000000111101011000000110001001111000110110011
+  uint64_t pattern = 9505129015762284979ULL;
+  EXPECT_EQ(countGenerations(pattern), 212);
+}
+
 TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern209a) {
   // Pattern that runs for exactly 209 generations
   // 0111000001011100100001100001010011111010110101100010000101110100
