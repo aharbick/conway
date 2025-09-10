@@ -228,6 +228,12 @@ int main(int argc, char** argv) {
     Logging::out() << "Best generations so far: " << gBestGenerations << "\n";
   }
 
+  // Initialize frame completion cache
+  if (googleLoadFrameCache()) {
+    uint64_t completedFrames = googleGetFrameCacheCompletedCount();
+    Logging::out() << "Frame completion cache initialized with " << completedFrames << " completed frames\n";
+  }
+
   // Print resume message if frame-based search is being used
   if (cli->frameBeginIdx > 0 && cli->frameEndIdx > 0) {
     Logging::out() << "Resuming from frame: " << cli->frameBeginIdx << "\n";

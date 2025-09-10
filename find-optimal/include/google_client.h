@@ -145,9 +145,10 @@ class FrameCompletionCache {
  private:
   uint8_t* bitmap;
   bool loaded;
+  uint64_t completedCount;
 
  public:
-  FrameCompletionCache() : bitmap(nullptr), loaded(false) {
+  FrameCompletionCache() : bitmap(nullptr), loaded(false), completedCount(0) {
     bitmap = new uint8_t[FRAME_CACHE_BITMAP_BYTES]();  // Initialize to zero
   }
 
@@ -209,6 +210,16 @@ class FrameCompletionCache {
       return false;
     }
 
+    // Count completed frames during load
+    completedCount = 0;
+    for (uint64_t i = 0; i < FRAME_CACHE_TOTAL_FRAMES; i++) {
+      const uint64_t byteIdx = i / 8;
+      const uint8_t bitIdx = i % 8;
+      if (bitmap[byteIdx] & (1 << bitIdx)) {
+        completedCount++;
+      }
+    }
+
     loaded = true;
     return true;
   }
@@ -230,11 +241,21 @@ class FrameCompletionCache {
     }
     const uint64_t byteIdx = frameIdx / 8;
     const uint8_t bitIdx = frameIdx % 8;
+
+    // Only increment count if frame wasn't already complete
+    if (!(bitmap[byteIdx] & (1 << bitIdx))) {
+      completedCount++;
+    }
+
     bitmap[byteIdx] |= (1 << bitIdx);
   }
 
   bool isLoaded() const {
     return loaded;
+  }
+
+  uint64_t getCompletedCount() const {
+    return completedCount;
   }
 
  private:
@@ -459,6 +480,10 @@ static void googleSendProgressAsync(bool frameComplete, uint64_t frameIdx, int k
 // Cache management functions
 static bool googleLoadFrameCache() {
   return frameCache.loadFromAPI();
+}
+
+static uint64_t googleGetFrameCacheCompletedCount() {
+  return frameCache.getCompletedCount();
 }
 
 static bool googleIsFrameCompleteFromCache(uint64_t frameIdx) {
