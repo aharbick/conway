@@ -1,9 +1,11 @@
 #include "gol.h"
 
+#include <algorithm>
 #include <mutex>
 #include <random>
 #include <sstream>
 #include <string>
+#include <vector>
 
 // Global variables updated across threads
 std::mutex gMutex;
@@ -25,90 +27,68 @@ __host__ void *search(void *args) {
 
   printThreadStatus(cli->threadId, "Running with CUDA enabled");
 
-  if (cli->random) {
-    printThreadStatus(cli->threadId, "searching RANDOMLY %llu candidates", cli->randomSamples);
-    searchRandom(cli);
-  } else {
-    const std::string searchRangeMessage = getSearchDescription(cli);
-    printThreadStatus(cli->threadId, "searching %s", searchRangeMessage.c_str());
-    searchAll(cli);
+  const std::string searchRangeMessage = getSearchDescription(cli);
+  printThreadStatus(cli->threadId, "searching %s", searchRangeMessage.c_str());
+
+  gol::SearchMemory mem(FRAME_SEARCH_MAX_CANDIDATES);
+
+  // Build worker-specific frame list
+  std::vector<uint64_t> workerFrames;
+  
+  // Collect incomplete frames assigned to this worker
+  for (uint64_t currentFrameIdx = cli->frameBeginIdx; currentFrameIdx < cli->frameEndIdx; ++currentFrameIdx) {
+    // Check if this frame belongs to this worker using modulo partitioning
+    if ((currentFrameIdx % cli->totalWorkers) == (cli->workerNum - 1)) {
+      // Check if frame is incomplete
+      if (!googleIsFrameCompleteFromCache(currentFrameIdx)) {
+        workerFrames.push_back(currentFrameIdx);
+      }
+    }
+  }
+
+  // Shuffle if in random frame mode
+  if (cli->randomFrameMode && !workerFrames.empty()) {
+    std::mt19937_64 rng(static_cast<uint64_t>(time(nullptr)) + cli->threadId);
+    std::shuffle(workerFrames.begin(), workerFrames.end(), rng);
+  }
+
+  // Process all frames in the worker's list
+  for (uint64_t frameIdx : workerFrames) {
+    // Get the actual frame value for this index
+    uint64_t frame = getFrameByIndex(frameIdx);
+    if (frame != 0) {
+      if (cli->randomFrameMode) {
+        printThreadStatus(cli->threadId, "Processing random frame %llu", frameIdx);
+      } else {
+        printThreadStatus(cli->threadId, "Processing frame %llu", frameIdx);
+      }
+      executeKernelSearch(mem, cli, frame, frameIdx);
+    }
   }
 
   return NULL;
 }
 
-__host__ void searchRandom(ProgramArgs *cli) {
-  std::mt19937_64 rng(static_cast<uint64_t>(time(nullptr)));
 
-  gol::SearchMemory mem(RANDOM_SEARCH_MAX_CANDIDATES);
-
-  // We're randomly searching..  I didn't get cuRAND to work so we randomize our batches. Each
-  // call to findCandidates is sequential but we look at random locations across all possible.
-  const uint64_t chunkSize = RANDOM_SEARCH_CHUNK_SIZE;
-  const uint64_t iterations = cli->randomSamples / chunkSize;
-  for (uint64_t i = 0; i < iterations; ++i) {
-    const uint64_t start = rng();
-    const uint64_t end = start + chunkSize;
-    executeCandidateSearch(mem, cli, start, end);
-  }
-}
-
-__host__ void searchAll(ProgramArgs *cli) {
-  gol::SearchMemory mem(FRAME_SEARCH_MAX_CANDIDATES);
-
-  if (cli->randomFrameMode) {
-    // Random frame processing
-    std::mt19937_64 rng(static_cast<uint64_t>(time(nullptr)) + cli->threadId);
-    std::uniform_int_distribution<uint64_t> dist(0, cli->frameEndIdx - 1);
-
-    while (true) {
-      // Generate random frame index
-      uint64_t randomFrameIdx = dist(rng);
-
-      // Check if this frame is already complete
-      if (googleIsFrameCompleteFromCache(randomFrameIdx)) {
-        continue;  // Skip completed frames
-      }
-
-      // Get the actual frame value for this index
-      uint64_t frame = getFrameByIndex(randomFrameIdx);
-      if (frame != 0) {
-        printThreadStatus(cli->threadId, "Processing random frame %llu", randomFrameIdx);
-        executeKernelSearch(mem, cli, frame, randomFrameIdx);
-      }
-    }
-  } else {
-    // Sequential frame processing
-    for (uint64_t i = 0, currentFrameIdx = 0; i < FRAME_SEARCH_MAX_FRAMES && currentFrameIdx < cli->frameEndIdx; ++i) {
-      const uint64_t frame = spreadBitsToFrame(i);
-      if (isMinimalFrame(frame)) {
-        if (currentFrameIdx >= cli->frameBeginIdx) {
-          // Check if this frame is already complete (for sequential processing too)
-          if (googleIsFrameCompleteFromCache(currentFrameIdx)) {
-            printThreadStatus(cli->threadId, "Skipping completed frame %llu", currentFrameIdx);
-          } else {
-            executeKernelSearch(mem, cli, frame, currentFrameIdx);
-          }
-        }
-        ++currentFrameIdx;
-      }
-    }
-  }
-}
 
 
 __host__ std::string getSearchDescription(ProgramArgs *cli) {
+  std::ostringstream oss;
+  
   if (cli->randomFrameMode) {
-    return "RANDOMLY among all incomplete frames";
-  } else if (cli->frameBeginIdx > 0 || cli->frameEndIdx > 0) {
-    std::ostringstream oss;
-    oss << "ALL in frames (" << cli->frameBeginIdx << " - " << cli->frameEndIdx << ")";
-    return oss.str();
-  } else if (cli->beginAt > 0 || cli->endAt > 0) {
-    std::ostringstream oss;
-    oss << "ALL in range (" << cli->beginAt << " - " << cli->endAt << ")";
-    return oss.str();
+    oss << "RANDOMLY among incomplete frames";
   } else {
-    return "ALL";
+    oss << "SEQUENTIALLY through incomplete frames";
   }
+  
+  if (cli->frameBeginIdx > 0 || cli->frameEndIdx > 0) {
+    oss << " (" << cli->frameBeginIdx << " - " << cli->frameEndIdx << ")";
+  }
+  
+  // Add worker information
+  if (cli->totalWorkers > 1) {
+    oss << " [worker " << cli->workerNum << "/" << cli->totalWorkers << "]";
+  }
+  
+  return oss.str();
 }

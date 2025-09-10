@@ -10,19 +10,17 @@ typedef struct ProgramArgs {
   int gpusToUse;
   int blockSize;
   int threadsPerBlock;
-  bool random;
   bool verbose;
   bool testGoogleApi;
   bool testFrameCache;
   bool resumeFromDatabase;
   bool randomFrameMode;
-  uint64_t randomSamples;
-  uint64_t beginAt;
-  uint64_t endAt;
   uint64_t frameBeginIdx;
   uint64_t frameEndIdx;
   uint64_t chunkSize;
   std::string logFilePath;
+  int workerNum;
+  int totalWorkers;
 } ProgramArgs;
 
 // Initialize ProgramArgs with default values

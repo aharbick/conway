@@ -35,8 +35,6 @@ extern int gBestGenerations;
 __host__ bool updateBestGenerations(int generations);
 
 // Search algorithm functions
-__host__ void searchRandom(ProgramArgs *cli);
-__host__ void searchAll(ProgramArgs *cli);
 __host__ void *search(void *args);
 
 // Search execution functions (using RAII memory management)
