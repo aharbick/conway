@@ -112,7 +112,7 @@ __host__ void reportChunkResults(gol::SearchMemory& mem, ProgramArgs *cli, doubl
   const uint64_t patternsPerSec = (FRAME_SEARCH_TOTAL_THREADS * cli->chunkSize) / chunkTime;
 
   if (*mem.h_numCandidates() <= 0) {
-    std::cerr << "timestamp=" << (uint64_t)time(NULL) << ", frameIdx=" << frameIdx 
+    std::cerr << "timestamp=" << time(NULL) << ", frameIdx=" << frameIdx 
               << ", kernelIdx=" << kernelIdx << ", chunkIdx=" << chunkIdx 
               << ", error=NO_PATTERNS_FOUND\n";
 
@@ -128,7 +128,7 @@ __host__ void reportChunkResults(gol::SearchMemory& mem, ProgramArgs *cli, doubl
   formattedRate.imbue(std::locale(""));
   formattedRate << patternsPerSec;
   
-  Logging::out() << "timestamp=" << (uint64_t)time(NULL) << ", frameIdx=" << frameIdx 
+  Logging::out() << "timestamp=" << time(NULL) << ", frameIdx=" << frameIdx 
             << ", kernelIdx=" << kernelIdx << ", chunkIdx=" << chunkIdx 
             << ", bestGenerations=" << (int)*mem.h_bestGenerations()
             << ", bestPattern=" << *mem.h_bestPattern() << ", bestPatternBin=" << bestPatternBin 

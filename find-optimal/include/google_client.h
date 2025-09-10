@@ -16,6 +16,7 @@
 #include <thread>
 #include <vector>
 
+#include "logging.h"
 
 #define CURL_TIMEOUT 30L
 #define FRAME_CACHE_TOTAL_FRAMES 2102800ULL
@@ -470,10 +471,30 @@ static void googleSendProgressAsync(bool frameComplete, uint64_t frameIdx, int k
 
   // Launch detached thread using C++11 lambda with capture list
   // [=] captures all variables by value (copy) to ensure thread safety
-  // The lambda runs googleSendProgress in a separate thread, then thread is detached
+  // The lambda runs googleSendProgress with retry logic in a separate thread, then thread is detached
   std::thread([=]() {
-    googleSendProgress(frameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSecond, bestGenerations, bestPattern,
-                       patternBinCopy.c_str(), isTest, randomFrame);
+    const int maxRetries = 3;
+    bool finalSuccess = false;
+
+    for (int attempt = 0; attempt < maxRetries; ++attempt) {
+      bool success = googleSendProgress(frameComplete, frameIdx, kernelIdx, chunkIdx, patternsPerSecond,
+                                        bestGenerations, bestPattern, patternBinCopy.c_str(), isTest, randomFrame);
+      if (success) {
+        finalSuccess = true;
+        break;  // Success, exit retry loop
+      }
+
+      // If not the last attempt, wait with exponential backoff
+      if (attempt < maxRetries - 1) {
+        int delayMs = 500 * (1 << attempt);  // 500 * 2^attempt: 500, 1000, 2000ms
+        std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
+      }
+    }
+
+    if (!finalSuccess) {
+      Logging::out() << "timestamp=" << time(NULL) << ", ERROR=Failed to send progress after " << maxRetries
+                     << " attempts (frame " << frameIdx << ")\n";
+    }
   }).detach();
 }
 

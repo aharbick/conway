@@ -27,8 +27,6 @@ __host__ bool updateBestGenerations(int generations) {
 __host__ void *search(void *args) {
   ProgramArgs *cli = static_cast<ProgramArgs *>(args);
 
-  Logging::out() << "Running with CUDA enabled\n";
-
   const std::string searchRangeMessage = getSearchDescription(cli);
   Logging::out() << "Searching " << searchRangeMessage << "\n";
 
