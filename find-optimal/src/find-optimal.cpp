@@ -7,6 +7,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <vector>
@@ -102,6 +103,65 @@ int main(int argc, char** argv) {
 
   // Initialize logging system
   Logging::LogManager::initialize(cli);
+
+  // Handle test-frame-cache flag
+  if (cli->testFrameCache) {
+    std::cout << "Testing Frame Completion Cache...\n";
+
+    std::cout << "Loading frame cache from Google Sheets...\n";
+    if (!googleLoadFrameCache()) {
+      std::cerr << "[ERROR] Failed to load frame cache from Google Sheets API\n";
+      cleanupProgramArgs(cli);
+      googleCleanup();
+      return 1;
+    }
+
+    std::cout << "Cache loaded successfully. Scanning all " << FRAME_CACHE_TOTAL_FRAMES << " frames...\n";
+
+    // Debug: Check first few frames manually
+    std::cout << "Debug: Testing first 10 frames manually:\n";
+    for (uint64_t i = 0; i < 10; i++) {
+      bool isComplete = googleIsFrameCompleteFromCache(i);
+      std::cout << "  Frame " << i << ": " << (isComplete ? "complete" : "incomplete") << "\n";
+    }
+
+    // Debug: Check some frames that you know should be complete
+    std::cout << "Debug: Testing some potentially complete frames:\n";
+    uint64_t testFrames[] = {0, 1, 100, 1000, 10000, 100000};
+    for (uint64_t frame : testFrames) {
+      bool isComplete = googleIsFrameCompleteFromCache(frame);
+      std::cout << "  Frame " << frame << ": " << (isComplete ? "complete" : "incomplete") << "\n";
+    }
+
+    uint64_t completedFrames = 0;
+    uint64_t totalFrames = FRAME_CACHE_TOTAL_FRAMES;
+
+    // Sample frames for progress reporting
+    for (uint64_t frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
+      if (googleIsFrameCompleteFromCache(frameIdx)) {
+        completedFrames++;
+      }
+
+      // Progress report every 100K frames
+      if (frameIdx > 0 && frameIdx % 100000 == 0) {
+        double progress = (double)frameIdx / totalFrames * 100.0;
+        std::cout << "Progress: " << frameIdx << "/" << totalFrames << " (" << std::fixed << std::setprecision(1)
+                  << progress << "%), "
+                  << "completed so far: " << completedFrames << "\n";
+      }
+    }
+
+    std::cout << "\n=== Frame Cache Test Results ===\n";
+    std::cout << "Total frames: " << totalFrames << "\n";
+    std::cout << "Completed frames: " << completedFrames << "\n";
+    std::cout << "Completion rate: " << std::fixed << std::setprecision(2)
+              << (double)completedFrames / totalFrames * 100.0 << "%\n";
+    std::cout << "Cache size: " << FRAME_CACHE_BITMAP_BYTES << " bytes\n";
+
+    cleanupProgramArgs(cli);
+    googleCleanup();
+    return 0;
+  }
 
   // Handle test-google-api flag
   if (cli->testGoogleApi) {

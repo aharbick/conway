@@ -66,7 +66,7 @@ __host__ void searchAll(ProgramArgs *cli) {
       uint64_t randomFrameIdx = dist(rng);
 
       // Check if this frame is already complete
-      if (googleGetIsFrameComplete(randomFrameIdx)) {
+      if (googleIsFrameCompleteFromCache(randomFrameIdx)) {
         continue;  // Skip completed frames
       }
 
@@ -84,7 +84,7 @@ __host__ void searchAll(ProgramArgs *cli) {
       if (isMinimalFrame(frame)) {
         if (currentFrameIdx >= cli->frameBeginIdx) {
           // Check if this frame is already complete (for sequential processing too)
-          if (googleGetIsFrameComplete(currentFrameIdx)) {
+          if (googleIsFrameCompleteFromCache(currentFrameIdx)) {
             printThreadStatus(cli->threadId, "Skipping completed frame %llu", currentFrameIdx);
           } else {
             executeKernelSearch(mem, cli, frame, currentFrameIdx);

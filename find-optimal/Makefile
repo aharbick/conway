@@ -25,7 +25,7 @@ HAS_CUDA := $(shell which nvcc)
 
 ifeq ($(OS),Darwin)
 	CFLAGS = -I/opt/homebrew/include
-	LIBS = -L/opt/homebrew/lib -largp -lpthread -lcurl
+	LIBS = -L/opt/homebrew/lib -largp -lpthread -lcurl -lssl -lcrypto
 else
 	ifneq (,$(HAS_CUDA))
 		NVCC=nvcc -x cu
@@ -39,9 +39,9 @@ else
 			# Fallback for common architectures
 			NVCFLAGS=-arch=sm_87 -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
 		endif
-		LIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda -lpthread -lcurl
+		LIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda -lpthread -lcurl -lssl -lcrypto
 	else
-		LIBS=-lpthread -lcurl
+		LIBS=-lpthread -lcurl -lssl -lcrypto
 	endif
 endif
 

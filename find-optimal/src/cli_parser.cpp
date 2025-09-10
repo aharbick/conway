@@ -33,6 +33,7 @@ static struct argp_option argp_options[] = {
     {"random", 'R', "samples", 0, "Random search mode with specified number of samples."},
     {"verbose", 'v', 0, 0, "Verbose output."},
     {"test-google-api", 'T', 0, 0, "Test Google Sheets API functionality and exit."},
+    {"test-frame-cache", 'C', 0, 0, "Test frame completion cache functionality and exit."},
     {"log-file", 'l', "PATH", 0, "Path to log file for progress output."},
     {0}};
 
@@ -262,6 +263,9 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
   case 'T':
     a->testGoogleApi = true;
     break;
+  case 'C':
+    a->testFrameCache = true;
+    break;
   case 'l':
     if (!arg || *arg == '\0') {
       argp_failure(state, 1, 0, "Log file path cannot be empty");
@@ -286,6 +290,7 @@ void initializeDefaultArgs(ProgramArgs* args) {
   args->random = false;
   args->verbose = false;
   args->testGoogleApi = false;
+  args->testFrameCache = false;
   args->resumeFromDatabase = false;
   args->randomFrameMode = false;
   args->randomSamples = 0;

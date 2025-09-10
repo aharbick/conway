@@ -78,10 +78,12 @@ function handleRequest(e) {
         return googleGetBestCompleteFrame(e, spreadsheetId);
       case 'getIsFrameComplete':
         return googleGetIsFrameComplete(e, spreadsheetId);
+      case 'getCompleteFrameCache':
+        return googleGetCompleteFrameCache(e, spreadsheetId);
       default:
         return ContentService
           .createTextOutput(JSON.stringify({
-            error: 'Invalid action. Use "sendProgress", "getBestResult", "getBestCompleteFrame", or "getIsFrameComplete"'
+            error: 'Invalid action. Use "sendProgress", "getBestResult", "getBestCompleteFrame", "getIsFrameComplete", or "getCompleteFrameCache"'
           }))
           .setMimeType(ContentService.MimeType.JSON);
     }
@@ -360,6 +362,82 @@ function googleGetIsFrameComplete(e, spreadsheetId) {
         isComplete: false,
         frameIdx: frameIdx,
         message: 'Frame not found or not complete'
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  });
+}
+
+/**
+ * Get a bitmap of all completed frames for efficient caching
+ * Returns a base64-encoded bitmap where each bit represents a frame's completion status
+ */
+function googleGetCompleteFrameCache(e, spreadsheetId) {
+  return withLock(() => {
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    const sheet = spreadsheet.getSheetByName(PROGRESS_SHEET_NAME);
+
+    if (!sheet) {
+      return ContentService
+        .createTextOutput(JSON.stringify({
+          bitmap: "",
+          totalFrames: 0,
+          message: 'No progress sheet found'
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const dataRange = sheet.getDataRange().getValues();
+
+    if (dataRange.length <= 1) {
+      return ContentService
+        .createTextOutput(JSON.stringify({
+          bitmap: "",
+          totalFrames: 0,
+          message: 'No data found'
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Find column indices
+    const headers = dataRange[0];
+    const frameIdxCol = headers.indexOf('frameIdx');
+    const frameCompleteCol = headers.indexOf('frameComplete');
+    const testCol = headers.indexOf('test');
+    const randomFrameCol = headers.indexOf('randomFrame');
+
+    if (frameIdxCol === -1 || frameCompleteCol === -1) {
+      throw new Error('Required columns not found');
+    }
+
+    // Create bitmap for 2,102,800 frames (262,850 bytes)
+    const TOTAL_FRAMES = 2102800;
+    const bitmapBytes = Math.ceil(TOTAL_FRAMES / 8);
+    const bitmap = new Uint8Array(bitmapBytes);
+
+    // Process all rows and set bits for completed frames
+    for (let i = 1; i < dataRange.length; i++) {
+      const row = dataRange[i];
+      const isTest = testCol !== -1 ? (row[testCol] === true || row[testCol] === 'true') : false;
+      const isRandomFrame = randomFrameCol !== -1 ? (row[randomFrameCol] === true || row[randomFrameCol] === 'true') : false;
+      const frameComplete = row[frameCompleteCol] === true || row[frameCompleteCol] === 'true';
+      const frameIdx = parseInt(row[frameIdxCol]) || 0;
+
+      // Skip test records - but include both sequential and random frame records
+      if (!isTest && frameComplete && frameIdx >= 0 && frameIdx < TOTAL_FRAMES) {
+        const byteIdx = Math.floor(frameIdx / 8);
+        const bitIdx = frameIdx % 8;
+        bitmap[byteIdx] |= (1 << bitIdx);
+      }
+    }
+
+    // Convert bitmap to base64 for transmission
+    const bitmapBase64 = Utilities.base64Encode(bitmap);
+
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        bitmap: bitmapBase64,
+        totalFrames: TOTAL_FRAMES,
+        bitmapSize: bitmapBytes
       }))
       .setMimeType(ContentService.MimeType.JSON);
   });
