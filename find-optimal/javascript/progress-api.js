@@ -5,6 +5,9 @@
 const PROGRESS_SHEET_NAME = 'Progress';
 const LOCK_TIMEOUT_MS = 30000; // 30 seconds timeout for locks
 
+// Spreadsheet ID for our Progress data
+const SPREADSHEET_ID = '1bXt22T9cyv1A1vcdozR54n-imEFdIhsMcvEhEUMlsmY';
+
 /**
  * Execute a function with script-level locking for concurrency safety
  * @param {Function} operation - The function to execute under lock
@@ -57,12 +60,21 @@ function handleRequest(e) {
     // Use GET parameters only
     const data = e.parameter;
 
-    // Extract spreadsheetId (acts as API key)
-    const spreadsheetId = data.spreadsheetId;
-    if (!spreadsheetId) {
+    // Extract and validate API key
+    const apiKey = data.apiKey;
+    if (!apiKey) {
       return ContentService
         .createTextOutput(JSON.stringify({
-          error: 'Missing required parameter: spreadsheetId'
+          error: 'Missing required parameter: apiKey'
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Validate API key
+    if (apiKey !== AUTHORIZED_API_KEY) {
+      return ContentService
+        .createTextOutput(JSON.stringify({
+          error: 'Invalid API key'
         }))
         .setMimeType(ContentService.MimeType.JSON);
     }
@@ -71,15 +83,15 @@ function handleRequest(e) {
 
     switch (action) {
       case 'sendProgress':
-        return googleSendProgress(e, spreadsheetId);
+        return googleSendProgress(e, SPREADSHEET_ID);
       case 'getBestResult':
-        return googleGetBestResult(e, spreadsheetId);
+        return googleGetBestResult(e, SPREADSHEET_ID);
       case 'getBestCompleteFrame':
-        return googleGetBestCompleteFrame(e, spreadsheetId);
+        return googleGetBestCompleteFrame(e, SPREADSHEET_ID);
       case 'getIsFrameComplete':
-        return googleGetIsFrameComplete(e, spreadsheetId);
+        return googleGetIsFrameComplete(e, SPREADSHEET_ID);
       case 'getCompleteFrameCache':
-        return googleGetCompleteFrameCache(e, spreadsheetId);
+        return googleGetCompleteFrameCache(e, SPREADSHEET_ID);
       default:
         return ContentService
           .createTextOutput(JSON.stringify({

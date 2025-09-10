@@ -21,10 +21,10 @@ The code in progress-api.js provides an API to our C++ code for storing progress
 Google doesn't work nicely with POST... So all APIs are GET.
 
 Send Progress (GET):
-curl -L "https://script.google.com/macros/s/AKfycbxU11EoXYKwgckXVfONFJdvM_QOVvTKwxzTzbwwwTUsqWMDpOx67yOfH5RsKhfTekpiow/exec?action=sendProgress&spreadsheetId=HIDDEN_SHEET_ID&frameComplete=false&frameIdx=12345&kernelIdx=2&chunkIdx=10&patternsPerSecond=500000&bestGenerations=250&bestPattern=123456789ABCDEF0&bestPatternBin=0001001100110011001100110011001100110011001100110011001100110011&test=false"
+curl -L "https://script.google.com/macros/s/AKfycbxU11EoXYKwgckXVfONFJdvM_QOVvTKwxzTzbwwwTUsqWMDpOx67yOfH5RsKhfTekpiow/exec?action=sendProgress&apiKey=SECRET_KEY_VALUE&frameComplete=false&frameIdx=12345&kernelIdx=2&chunkIdx=10&patternsPerSecond=500000&bestGenerations=250&bestPattern=123456789ABCDEF0&bestPatternBin=0001001100110011001100110011001100110011001100110011001100110011&test=false"
 
 Get Best Result (GET) - unchanged:
-curl -L "https://script.google.com/macros/s/AKfycbxU11EoXYKwgckXVfONFJdvM_QOVvTKwxzTzbwwwTUsqWMDpOx67yOfH5RsKhfTekpiow/exec?action=getBestResult&spreadsheetId=HIDDEN_SHEET_ID"
+curl -L "https://script.google.com/macros/s/AKfycbxU11EoXYKwgckXVfONFJdvM_QOVvTKwxzTzbwwwTUsqWMDpOx67yOfH5RsKhfTekpiow/exec?action=getBestResult&apiKey=SECRET_KEY_VALUE"
 
 # Utilities
 

@@ -38,8 +38,8 @@ class CurlResponse {
 };
 
 typedef struct {
-  const char* webapp_url;
-  const char* spreadsheet_id;
+  const char* webappUrl;
+  const char* apiKey;
 } GoogleConfig;
 
 typedef enum {
@@ -62,10 +62,10 @@ static size_t WriteMemoryCallback(void* contents, size_t size, size_t nmemb, Cur
 }
 
 static GoogleResult googleGetConfig(GoogleConfig* config) {
-  config->webapp_url = getenv("GOOGLE_WEBAPP_URL");
-  config->spreadsheet_id = getenv("GOOGLE_SPREADSHEET_ID");
+  config->webappUrl = getenv("GOOGLE_WEBAPP_URL");
+  config->apiKey = getenv("GOOGLE_API_KEY");
 
-  if (!config->webapp_url || !config->spreadsheet_id) {
+  if (!config->webappUrl || !config->apiKey) {
     return GOOGLE_ERROR_CONFIG;
   }
 
@@ -166,8 +166,8 @@ class FrameCompletionCache {
 
     // Build URL for cache API
     std::ostringstream urlStream;
-    urlStream << config.webapp_url << "?action=getCompleteFrameCache";
-    urlStream << "&spreadsheetId=" << googleUrlEncode(config.spreadsheet_id);
+    urlStream << config.webappUrl << "?action=getCompleteFrameCache";
+    urlStream << "&apiKey=" << googleUrlEncode(config.apiKey);
     const std::string url = urlStream.str();
 
     CurlResponse response;
@@ -293,8 +293,8 @@ static bool googleSendProgress(bool frameComplete, uint64_t frameIdx, int kernel
 
   // Build URL with parameters
   std::ostringstream urlStream;
-  urlStream << config.webapp_url << "?action=sendProgress";
-  urlStream << "&spreadsheetId=" << googleUrlEncode(config.spreadsheet_id);
+  urlStream << config.webappUrl << "?action=sendProgress";
+  urlStream << "&apiKey=" << googleUrlEncode(config.apiKey);
   if (frameComplete) {
     urlStream << "&frameComplete=true";
   }
@@ -335,8 +335,8 @@ static std::string googleSendProgressWithResponse(bool frameComplete, uint64_t f
 
   // Build URL with parameters
   std::ostringstream urlStream;
-  urlStream << config.webapp_url << "?action=sendProgress";
-  urlStream << "&spreadsheetId=" << googleUrlEncode(config.spreadsheet_id);
+  urlStream << config.webappUrl << "?action=sendProgress";
+  urlStream << "&apiKey=" << googleUrlEncode(config.apiKey);
   if (frameComplete) {
     urlStream << "&frameComplete=true";
   }
@@ -383,8 +383,8 @@ static int googleGetBestResult() {
   }
 
   std::ostringstream urlStream;
-  urlStream << config.webapp_url << "?action=getBestResult";
-  urlStream << "&spreadsheetId=" << googleUrlEncode(config.spreadsheet_id);
+  urlStream << config.webappUrl << "?action=getBestResult";
+  urlStream << "&apiKey=" << googleUrlEncode(config.apiKey);
   const std::string url = urlStream.str();
 
   CurlResponse response;
@@ -411,8 +411,8 @@ static uint64_t googleGetBestCompleteFrame() {
   }
 
   std::ostringstream urlStream;
-  urlStream << config.webapp_url << "?action=getBestCompleteFrame";
-  urlStream << "&spreadsheetId=" << googleUrlEncode(config.spreadsheet_id);
+  urlStream << config.webappUrl << "?action=getBestCompleteFrame";
+  urlStream << "&apiKey=" << googleUrlEncode(config.apiKey);
   const std::string url = urlStream.str();
 
   CurlResponse response;
@@ -437,8 +437,8 @@ static bool googleGetIsFrameComplete(uint64_t frameIdx) {
   }
 
   std::ostringstream urlStream;
-  urlStream << config.webapp_url << "?action=getIsFrameComplete";
-  urlStream << "&spreadsheetId=" << googleUrlEncode(config.spreadsheet_id);
+  urlStream << config.webappUrl << "?action=getIsFrameComplete";
+  urlStream << "&apiKey=" << googleUrlEncode(config.apiKey);
   urlStream << "&frameIdx=" << frameIdx;
   const std::string url = urlStream.str();
 
