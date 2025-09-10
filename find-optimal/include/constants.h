@@ -17,12 +17,6 @@
 #define FRAME_SEARCH_KERNEL_PATTERN_INCREMENT 0x1000000ULL
 #define FRAME_SEARCH_TOTAL_MINIMAL_FRAMES 2102800
 
-// Random search constants
-#define RANDOM_SEARCH_CHUNK_SIZE (1 << 20)
-#define RANDOM_SEARCH_MAX_CANDIDATES (1 << 20)
-
-// Search type enumeration
-typedef enum { SEARCH_TYPE_FRAME_BASED, SEARCH_TYPE_RANDOM } SearchType;
 
 // Common buffer sizes
 #define BINARY_STRING_BUFFER_SIZE 65

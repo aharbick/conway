@@ -10,9 +10,6 @@
 #include "cuda_utils.h"
 
 // Time utilities for performance measurement
-__host__ double getCurrentTime();
-
-// Thread status and logging utilities
-__host__ void printThreadStatus(int threadId, const char *format, ...);
+__host__ double getHighResCurrentTime();
 
 #endif

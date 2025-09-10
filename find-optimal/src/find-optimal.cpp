@@ -16,65 +16,12 @@
 #include "gol.h"
 #include "logging.h"
 
-// Thread context class with RAII
-class ThreadContext {
- public:
-  std::vector<pthread_t> threads;
-  std::vector<std::unique_ptr<ProgramArgs>> threadArgs;
-  int numThreads;
-
-  ThreadContext(int count) : numThreads(count) {
-    threads.resize(count);
-    threadArgs.reserve(count);
-  }
-};
-
-#ifdef __NVCC__
 static void printCudaDeviceInfo(ProgramArgs* cli) {
   int deviceCount;
   cudaGetDeviceCount(&deviceCount);
   Logging::out() << "CUDA devices available: " << deviceCount << "\n";
   Logging::out() << "Using " << cli->gpusToUse << " GPU(s) with blockSize=" << cli->blockSize
                  << ", threadsPerBlock=" << cli->threadsPerBlock << "\n";
-}
-#endif
-
-static std::unique_ptr<ProgramArgs> createThreadArgs(ProgramArgs* cli, int threadId, uint64_t patternsPerThread) {
-  auto targs = std::make_unique<ProgramArgs>(*cli);
-  targs->threadId = threadId;
-
-  // Each thread has the same endAt but different beginAt offsets
-  targs->beginAt = cli->beginAt + (threadId * patternsPerThread);
-  if (threadId == cli->cpuThreads - 1) {
-    // Last thread gets any remaining patterns
-    targs->endAt = cli->endAt;
-  } else {
-    targs->endAt = targs->beginAt + patternsPerThread;
-  }
-
-  return targs;
-}
-
-static std::unique_ptr<ThreadContext> createAndStartThreads(ProgramArgs* cli) {
-  uint64_t patternsPerThread = ((cli->endAt > 0) ? cli->endAt - cli->beginAt : ULONG_MAX) / cli->cpuThreads;
-
-  auto context = std::make_unique<ThreadContext>(cli->cpuThreads);
-
-  // Start threads
-  for (int t = 0; t < cli->cpuThreads; ++t) {
-    context->threadArgs.emplace_back(createThreadArgs(cli, t, patternsPerThread));
-    pthread_create(&context->threads[t], NULL, search, context->threadArgs[t].get());
-  }
-
-  return context;
-}
-
-
-static void joinAndCleanupThreads(std::unique_ptr<ThreadContext>& context) {
-  for (int t = 0; t < context->numThreads; ++t) {
-    pthread_join(context->threads[t], NULL);
-    printThreadStatus(t, "COMPLETE");
-  }
 }
 
 int main(int argc, char** argv) {
@@ -241,9 +188,7 @@ int main(int argc, char** argv) {
     Logging::out() << "Starting from frame 0\n";
   }
 
-  // Create and start threads, then wait for completion
-  auto context = createAndStartThreads(cli);
-  joinAndCleanupThreads(context);
+  search(cli);
   cleanupProgramArgs(cli);
 
   // Cleanup Google client

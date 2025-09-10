@@ -23,26 +23,33 @@ ALL_SOURCES=$(CPP_SOURCES) $(HEADER_SOURCES) $(TEST_SOURCES_FORMAT)
 OS := $(shell uname -s)
 HAS_CUDA := $(shell which nvcc)
 
+# Check for CUDA requirement
+ifeq (,$(HAS_CUDA))
+	$(error CUDA is required. Please install NVIDIA CUDA toolkit and ensure nvcc is in your PATH)
+endif
+
+# Set compiler to NVCC
+NVCC=nvcc -x cu
+
+# Auto-detect GPU architecture
+GPU_ARCH := $(shell nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d '.')
+
+# Set CUDA compilation flags
+ifdef JETSON_NANO
+	NVCFLAGS=-arch=sm_53 -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
+else ifdef GPU_ARCH
+	NVCFLAGS=-arch=sm_$(GPU_ARCH) -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
+else
+	# Fallback for common architectures
+	NVCFLAGS=-arch=sm_87 -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
+endif
+
+# Set platform-specific flags
 ifeq ($(OS),Darwin)
 	CFLAGS = -I/opt/homebrew/include
-	LIBS = -L/opt/homebrew/lib -largp -lpthread -lcurl -lssl -lcrypto
+	LIBS = -L/opt/homebrew/lib -largp -lpthread -lcurl -lssl -lcrypto -L/usr/local/cuda/lib64 -lcudart -lcuda
 else
-	ifneq (,$(HAS_CUDA))
-		NVCC=nvcc -x cu
-		# Auto-detect GPU architecture
-		GPU_ARCH := $(shell nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d '.')
-		ifdef JETSON_NANO
-			NVCFLAGS=-arch=sm_53 -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
-		else ifdef GPU_ARCH
-			NVCFLAGS=-arch=sm_$(GPU_ARCH) -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
-		else
-			# Fallback for common architectures
-			NVCFLAGS=-arch=sm_87 -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
-		endif
-		LIBS=-L/usr/local/cuda/lib64 -lcudart -lcuda -lpthread -lcurl -lssl -lcrypto
-	else
-		LIBS=-lpthread -lcurl -lssl -lcrypto
-	endif
+	LIBS = -L/usr/local/cuda/lib64 -lcudart -lcuda -lpthread -lcurl -lssl -lcrypto
 endif
 
 all: setup format-check explore-cachability find-optimal
@@ -63,14 +70,11 @@ $(BUILDDIR)/gol.o: $(SRCDIR)/gol.cpp $(INCLUDEDIR)/gol.h
 $(BUILDDIR)/find-optimal.o: $(SRCDIR)/find-optimal.cpp $(INCLUDEDIR)/gol.h
 	$(NVCC) $(if $(NVCFLAGS), $(NVCFLAGS), $(CFLAGS)) -I$(INCLUDEDIR) -c $< -o $@
 
-# CUDA-specific implementations (only compiled with NVCC)
-ifeq ($(NVCC),nvcc -x cu)
+# CUDA-specific implementations
 $(BUILDDIR)/gol_cuda.o: $(SRCDIR)/gol_cuda.cu $(INCLUDEDIR)/gol.h
 	$(NVCC) $(NVCFLAGS) -I$(INCLUDEDIR) -c $< -o $@
+
 CUDA_OBJECTS = $(BUILDDIR)/gol_cuda.o
-else
-CUDA_OBJECTS = 
-endif
 
 find-optimal: $(BUILDDIR)/find-optimal.o $(BUILDDIR)/cli_parser.o $(BUILDDIR)/gol.o $(BUILDDIR)/utils.o $(BUILDDIR)/logging.o $(CUDA_OBJECTS)
 	$(CC) $^ -o $(BUILDDIR)/$@ $(LIBS)

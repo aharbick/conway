@@ -5,8 +5,6 @@
 #include <string>
 
 typedef struct ProgramArgs {
-  int threadId;
-  int cpuThreads;
   int gpusToUse;
   int blockSize;
   int threadsPerBlock;
