@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -76,14 +77,43 @@ static void googleCleanupResponse(CurlResponse* response) {
   response->clear();
 }
 
-static GoogleResult googleHttpRequest(const char* url, CurlResponse* response) {
+static std::string googleUrlEncode(const std::string& value) {
+  std::ostringstream encoded;
+  for (char c : value) {
+    if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+      encoded << c;
+    } else {
+      encoded << '%' << std::hex << std::uppercase << (unsigned char)c;
+    }
+  }
+  return encoded.str();
+}
+
+static GoogleResult googleHttpRequest(const std::string& baseUrl, const std::map<std::string, std::string>& params,
+                                      CurlResponse* response, const std::string& apiName = "unknown") {
   CURL* curl = curl_easy_init();
   if (!curl) {
     std::cerr << "[ERROR] Failed to initialize curl\n";
     return GOOGLE_ERROR_CURL_INIT;
   }
 
-  curl_easy_setopt(curl, CURLOPT_URL, url);
+  // Build URL with parameters
+  std::ostringstream urlStream;
+  urlStream << baseUrl;
+
+  if (!params.empty()) {
+    urlStream << "?";
+    bool first = true;
+    for (const auto& param : params) {
+      if (!first)
+        urlStream << "&";
+      urlStream << param.first << "=" << googleUrlEncode(param.second);
+      first = false;
+    }
+  }
+
+  std::string url = urlStream.str();
+  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);  // Follow redirects
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)response);
@@ -100,10 +130,21 @@ static GoogleResult googleHttpRequest(const char* url, CurlResponse* response) {
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &responseCode);
 
     if (responseCode != 200) {
-      std::cerr << "[ERROR] Google Sheets API returned HTTP " << responseCode << "\n";
-      if (!response->data.empty()) {
-        std::cerr << "[ERROR] Response: " << response->memory() << "\n";
+      // Build comma-separated params for logging
+      std::ostringstream paramStream;
+      bool first = true;
+      for (const auto& param : params) {
+        if (!first)
+          paramStream << ",";
+        paramStream << param.first << "=" << param.second;
+        first = false;
       }
+
+      std::cerr << "[ERROR] " << apiName << ", code=" << responseCode;
+      if (!params.empty()) {
+        std::cerr << ", " << paramStream.str();
+      }
+      std::cerr << "\n";
       result = GOOGLE_ERROR_HTTP;
     }
   }
@@ -129,18 +170,6 @@ static const char* googleFindJsonValue(const char* json, const char* key) {
   return pos;
 }
 
-static std::string googleUrlEncode(const std::string& value) {
-  std::ostringstream encoded;
-  for (char c : value) {
-    if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
-      encoded << c;
-    } else {
-      encoded << '%' << std::hex << std::uppercase << (unsigned char)c;
-    }
-  }
-  return encoded.str();
-}
-
 // Frame completion cache for fast lookups
 class FrameCompletionCache {
  private:
@@ -164,14 +193,13 @@ class FrameCompletionCache {
       return false;
     }
 
-    // Build URL for cache API
-    std::ostringstream urlStream;
-    urlStream << config.webappUrl << "?action=getCompleteFrameCache";
-    urlStream << "&apiKey=" << googleUrlEncode(config.apiKey);
-    const std::string url = urlStream.str();
+    // Build parameters map
+    std::map<std::string, std::string> params;
+    params["action"] = "getCompleteFrameCache";
+    params["apiKey"] = config.apiKey;
 
     CurlResponse response;
-    GoogleResult result = googleHttpRequest(url.c_str(), &response);
+    GoogleResult result = googleHttpRequest(config.webappUrl, params, &response, "getCompleteFrameCache");
 
     if (result != GOOGLE_SUCCESS) {
       return false;
@@ -291,29 +319,27 @@ static bool googleSendProgress(bool frameComplete, uint64_t frameIdx, int kernel
     return false;
   }
 
-  // Build URL with parameters
-  std::ostringstream urlStream;
-  urlStream << config.webappUrl << "?action=sendProgress";
-  urlStream << "&apiKey=" << googleUrlEncode(config.apiKey);
+  // Build parameters map
+  std::map<std::string, std::string> params;
+  params["action"] = "sendProgress";
+  params["apiKey"] = config.apiKey;
   if (frameComplete) {
-    urlStream << "&frameComplete=true";
+    params["frameComplete"] = "true";
   }
-  urlStream << "&frameIdx=" << frameIdx;
-  urlStream << "&kernelIdx=" << kernelIdx;
-  urlStream << "&chunkIdx=" << chunkIdx;
-  urlStream << "&patternsPerSecond=" << patternsPerSecond;
-  urlStream << "&bestGenerations=" << bestGenerations;
-  urlStream << "&bestPattern=" << googleUrlEncode(std::to_string(bestPattern));
-  urlStream << "&bestPatternBin=" << googleUrlEncode(bestPatternBin);
+  params["frameIdx"] = std::to_string(frameIdx);
+  params["kernelIdx"] = std::to_string(kernelIdx);
+  params["chunkIdx"] = std::to_string(chunkIdx);
+  params["patternsPerSecond"] = std::to_string(patternsPerSecond);
+  params["bestGenerations"] = std::to_string(bestGenerations);
+  params["bestPattern"] = std::to_string(bestPattern);
+  params["bestPatternBin"] = bestPatternBin;
   if (isTest) {
-    urlStream << "&test=true";
+    params["test"] = "true";
   }
-  urlStream << "&randomFrame=" << (randomFrame ? "true" : "false");
-
-  const std::string url = urlStream.str();
+  params["randomFrame"] = randomFrame ? "true" : "false";
 
   CurlResponse response;
-  GoogleResult result = googleHttpRequest(url.c_str(), &response);
+  GoogleResult result = googleHttpRequest(config.webappUrl, params, &response, "sendProgress");
 
   googleCleanupResponse(&response);
 
@@ -333,29 +359,27 @@ static std::string googleSendProgressWithResponse(bool frameComplete, uint64_t f
     return "{\"error\": \"Configuration failed\"}";
   }
 
-  // Build URL with parameters
-  std::ostringstream urlStream;
-  urlStream << config.webappUrl << "?action=sendProgress";
-  urlStream << "&apiKey=" << googleUrlEncode(config.apiKey);
+  // Build parameters map
+  std::map<std::string, std::string> params;
+  params["action"] = "sendProgress";
+  params["apiKey"] = config.apiKey;
   if (frameComplete) {
-    urlStream << "&frameComplete=true";
+    params["frameComplete"] = "true";
   }
-  urlStream << "&frameIdx=" << frameIdx;
-  urlStream << "&kernelIdx=" << kernelIdx;
-  urlStream << "&chunkIdx=" << chunkIdx;
-  urlStream << "&patternsPerSecond=" << patternsPerSecond;
-  urlStream << "&bestGenerations=" << bestGenerations;
-  urlStream << "&bestPattern=" << googleUrlEncode(std::to_string(bestPattern));
-  urlStream << "&bestPatternBin=" << googleUrlEncode(bestPatternBin);
+  params["frameIdx"] = std::to_string(frameIdx);
+  params["kernelIdx"] = std::to_string(kernelIdx);
+  params["chunkIdx"] = std::to_string(chunkIdx);
+  params["patternsPerSecond"] = std::to_string(patternsPerSecond);
+  params["bestGenerations"] = std::to_string(bestGenerations);
+  params["bestPattern"] = std::to_string(bestPattern);
+  params["bestPatternBin"] = bestPatternBin;
   if (isTest) {
-    urlStream << "&test=true";
+    params["test"] = "true";
   }
-  urlStream << "&randomFrame=" << (randomFrame ? "true" : "false");
-
-  const std::string url = urlStream.str();
+  params["randomFrame"] = randomFrame ? "true" : "false";
 
   CurlResponse response;
-  GoogleResult result = googleHttpRequest(url.c_str(), &response);
+  GoogleResult result = googleHttpRequest(config.webappUrl, params, &response, "sendProgressWithResponse");
 
   std::string responseStr = response.data;
   googleCleanupResponse(&response);
@@ -382,13 +406,13 @@ static int googleGetBestResult() {
     return -1;
   }
 
-  std::ostringstream urlStream;
-  urlStream << config.webappUrl << "?action=getBestResult";
-  urlStream << "&apiKey=" << googleUrlEncode(config.apiKey);
-  const std::string url = urlStream.str();
+  // Build parameters map
+  std::map<std::string, std::string> params;
+  params["action"] = "getBestResult";
+  params["apiKey"] = config.apiKey;
 
   CurlResponse response;
-  GoogleResult result = googleHttpRequest(url.c_str(), &response);
+  GoogleResult result = googleHttpRequest(config.webappUrl, params, &response, "getBestResult");
 
   int bestGenerations = -1;
   if (result == GOOGLE_SUCCESS && !response.data.empty()) {
@@ -410,13 +434,13 @@ static uint64_t googleGetBestCompleteFrame() {
     return ULLONG_MAX;
   }
 
-  std::ostringstream urlStream;
-  urlStream << config.webappUrl << "?action=getBestCompleteFrame";
-  urlStream << "&apiKey=" << googleUrlEncode(config.apiKey);
-  const std::string url = urlStream.str();
+  // Build parameters map
+  std::map<std::string, std::string> params;
+  params["action"] = "getBestCompleteFrame";
+  params["apiKey"] = config.apiKey;
 
   CurlResponse response;
-  GoogleResult result = googleHttpRequest(url.c_str(), &response);
+  GoogleResult result = googleHttpRequest(config.webappUrl, params, &response, "getBestCompleteFrame");
 
   uint64_t bestFrameIdx = ULLONG_MAX;
   if (result == GOOGLE_SUCCESS && !response.data.empty()) {
@@ -436,14 +460,14 @@ static bool googleGetIsFrameComplete(uint64_t frameIdx) {
     return false;
   }
 
-  std::ostringstream urlStream;
-  urlStream << config.webappUrl << "?action=getIsFrameComplete";
-  urlStream << "&apiKey=" << googleUrlEncode(config.apiKey);
-  urlStream << "&frameIdx=" << frameIdx;
-  const std::string url = urlStream.str();
+  // Build parameters map
+  std::map<std::string, std::string> params;
+  params["action"] = "getIsFrameComplete";
+  params["apiKey"] = config.apiKey;
+  params["frameIdx"] = std::to_string(frameIdx);
 
   CurlResponse response;
-  GoogleResult result = googleHttpRequest(url.c_str(), &response);
+  GoogleResult result = googleHttpRequest(config.webappUrl, params, &response, "getIsFrameComplete");
 
   bool isComplete = false;
   if (result == GOOGLE_SUCCESS && !response.data.empty()) {
