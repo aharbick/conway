@@ -80,9 +80,12 @@ static void googleCleanupResponse(CurlResponse* response) {
   response->clear();
 }
 
+// Mutex to serialize all HTTP requests for thread safety
+static std::mutex httpRequestMutex;
 
 static GoogleResult googleHttpRequest(const std::string& baseUrl, const std::map<std::string, std::string>& params,
                                       CurlResponse* response, const std::string& apiName = "unknown") {
+  std::lock_guard<std::mutex> lock(httpRequestMutex);
   CURL* curl = curl_easy_init();
   if (!curl) {
     std::cerr << "[ERROR] Failed to initialize curl\n";
@@ -317,7 +320,7 @@ static bool googleSendProgress(uint64_t frameIdx, int kernelIdx, int bestGenerat
 
 
 static bool googleInit() {
-  CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
+  CURLcode res = curl_global_init(CURL_GLOBAL_ALL);
   if (res != CURLE_OK) {
     std::cerr << "[ERROR] Failed to initialize libcurl: " << curl_easy_strerror(res) << "\n";
     return false;
