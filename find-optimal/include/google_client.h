@@ -13,7 +13,6 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
-#include <mutex>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
@@ -80,12 +79,8 @@ static void googleCleanupResponse(CurlResponse* response) {
   response->clear();
 }
 
-// Mutex to serialize all HTTP requests for thread safety
-static std::mutex httpRequestMutex;
-
 static GoogleResult googleHttpRequest(const std::string& baseUrl, const std::map<std::string, std::string>& params,
                                       CurlResponse* response, const std::string& apiName = "unknown") {
-  std::lock_guard<std::mutex> lock(httpRequestMutex);
   CURL* curl = curl_easy_init();
   if (!curl) {
     std::cerr << "[ERROR] Failed to initialize curl\n";
@@ -285,10 +280,6 @@ class FrameCompletionCache {
 // Global cache instance
 static FrameCompletionCache frameCache;
 
-// Thread management for async uploads
-static std::vector<std::thread> uploadThreads;
-static std::mutex uploadThreadsMutex;
-
 static bool googleSendProgress(uint64_t frameIdx, int kernelIdx, int bestGenerations, uint64_t bestPattern,
                                const char* bestPatternBin) {
   GoogleConfig config;
@@ -358,18 +349,7 @@ static int googleGetBestResult() {
   return bestGenerations;
 }
 
-static void googleJoinUploadThreads() {
-  std::lock_guard<std::mutex> lock(uploadThreadsMutex);
-  for (auto& thread : uploadThreads) {
-    if (thread.joinable()) {
-      thread.join();
-    }
-  }
-  uploadThreads.clear();
-}
-
 static void googleCleanup() {
-  googleJoinUploadThreads();
   curl_global_cleanup();
 }
 
@@ -379,8 +359,7 @@ static void googleSendProgressAsync(uint64_t frameIdx, int kernelIdx, int bestGe
   // Copy the bestPatternBin string since the original may be destroyed
   std::string patternBinCopy(bestPatternBin ? bestPatternBin : "");
 
-  // Launch joinable thread and store it for cleanup
-  std::thread uploadThread([=]() {
+  std::thread([=]() {
     const int maxRetries = 3;
     bool finalSuccess = false;
 
@@ -402,13 +381,7 @@ static void googleSendProgressAsync(uint64_t frameIdx, int kernelIdx, int bestGe
       Logging::out() << "timestamp=" << time(NULL) << ", ERROR=Failed to send progress after " << maxRetries
                      << " attempts (frame " << frameIdx << ")\n";
     }
-  });
-
-  // Store the thread for joining later
-  {
-    std::lock_guard<std::mutex> lock(uploadThreadsMutex);
-    uploadThreads.push_back(std::move(uploadThread));
-  }
+  }).detach();
 }
 
 // Cache management functions
