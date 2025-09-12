@@ -24,23 +24,7 @@ __global__ void processCandidates(uint64_t *candidates, uint64_t *numCandidates,
   }
 }
 
-__global__ void findCandidates(uint64_t beginAt, uint64_t endAt, uint64_t *candidates, uint64_t *numCandidates) {
-  uint64_t pattern = beginAt + (blockIdx.x * blockDim.x + threadIdx.x);
-  uint64_t g1 = pattern;
-  uint64_t generations = 0;
-
-  if (pattern >= endAt) return;
-
-  while (generations < FAST_SEARCH_MAX_GENERATIONS) {
-    if (!step6GenerationsAndCheck(&g1, pattern, &generations, candidates, numCandidates)) {
-      continue;
-    }
-    return;
-  }
-}
-
-__global__ void findCandidatesInKernel(uint64_t kernel, uint64_t *candidates,
-                                       uint64_t *numCandidates) {
+__global__ void findCandidatesInKernel(uint64_t kernel, uint64_t *candidates, uint64_t *numCandidates) {
   uint64_t startingPattern = kernel;
   startingPattern += ((uint64_t)(threadIdx.x & 15)) << 10;   // set the lower row of 4 'T' bits
   startingPattern += ((uint64_t)(threadIdx.x >> 4)) << 17;   // set the upper row of 6 'T' bits
