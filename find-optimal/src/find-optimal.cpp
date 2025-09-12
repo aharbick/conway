@@ -134,7 +134,6 @@ int main(int argc, char** argv) {
     // Generate realistic progress data
     uint64_t testFrameId = 1000000 + (rand() % 1000000);  // Frame IDs in realistic range
     int testKernelId = rand() % 16;                       // Kernel IDs 0-15
-    double testRate = 500000.0 + (rand() % 1000000);      // Realistic patterns/sec rate
 
     // Generate realistic result data
     int testGenerations = 180 + (rand() % 200);                // Generations 180-379 (realistic range)
@@ -149,11 +148,9 @@ int main(int argc, char** argv) {
 
     // Test unified progress upload with best result data
     std::cout << "Testing progress upload (frameIdx=" << testFrameId << ", kernelIdx=" << testKernelId
-              << ", rate=" << testRate << ", generations=" << testGenerations << ", pattern=" << std::hex << testPattern
-              << std::dec << ")...\n";
-    std::string progressResponse =
-        googleSendProgressWithResponse(testFrameId, testKernelId, testGenerations, testPattern, testPatternBin);
-    std::cout << "Progress upload response: " << progressResponse << "\n";
+              << ", generations=" << testGenerations << ", pattern=" << std::hex << testPattern << std::dec << ")...\n";
+    bool success = googleSendProgress(testFrameId, testKernelId, testGenerations, testPattern, testPatternBin);
+    std::cout << "Progress upload: " << (success ? "SUCCESS" : "FAILED") << "\n";
 
     // Test querying best result
     int bestResult = googleGetBestResult();

@@ -10,6 +10,7 @@
 #include <time.h>
 
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <nlohmann/json.hpp>
@@ -78,17 +79,6 @@ static void googleCleanupResponse(CurlResponse* response) {
   response->clear();
 }
 
-static std::string googleUrlEncode(const std::string& value) {
-  std::ostringstream encoded;
-  for (char c : value) {
-    if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
-      encoded << c;
-    } else {
-      encoded << '%' << std::hex << std::uppercase << (unsigned char)c;
-    }
-  }
-  return encoded.str();
-}
 
 static GoogleResult googleHttpRequest(const std::string& baseUrl, const std::map<std::string, std::string>& params,
                                       CurlResponse* response, const std::string& apiName = "unknown") {
@@ -108,7 +98,10 @@ static GoogleResult googleHttpRequest(const std::string& baseUrl, const std::map
     for (const auto& param : params) {
       if (!first)
         urlStream << "&";
-      urlStream << param.first << "=" << googleUrlEncode(param.second);
+      char* encoded = curl_easy_escape(curl, param.second.c_str(), param.second.length());
+      urlStream << param.first << "=" << (encoded ? encoded : param.second);
+      if (encoded)
+        curl_free(encoded);
       first = false;
     }
   }
@@ -317,34 +310,6 @@ static bool googleSendProgress(uint64_t frameIdx, int kernelIdx, int bestGenerat
   return (result == GOOGLE_SUCCESS);
 }
 
-static std::string googleSendProgressWithResponse(uint64_t frameIdx, int kernelIdx, int bestGenerations,
-                                                  uint64_t bestPattern, const char* bestPatternBin) {
-  GoogleConfig config;
-  if (googleGetConfig(&config) != GOOGLE_SUCCESS) {
-    return "{\"error\": \"Configuration failed\"}";
-  }
-
-  // Build parameters map
-  std::map<std::string, std::string> params;
-  params["action"] = "sendProgress";
-  params["apiKey"] = config.apiKey;
-  params["frameIdx"] = std::to_string(frameIdx);
-  params["kernelIdx"] = std::to_string(kernelIdx);
-  params["bestGenerations"] = std::to_string(bestGenerations);
-  params["bestPattern"] = std::string(bestPatternBin) + ":" + std::to_string(bestPattern);
-
-  CurlResponse response;
-  GoogleResult result = googleHttpRequest(config.webappUrl, params, &response, "sendProgressWithResponse");
-
-  std::string responseStr = response.data;
-  googleCleanupResponse(&response);
-
-  if (result != GOOGLE_SUCCESS) {
-    return "{\"error\": \"HTTP request failed\"}";
-  }
-
-  return responseStr;
-}
 
 static bool googleInit() {
   CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
