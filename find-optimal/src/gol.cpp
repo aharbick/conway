@@ -64,6 +64,9 @@ __host__ void *search(void *args) {
     }
   }
 
+  // Report how many frames will be processed
+  Logging::out() << "Processing " << workerFrames.size() << " frames for this worker\n";
+
   // Process all frames in the worker's list
   for (uint64_t frameIdx : workerFrames) {
     // Get the actual frame value for this index
