@@ -13,6 +13,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
@@ -349,7 +350,21 @@ static int googleGetBestResult() {
   return bestGenerations;
 }
 
+static std::vector<std::thread> gGoogleThreads;
+static std::mutex gGoogleThreadsMutex;
+
 static void googleCleanup() {
+  // Wait for all async threads to complete before cleaning up
+  {
+    std::lock_guard<std::mutex> lock(gGoogleThreadsMutex);
+    for (auto& t : gGoogleThreads) {
+      if (t.joinable()) {
+        t.join();
+      }
+    }
+    gGoogleThreads.clear();
+  }
+
   curl_global_cleanup();
 }
 
@@ -359,7 +374,7 @@ static void googleSendProgressAsync(uint64_t frameIdx, int kernelIdx, int bestGe
   // Copy the bestPatternBin string since the original may be destroyed
   std::string patternBinCopy(bestPatternBin ? bestPatternBin : "");
 
-  std::thread([=]() {
+  std::thread t([=]() {
     const int maxRetries = 3;
     bool finalSuccess = false;
 
@@ -381,7 +396,13 @@ static void googleSendProgressAsync(uint64_t frameIdx, int kernelIdx, int bestGe
       Logging::out() << "timestamp=" << time(NULL) << ", ERROR=Failed to send progress after " << maxRetries
                      << " attempts (frame " << frameIdx << ")\n";
     }
-  }).detach();
+  });
+
+  // Store the thread for later joining
+  {
+    std::lock_guard<std::mutex> lock(gGoogleThreadsMutex);
+    gGoogleThreads.emplace_back(std::move(t));
+  }
 }
 
 // Cache management functions
