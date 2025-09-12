@@ -31,7 +31,7 @@ __global__ void findCandidatesInKernel(uint64_t kernel, uint64_t *candidates, ui
   startingPattern += ((uint64_t)(blockIdx.x & 63)) << 41;    // set the lower row of 6 'B' bits
   startingPattern += ((uint64_t)(blockIdx.x >> 6)) << 50;    // set the upper row of 4 'B' bits
 
-  uint64_t endAt = startingPattern + (FRAME_SEARCH_NUM_P_BITS << 23);  // 16 bits worth of increments for the P bits (bits 23-38)
+  uint64_t endAt = startingPattern + ((1ULL << FRAME_SEARCH_NUM_P_BITS) << 23);  // 2^16 = 65536 increments for the P bits (bits 23-38)
   uint64_t beginAt = startingPattern;
 
   for (uint64_t pattern = beginAt; pattern < endAt; pattern += (1ULL << 23)) {
