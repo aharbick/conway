@@ -51,6 +51,34 @@ int main(int argc, char** argv) {
   // Initialize logging system
   Logging::LogManager::initialize(cli);
 
+  // Handle test-missing-frames flag
+  if (cli->testMissingFrames) {
+    std::cout << "Testing Missing Frames API...\n";
+
+    std::cout << "Calling googleGetIncompleteFrames()...\n";
+    std::vector<uint64_t> incompleteFrames = googleGetIncompleteFrames();
+
+    std::cout << "Found " << incompleteFrames.size() << " incomplete frames:\n";
+
+    if (incompleteFrames.empty()) {
+      std::cout << "No incomplete frames found.\n";
+    } else {
+      // Display first 20 frames to avoid overwhelming output
+      size_t displayCount = std::min(static_cast<size_t>(20), incompleteFrames.size());
+      for (size_t i = 0; i < displayCount; i++) {
+        std::cout << "  Frame " << incompleteFrames[i] << "\n";
+      }
+
+      if (incompleteFrames.size() > displayCount) {
+        std::cout << "  ... and " << (incompleteFrames.size() - displayCount) << " more frames\n";
+      }
+    }
+
+    cleanupProgramArgs(cli);
+    googleCleanup();
+    return 0;
+  }
+
   // Handle test-frame-cache flag
   if (cli->testFrameCache) {
     std::cout << "Testing Frame Completion Cache...\n";

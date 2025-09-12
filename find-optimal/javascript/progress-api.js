@@ -92,10 +92,12 @@ function handleRequest(e) {
         return googleGetIsFrameComplete(e, SPREADSHEET_ID);
       case 'getCompleteFrameCache':
         return googleGetCompleteFrameCache(e, SPREADSHEET_ID);
+      case 'getIncompleteFrames':
+        return googleGetIncompleteFrames(e, SPREADSHEET_ID);
       default:
         return ContentService
           .createTextOutput(JSON.stringify({
-            error: 'Invalid action. Use "sendProgress", "getBestResult", "getBestCompleteFrame", "getIsFrameComplete", or "getCompleteFrameCache"'
+            error: 'Invalid action. Use "sendProgress", "getBestResult", "getBestCompleteFrame", "getIsFrameComplete", "getCompleteFrameCache", or "getIncompleteFrames"'
           }))
           .setMimeType(ContentService.MimeType.JSON);
     }
@@ -451,6 +453,60 @@ function googleGetCompleteFrameCache(e, spreadsheetId) {
         totalFrames: TOTAL_FRAMES,
         bitmapSize: bitmapBytes
       }))
+      .setMimeType(ContentService.MimeType.JSON);
+  });
+}
+
+/**
+ * Get frames that do NOT have all 16 kernelIds (0-15) completed
+ * Uses the "Kernel Counts" pivot table sheet for efficient lookup
+ * Returns array of frameIdx values
+ */
+function googleGetIncompleteFrames(e, spreadsheetId) {
+  return withLock(() => {
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    const sheet = spreadsheet.getSheetByName('Kernel Counts');
+
+    if (!sheet) {
+      return ContentService
+        .createTextOutput(JSON.stringify([]))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const dataRange = sheet.getDataRange().getValues();
+
+    if (dataRange.length <= 1) {
+      return ContentService
+        .createTextOutput(JSON.stringify([]))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Find column indices
+    const headers = dataRange[0];
+    const frameIdxCol = headers.indexOf('frameIdx');
+    const kernelCountCol = headers.indexOf('kernelCount');
+
+    if (frameIdxCol === -1 || kernelCountCol === -1) {
+      throw new Error('Required columns (frameIdx, kernelCount) not found in Kernel Counts sheet');
+    }
+
+    // Find frames with incomplete kernel counts (< 16)
+    const incompleteFrames = [];
+    const expectedKernels = 16;
+
+    for (let i = 1; i < dataRange.length; i++) {
+      const row = dataRange[i];
+      const frameIdx = parseInt(row[frameIdxCol]) || 0;
+      const kernelCount = parseInt(row[kernelCountCol]) || 0;
+
+      // Frame is incomplete if it has fewer than 16 kernels
+      if (kernelCount < expectedKernels && frameIdx >= 0) {
+        incompleteFrames.push(frameIdx);
+      }
+    }
+
+    return ContentService
+      .createTextOutput(JSON.stringify(incompleteFrames))
       .setMimeType(ContentService.MimeType.JSON);
   });
 }

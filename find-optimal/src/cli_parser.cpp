@@ -24,11 +24,12 @@ static char ProgramArgs_doc[] = "";
 static struct argp_option argp_options[] = {
     {"cudaconfig", 'c', "config", 0, "CUDA kernel params numgpus:blocksize:threadsperblock (e.g. 1:1024:1024)"},
     {"frame-index-range", 'f', "BEGIN[:END]", 0,
-     "Frame index range to search from 0 to 2102800 or 'resume' (e.g. 0: or 1:1234 or resume)"},
+     "Frame index range to search from 0 to 2102800 or 'resume' or 'missing' (e.g. 0: or 1:1234 or resume or missing)"},
     {"chunk-size", 'k', "size", 0, "Chunk size for pattern processing (default: 65536)."},
     {"verbose", 'v', 0, 0, "Verbose output."},
     {"test-google-api", 'T', 0, 0, "Test Google Sheets API functionality and exit."},
     {"test-frame-cache", 'C', 0, 0, "Test frame completion cache functionality and exit."},
+    {"test-missing-frames", 'M', 0, 0, "Test missing frames API and display incomplete frames."},
     {"log-file", 'l', "PATH", 0, "Path to log file for progress output."},
     {"worker", 'w', "N:M", 0,
      "Worker configuration N:M where N is worker number (1-based) and M is total workers (default: 1:1)."},
@@ -109,10 +110,20 @@ static bool parseRangeArg(const char* arg, uint64_t* begin, uint64_t* end, Progr
     return true;
   }
 
+  if (str == "missing") {
+    *begin = 0;
+    *end = FRAME_SEARCH_TOTAL_MINIMAL_FRAMES;
+    if (args) {
+      args->missingFrameMode = true;
+    }
+    return true;
+  }
+
   // Parse BEGIN:END format
   size_t colonPos = str.find(':');
   if (colonPos == std::string::npos) {
-    std::cerr << "[ERROR] Invalid range format '" << arg << "', expected BEGIN: or BEGIN:END or 'resume'\n";
+    std::cerr << "[ERROR] Invalid range format '" << arg
+              << "', expected BEGIN: or BEGIN:END or 'resume' or 'missing'\n";
     return false;
   }
 
@@ -133,7 +144,8 @@ static bool parseRangeArg(const char* arg, uint64_t* begin, uint64_t* end, Progr
 
     return true;
   } catch (const std::exception&) {
-    std::cerr << "[ERROR] Invalid range format '" << arg << "', expected BEGIN: or BEGIN:END or 'resume'\n";
+    std::cerr << "[ERROR] Invalid range format '" << arg
+              << "', expected BEGIN: or BEGIN:END or 'resume' or 'missing'\n";
     return false;
   }
 }
@@ -201,6 +213,9 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
   case 'C':
     a->testFrameCache = true;
     break;
+  case 'M':
+    a->testMissingFrames = true;
+    break;
   case 'l':
     if (!arg || *arg == '\0') {
       argp_failure(state, 1, 0, "Log file path cannot be empty");
@@ -228,8 +243,10 @@ void initializeDefaultArgs(ProgramArgs* args) {
   args->verbose = false;
   args->testGoogleApi = false;
   args->testFrameCache = false;
+  args->testMissingFrames = false;
   args->resumeFromDatabase = false;
   args->randomFrameMode = false;
+  args->missingFrameMode = false;
   args->frameBeginIdx = 0;
   args->frameEndIdx = 0;
   args->chunkSize = FRAME_SEARCH_DEFAULT_CHUNK_SIZE;

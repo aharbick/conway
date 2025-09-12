@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <iostream>
 #include <map>
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -540,6 +541,41 @@ static bool googleIsFrameCompleteFromCache(uint64_t frameIdx) {
     }
   }
   return frameCache.isFrameComplete(frameIdx);
+}
+
+static std::vector<uint64_t> googleGetIncompleteFrames() {
+  GoogleConfig config;
+  if (googleGetConfig(&config) != GOOGLE_SUCCESS) {
+    return {};
+  }
+
+  // Build parameters map
+  std::map<std::string, std::string> params;
+  params["action"] = "getIncompleteFrames";
+  params["apiKey"] = config.apiKey;
+
+  CurlResponse response;
+  GoogleResult result = googleHttpRequest(config.webappUrl, params, &response, "getIncompleteFrames");
+
+  std::vector<uint64_t> incompleteFrames;
+  if (result == GOOGLE_SUCCESS && !response.data.empty()) {
+    try {
+      // Parse JSON array
+      nlohmann::json j = nlohmann::json::parse(response.data);
+
+      // Convert JSON array to vector<uint64_t>
+      for (const auto& frameIdx : j) {
+        if (frameIdx.is_number_unsigned()) {
+          incompleteFrames.push_back(frameIdx.get<uint64_t>());
+        }
+      }
+    } catch (const nlohmann::json::exception& e) {
+      std::cerr << "[ERROR] Failed to parse incomplete frames JSON: " << e.what() << "\n";
+    }
+  }
+
+  googleCleanupResponse(&response);
+  return incompleteFrames;
 }
 
 #endif

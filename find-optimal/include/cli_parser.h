@@ -11,8 +11,10 @@ typedef struct ProgramArgs {
   bool verbose;
   bool testGoogleApi;
   bool testFrameCache;
+  bool testMissingFrames;
   bool resumeFromDatabase;
   bool randomFrameMode;
+  bool missingFrameMode;
   uint64_t frameBeginIdx;
   uint64_t frameEndIdx;
   uint64_t chunkSize;

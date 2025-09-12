@@ -35,13 +35,25 @@ __host__ void *search(void *args) {
   // Build worker-specific frame list
   std::vector<uint64_t> workerFrames;
 
-  // Collect incomplete frames assigned to this worker
-  for (uint64_t currentFrameIdx = cli->frameBeginIdx; currentFrameIdx < cli->frameEndIdx; ++currentFrameIdx) {
-    // Check if this frame belongs to this worker using modulo partitioning
-    if ((currentFrameIdx % cli->totalWorkers) == (cli->workerNum - 1)) {
-      // Check if frame is incomplete
-      if (!googleIsFrameCompleteFromCache(currentFrameIdx)) {
-        workerFrames.push_back(currentFrameIdx);
+  if (cli->missingFrameMode) {
+    // Get incomplete frames from the API
+    std::vector<uint64_t> incompleteFrames = googleGetIncompleteFrames();
+
+    // Filter for this worker using modulo partitioning
+    for (uint64_t frameIdx : incompleteFrames) {
+      if ((frameIdx % cli->totalWorkers) == (cli->workerNum - 1)) {
+        workerFrames.push_back(frameIdx);
+      }
+    }
+  } else {
+    // Collect incomplete frames assigned to this worker (legacy method)
+    for (uint64_t currentFrameIdx = cli->frameBeginIdx; currentFrameIdx < cli->frameEndIdx; ++currentFrameIdx) {
+      // Check if this frame belongs to this worker using modulo partitioning
+      if ((currentFrameIdx % cli->totalWorkers) == (cli->workerNum - 1)) {
+        // Check if frame is incomplete
+        if (!googleIsFrameCompleteFromCache(currentFrameIdx)) {
+          workerFrames.push_back(currentFrameIdx);
+        }
       }
     }
   }
@@ -68,13 +80,21 @@ __host__ void *search(void *args) {
 __host__ std::string getSearchDescription(ProgramArgs *cli) {
   std::ostringstream oss;
 
-  if (cli->randomFrameMode) {
-    oss << "RANDOMLY among incomplete frames";
+  if (cli->missingFrameMode) {
+    if (cli->randomFrameMode) {
+      oss << "RANDOMLY among frames missing kernels";
+    } else {
+      oss << "SEQUENTIALLY through frames missing kernels";
+    }
   } else {
-    oss << "SEQUENTIALLY through incomplete frames";
+    if (cli->randomFrameMode) {
+      oss << "RANDOMLY among incomplete frames";
+    } else {
+      oss << "SEQUENTIALLY through incomplete frames";
+    }
   }
 
-  if (cli->frameBeginIdx > 0 || cli->frameEndIdx > 0) {
+  if (!cli->missingFrameMode && (cli->frameBeginIdx > 0 || cli->frameEndIdx > 0)) {
     oss << " (" << cli->frameBeginIdx << " - " << cli->frameEndIdx << ")";
   }
 
