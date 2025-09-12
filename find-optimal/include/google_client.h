@@ -13,6 +13,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
@@ -281,6 +282,10 @@ class FrameCompletionCache {
 // Global cache instance
 static FrameCompletionCache frameCache;
 
+// Thread management for async uploads
+static std::vector<std::thread> uploadThreads;
+static std::mutex uploadThreadsMutex;
+
 static bool googleSendProgress(uint64_t frameIdx, int kernelIdx, int bestGenerations, uint64_t bestPattern,
                                const char* bestPatternBin) {
   GoogleConfig config;
@@ -350,7 +355,18 @@ static int googleGetBestResult() {
   return bestGenerations;
 }
 
+static void googleJoinUploadThreads() {
+  std::lock_guard<std::mutex> lock(uploadThreadsMutex);
+  for (auto& thread : uploadThreads) {
+    if (thread.joinable()) {
+      thread.join();
+    }
+  }
+  uploadThreads.clear();
+}
+
 static void googleCleanup() {
+  googleJoinUploadThreads();
   curl_global_cleanup();
 }
 
@@ -360,10 +376,8 @@ static void googleSendProgressAsync(uint64_t frameIdx, int kernelIdx, int bestGe
   // Copy the bestPatternBin string since the original may be destroyed
   std::string patternBinCopy(bestPatternBin ? bestPatternBin : "");
 
-  // Launch detached thread using C++11 lambda with capture list
-  // [=] captures all variables by value (copy) to ensure thread safety
-  // The lambda runs googleSendProgress with retry logic in a separate thread, then thread is detached
-  std::thread([=]() {
+  // Launch joinable thread and store it for cleanup
+  std::thread uploadThread([=]() {
     const int maxRetries = 3;
     bool finalSuccess = false;
 
@@ -385,7 +399,13 @@ static void googleSendProgressAsync(uint64_t frameIdx, int kernelIdx, int bestGe
       Logging::out() << "timestamp=" << time(NULL) << ", ERROR=Failed to send progress after " << maxRetries
                      << " attempts (frame " << frameIdx << ")\n";
     }
-  }).detach();
+  });
+
+  // Store the thread for joining later
+  {
+    std::lock_guard<std::mutex> lock(uploadThreadsMutex);
+    uploadThreads.push_back(std::move(uploadThread));
+  }
 }
 
 // Cache management functions
