@@ -7,9 +7,11 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <chrono>
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <thread>
 #include <vector>
 
 #include "cli_parser.h"
@@ -183,6 +185,9 @@ int main(int argc, char** argv) {
 
   search(cli);
   cleanupProgramArgs(cli);
+
+  // Wait for any async upload threads to complete
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 
   // Cleanup Google client
   googleCleanup();

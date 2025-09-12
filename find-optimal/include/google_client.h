@@ -9,13 +9,10 @@
 #include <string.h>
 #include <time.h>
 
-#include <atomic>
-#include <condition_variable>
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
 #include <map>
-#include <mutex>
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
@@ -81,6 +78,7 @@ static GoogleResult googleGetConfig(GoogleConfig* config) {
 static void googleCleanupResponse(CurlResponse* response) {
   response->clear();
 }
+
 
 static GoogleResult googleHttpRequest(const std::string& baseUrl, const std::map<std::string, std::string>& params,
                                       CurlResponse* response, const std::string& apiName = "unknown") {
@@ -314,7 +312,7 @@ static bool googleSendProgress(uint64_t frameIdx, int kernelIdx, int bestGenerat
 
 
 static bool googleInit() {
-  CURLcode res = curl_global_init(CURL_GLOBAL_ALL);
+  CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
   if (res != CURLE_OK) {
     std::cerr << "[ERROR] Failed to initialize libcurl: " << curl_easy_strerror(res) << "\n";
     return false;
@@ -352,15 +350,7 @@ static int googleGetBestResult() {
   return bestGenerations;
 }
 
-static std::atomic<int> gActiveThreads(0);
-static std::condition_variable gThreadsFinished;
-static std::mutex gThreadsFinishedMutex;
-
 static void googleCleanup() {
-  // Wait for all async threads to complete before cleaning up
-  std::unique_lock<std::mutex> lock(gThreadsFinishedMutex);
-  gThreadsFinished.wait(lock, [] { return gActiveThreads.load() == 0; });
-
   curl_global_cleanup();
 }
 
@@ -370,9 +360,9 @@ static void googleSendProgressAsync(uint64_t frameIdx, int kernelIdx, int bestGe
   // Copy the bestPatternBin string since the original may be destroyed
   std::string patternBinCopy(bestPatternBin ? bestPatternBin : "");
 
-  // Increment active thread counter
-  gActiveThreads.fetch_add(1);
-
+  // Launch detached thread using C++11 lambda with capture list
+  // [=] captures all variables by value (copy) to ensure thread safety
+  // The lambda runs googleSendProgress with retry logic in a separate thread, then thread is detached
   std::thread([=]() {
     const int maxRetries = 3;
     bool finalSuccess = false;
@@ -395,10 +385,6 @@ static void googleSendProgressAsync(uint64_t frameIdx, int kernelIdx, int bestGe
       Logging::out() << "timestamp=" << time(NULL) << ", ERROR=Failed to send progress after " << maxRetries
                      << " attempts (frame " << frameIdx << ")\n";
     }
-
-    // Decrement active thread counter and notify waiting threads
-    gActiveThreads.fetch_sub(1);
-    gThreadsFinished.notify_all();
   }).detach();
 }
 
