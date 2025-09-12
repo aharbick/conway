@@ -33,7 +33,6 @@ static struct argp_option argp_options[] = {
     {0}};
 
 
-
 static bool parseFrameMode(const char* arg, ProgramArgs* args) {
   std::string str(arg);
 

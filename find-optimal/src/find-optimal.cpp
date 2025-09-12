@@ -21,7 +21,8 @@ static void printCudaDeviceInfo(ProgramArgs* cli) {
   int deviceCount;
   cudaGetDeviceCount(&deviceCount);
   Logging::out() << "CUDA devices available: " << deviceCount << "\n";
-  Logging::out() << "Using 1 GPU with blockSize=" << FRAME_SEARCH_GRID_SIZE << ", threadsPerBlock=" << FRAME_SEARCH_THREADS_PER_BLOCK << "\n";
+  Logging::out() << "Using 1 GPU with blockSize=" << FRAME_SEARCH_GRID_SIZE
+                 << ", threadsPerBlock=" << FRAME_SEARCH_THREADS_PER_BLOCK << "\n";
 }
 
 int main(int argc, char** argv) {
