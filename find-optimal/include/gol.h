@@ -39,8 +39,8 @@ __host__ void *search(void *args);
 
 // Search execution functions (using RAII memory management)
 __host__ void executeKernelSearch(gol::SearchMemory &mem, ProgramArgs *cli, uint64_t frame, uint64_t frameIdx);
-__host__ void reportChunkResults(gol::SearchMemory &mem, ProgramArgs *cli, double startTime, uint64_t frame,
-                                 uint64_t frameIdx, int kernelIdx, int chunkIdx, bool isFrameComplete);
+__host__ void reportKernelResults(gol::SearchMemory &mem, ProgramArgs *cli, double startTime, uint64_t frame,
+                                  uint64_t frameIdx, int kernelIdx, bool isFrameComplete);
 
 // Helper functions
 __host__ std::string getSearchDescription(ProgramArgs *cli);

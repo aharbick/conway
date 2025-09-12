@@ -23,9 +23,7 @@ static char ProgramArgs_doc[] = "";
 // Command line options
 static struct argp_option argp_options[] = {
     {"cudaconfig", 'c', "config", 0, "CUDA kernel params numgpus:blocksize:threadsperblock (e.g. 1:1024:1024)"},
-    {"frame-index-range", 'f', "BEGIN[:END]", 0,
-     "Frame index range to search from 0 to 2102800 or 'resume' or 'missing' (e.g. 0: or 1:1234 or resume or missing)"},
-    {"chunk-size", 'k', "size", 0, "Chunk size for pattern processing (default: 65536)."},
+    {"frame-mode", 'f', "MODE", 0, "Frame search mode: 'random' or 'missing'"},
     {"verbose", 'v', 0, 0, "Verbose output."},
     {"test-google-api", 'T', 0, 0, "Test Google Sheets API functionality and exit."},
     {"test-frame-cache", 'C', 0, 0, "Test frame completion cache functionality and exit."},
@@ -90,64 +88,16 @@ static bool parseCudaConfig(const char* arg, ProgramArgs* a) {
   }
 }
 
-static bool parseRangeArg(const char* arg, uint64_t* begin, uint64_t* end, ProgramArgs* args = nullptr) {
+static bool parseFrameMode(const char* arg, ProgramArgs* args) {
   std::string str(arg);
 
-  // Handle special cases
-  if (str == "resume") {
-    uint64_t resumeFrame = googleGetBestCompleteFrame();
-    *begin = (resumeFrame == ULLONG_MAX) ? 0 : resumeFrame + 1;
-    *end = FRAME_SEARCH_TOTAL_MINIMAL_FRAMES;
+  if (str == "random" || str == "missing") {
+    args->frameMode = str;
     return true;
   }
 
-  if (str == "random") {
-    *begin = 0;
-    *end = FRAME_SEARCH_TOTAL_MINIMAL_FRAMES;
-    if (args) {
-      args->randomFrameMode = true;
-    }
-    return true;
-  }
-
-  if (str == "missing") {
-    *begin = 0;
-    *end = FRAME_SEARCH_TOTAL_MINIMAL_FRAMES;
-    if (args) {
-      args->missingFrameMode = true;
-    }
-    return true;
-  }
-
-  // Parse BEGIN:END format
-  size_t colonPos = str.find(':');
-  if (colonPos == std::string::npos) {
-    std::cerr << "[ERROR] Invalid range format '" << arg
-              << "', expected BEGIN: or BEGIN:END or 'resume' or 'missing'\n";
-    return false;
-  }
-
-  try {
-    // Parse begin value
-    *begin = std::stoull(str.substr(0, colonPos));
-
-    // Parse end value (if specified)
-    if (colonPos + 1 >= str.length()) {
-      *end = 0;  // No end specified
-    } else {
-      *end = std::stoull(str.substr(colonPos + 1));
-      if (*end <= *begin) {
-        std::cerr << "[ERROR] Invalid range, end must be greater than begin\n";
-        return false;
-      }
-    }
-
-    return true;
-  } catch (const std::exception&) {
-    std::cerr << "[ERROR] Invalid range format '" << arg
-              << "', expected BEGIN: or BEGIN:END or 'resume' or 'missing'\n";
-    return false;
-  }
+  std::cerr << "[ERROR] Invalid frame mode '" << arg << "', expected 'random' or 'missing'\n";
+  return false;
 }
 
 static bool parseWorkerConfig(const char* arg, ProgramArgs* a) {
@@ -190,18 +140,8 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
     }
     break;
   case 'f':
-    if (!parseRangeArg(arg, &a->frameBeginIdx, &a->frameEndIdx, a)) {
-      argp_failure(state, 1, 0, "Invalid frame index range");
-    }
-    break;
-  case 'k':
-    try {
-      a->chunkSize = std::stoull(arg);
-      if (a->chunkSize <= 0) {
-        argp_failure(state, 1, 0, "Chunk size must be positive");
-      }
-    } catch (const std::exception&) {
-      argp_failure(state, 1, 0, "Invalid chunk size");
+    if (!parseFrameMode(arg, a)) {
+      argp_failure(state, 1, 0, "Invalid frame mode");
     }
     break;
   case 'v':
@@ -245,11 +185,7 @@ void initializeDefaultArgs(ProgramArgs* args) {
   args->testFrameCache = false;
   args->testMissingFrames = false;
   args->resumeFromDatabase = false;
-  args->randomFrameMode = false;
-  args->missingFrameMode = false;
-  args->frameBeginIdx = 0;
-  args->frameEndIdx = 0;
-  args->chunkSize = FRAME_SEARCH_DEFAULT_CHUNK_SIZE;
+  args->frameMode = "";
   args->logFilePath = "";
   args->workerNum = 1;
   args->totalWorkers = 1;

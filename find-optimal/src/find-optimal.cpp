@@ -93,21 +93,6 @@ int main(int argc, char** argv) {
 
     std::cout << "Cache loaded successfully. Scanning all " << FRAME_CACHE_TOTAL_FRAMES << " frames...\n";
 
-    // Debug: Check first few frames manually
-    std::cout << "Debug: Testing first 10 frames manually:\n";
-    for (uint64_t i = 0; i < 10; i++) {
-      bool isComplete = googleIsFrameCompleteFromCache(i);
-      std::cout << "  Frame " << i << ": " << (isComplete ? "complete" : "incomplete") << "\n";
-    }
-
-    // Debug: Check some frames that you know should be complete
-    std::cout << "Debug: Testing some potentially complete frames:\n";
-    uint64_t testFrames[] = {0, 1, 100, 1000, 10000, 100000};
-    for (uint64_t frame : testFrames) {
-      bool isComplete = googleIsFrameCompleteFromCache(frame);
-      std::cout << "  Frame " << frame << ": " << (isComplete ? "complete" : "incomplete") << "\n";
-    }
-
     uint64_t completedFrames = 0;
     uint64_t totalFrames = FRAME_CACHE_TOTAL_FRAMES;
 
@@ -149,7 +134,6 @@ int main(int argc, char** argv) {
     // Generate realistic progress data
     uint64_t testFrameId = 1000000 + (rand() % 1000000);  // Frame IDs in realistic range
     int testKernelId = rand() % 16;                       // Kernel IDs 0-15
-    int testChunkId = rand() % 100;                       // Chunk IDs 0-99
     double testRate = 500000.0 + (rand() % 1000000);      // Realistic patterns/sec rate
 
     // Generate realistic result data
@@ -165,25 +149,15 @@ int main(int argc, char** argv) {
 
     // Test unified progress upload with best result data
     std::cout << "Testing progress upload (frameIdx=" << testFrameId << ", kernelIdx=" << testKernelId
-              << ", chunkIdx=" << testChunkId << ", rate=" << testRate << ", generations=" << testGenerations
-              << ", pattern=" << std::hex << testPattern << std::dec << ")...\n";
+              << ", rate=" << testRate << ", generations=" << testGenerations << ", pattern=" << std::hex << testPattern
+              << std::dec << ")...\n";
     std::string progressResponse =
-        googleSendProgressWithResponse(false, testFrameId, testKernelId, testChunkId, (uint64_t)testRate,
-                                       testGenerations, testPattern, testPatternBin, true);
+        googleSendProgressWithResponse(testFrameId, testKernelId, testGenerations, testPattern, testPatternBin);
     std::cout << "Progress upload response: " << progressResponse << "\n";
 
     // Test querying best result
     int bestResult = googleGetBestResult();
     std::cout << "Best result query: " << bestResult << "\n";
-
-    // Test querying best complete frame
-    std::cout << "Testing best complete frame query...\n";
-    uint64_t bestFrame = googleGetBestCompleteFrame();
-    if (bestFrame == ULLONG_MAX) {
-      std::cout << "Best complete frame query: no completed frames found\n";
-    } else {
-      std::cout << "Best complete frame query result: " << bestFrame << "\n";
-    }
 
     // Cleanup and exit
     cleanupProgramArgs(cli);
@@ -207,13 +181,6 @@ int main(int argc, char** argv) {
   if (googleLoadFrameCache()) {
     uint64_t completedFrames = googleGetFrameCacheCompletedCount();
     Logging::out() << "Frame completion cache initialized with " << completedFrames << " completed frames\n";
-  }
-
-  // Print resume message if frame-based search is being used
-  if (cli->frameBeginIdx > 0 && cli->frameEndIdx > 0) {
-    Logging::out() << "Resuming from frame: " << cli->frameBeginIdx << "\n";
-  } else if (cli->frameBeginIdx == 0 && cli->frameEndIdx > 0) {
-    Logging::out() << "Starting from frame 0\n";
   }
 
   search(cli);

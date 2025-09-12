@@ -13,11 +13,7 @@ typedef struct ProgramArgs {
   bool testFrameCache;
   bool testMissingFrames;
   bool resumeFromDatabase;
-  bool randomFrameMode;
-  bool missingFrameMode;
-  uint64_t frameBeginIdx;
-  uint64_t frameEndIdx;
-  uint64_t chunkSize;
+  std::string frameMode;
   std::string logFilePath;
   int workerNum;
   int totalWorkers;
