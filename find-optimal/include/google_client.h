@@ -396,10 +396,9 @@ static void googleSendProgressAsync(uint64_t frameIdx, int kernelIdx, int bestGe
                      << " attempts (frame " << frameIdx << ")\n";
     }
 
-    // Decrement active thread counter and notify if this was the last thread
-    if (gActiveThreads.fetch_sub(1) == 1) {
-      gThreadsFinished.notify_all();
-    }
+    // Decrement active thread counter and notify waiting threads
+    gActiveThreads.fetch_sub(1);
+    gThreadsFinished.notify_all();
   }).detach();
 }
 
