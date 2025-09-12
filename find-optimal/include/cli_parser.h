@@ -5,9 +5,6 @@
 #include <string>
 
 typedef struct ProgramArgs {
-  int gpusToUse;
-  int blockSize;
-  int threadsPerBlock;
   bool verbose;
   bool testGoogleApi;
   bool testFrameCache;

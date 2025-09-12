@@ -1,4 +1,5 @@
 // CUDA-specific implementations
+#include "constants.h"
 #include "gol.h"
 #include "logging.h"
 
@@ -66,14 +67,14 @@ __global__ void findCandidatesInKernel(uint64_t kernel, uint64_t *candidates,
 
 __host__ void executeKernelSearch(gol::SearchMemory& mem, ProgramArgs *cli, uint64_t frame, uint64_t frameIdx) {
   // Loop over all kernels for this frame
-  for (int kernelIdx = 0; kernelIdx < FRAME_SEARCH_NUM_KERNELS; ++kernelIdx) {
+  for (int kernelIdx = 0; kernelIdx < (1ULL << FRAME_SEARCH_NUM_K_BITS); ++kernelIdx) {
     const uint64_t kernel = constructKernel(frame, kernelIdx);
     const double startTime = getHighResCurrentTime();
 
     // Phase 1: Find candidates in this kernel
     *mem.h_numCandidates() = 0;
     cudaCheckError(cudaMemcpy(mem.d_numCandidates(), mem.h_numCandidates(), sizeof(uint64_t), cudaMemcpyHostToDevice));
-    findCandidatesInKernel<<<cli->blockSize, cli->threadsPerBlock>>>(kernel, mem.d_candidates(), mem.d_numCandidates());
+    findCandidatesInKernel<<<FRAME_SEARCH_GRID_SIZE, FRAME_SEARCH_THREADS_PER_BLOCK>>>(kernel, mem.d_candidates(), mem.d_numCandidates());
     cudaCheckError(cudaGetLastError());
     cudaCheckError(cudaDeviceSynchronize());
     cudaCheckError(cudaMemcpy(mem.h_numCandidates(), mem.d_numCandidates(), sizeof(uint64_t), cudaMemcpyDeviceToHost));
@@ -85,7 +86,7 @@ __host__ void executeKernelSearch(gol::SearchMemory& mem, ProgramArgs *cli, uint
       cudaCheckError(
           cudaMemcpy(mem.d_bestGenerations(), mem.h_bestGenerations(), sizeof(uint64_t), cudaMemcpyHostToDevice));
       cudaCheckError(cudaMemcpy(mem.d_bestPattern(), mem.h_bestPattern(), sizeof(uint64_t), cudaMemcpyHostToDevice));
-      processCandidates<<<cli->blockSize, cli->threadsPerBlock>>>(mem.d_candidates(), mem.d_numCandidates(),
+      processCandidates<<<FRAME_SEARCH_GRID_SIZE, FRAME_SEARCH_THREADS_PER_BLOCK>>>(mem.d_candidates(), mem.d_numCandidates(),
                                                                   mem.d_bestPattern(), mem.d_bestGenerations());
       cudaCheckError(cudaGetLastError());
       cudaCheckError(cudaDeviceSynchronize());
@@ -96,7 +97,7 @@ __host__ void executeKernelSearch(gol::SearchMemory& mem, ProgramArgs *cli, uint
       updateBestGenerations(*mem.h_bestGenerations());
     }
 
-    bool isFrameComplete = (kernelIdx == FRAME_SEARCH_NUM_KERNELS - 1);
+    bool isFrameComplete = (kernelIdx == (1ULL << FRAME_SEARCH_NUM_K_BITS) - 1);
     reportKernelResults(mem, cli, startTime, frame, frameIdx, kernelIdx, isFrameComplete);
   }
 }
@@ -104,7 +105,7 @@ __host__ void executeKernelSearch(gol::SearchMemory& mem, ProgramArgs *cli, uint
 __host__ void reportKernelResults(gol::SearchMemory& mem, ProgramArgs *cli, double startTime, uint64_t frame,
                                  uint64_t frameIdx, int kernelIdx, bool isFrameComplete) {
   const double kernelTime = getHighResCurrentTime() - startTime;
-  const uint64_t patternsPerSec = (FRAME_SEARCH_TOTAL_THREADS * FRAME_SEARCH_NUM_P_BITS) / kernelTime;
+  const uint64_t patternsPerSec = (FRAME_SEARCH_GRID_SIZE * FRAME_SEARCH_THREADS_PER_BLOCK * (1ULL << FRAME_SEARCH_NUM_P_BITS)) / kernelTime;
 
   if (*mem.h_numCandidates() <= 0) {
     std::cerr << "timestamp=" << time(NULL) << ", frameIdx=" << frameIdx 

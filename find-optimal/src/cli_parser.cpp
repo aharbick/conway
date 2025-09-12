@@ -22,7 +22,6 @@ static char ProgramArgs_doc[] = "";
 
 // Command line options
 static struct argp_option argp_options[] = {
-    {"cudaconfig", 'c', "config", 0, "CUDA kernel params numgpus:blocksize:threadsperblock (e.g. 1:1024:1024)"},
     {"frame-mode", 'f', "MODE", 0, "Frame search mode: 'random' or 'missing'"},
     {"verbose", 'v', 0, 0, "Verbose output."},
     {"test-google-api", 'T', 0, 0, "Test Google Sheets API functionality and exit."},
@@ -34,59 +33,6 @@ static struct argp_option argp_options[] = {
     {0}};
 
 
-static bool parseCudaConfig(const char* arg, ProgramArgs* a) {
-  std::string str(arg);
-  std::vector<std::string> parts;
-
-  // Split by colon
-  size_t pos = 0;
-  while (pos < str.length()) {
-    size_t colonPos = str.find(':', pos);
-    if (colonPos == std::string::npos) {
-      parts.push_back(str.substr(pos));
-      break;
-    }
-    parts.push_back(str.substr(pos, colonPos - pos));
-    pos = colonPos + 1;
-  }
-
-  if (parts.empty()) {
-    std::cerr << "[ERROR] Invalid CUDA config format '" << arg << "', expected numgpus:blocksize:threadsperblock\n";
-    return false;
-  }
-
-  try {
-    // Parse gpusToUse (required)
-    a->gpusToUse = std::stoi(parts[0]);
-    if (a->gpusToUse <= 0) {
-      std::cerr << "[ERROR] gpusToUse must be positive\n";
-      return false;
-    }
-
-    // Parse blockSize (optional)
-    if (parts.size() > 1) {
-      a->blockSize = std::stoi(parts[1]);
-      if (a->blockSize <= 0) {
-        std::cerr << "[ERROR] blockSize must be positive\n";
-        return false;
-      }
-    }
-
-    // Parse threadsPerBlock (optional)
-    if (parts.size() > 2) {
-      a->threadsPerBlock = std::stoi(parts[2]);
-      if (a->threadsPerBlock <= 0) {
-        std::cerr << "[ERROR] threadsPerBlock must be positive\n";
-        return false;
-      }
-    }
-
-    return true;
-  } catch (const std::exception&) {
-    std::cerr << "[ERROR] Invalid CUDA config format '" << arg << "', expected numgpus:blocksize:threadsperblock\n";
-    return false;
-  }
-}
 
 static bool parseFrameMode(const char* arg, ProgramArgs* args) {
   std::string str(arg);
@@ -134,11 +80,6 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
   ProgramArgs* a = (ProgramArgs*)state->input;
 
   switch (key) {
-  case 'c':
-    if (!parseCudaConfig(arg, a)) {
-      argp_failure(state, 1, 0, "Invalid CUDA configuration");
-    }
-    break;
   case 'f':
     if (!parseFrameMode(arg, a)) {
       argp_failure(state, 1, 0, "Invalid frame mode");
@@ -177,9 +118,6 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
 struct argp argp = {argp_options, parseArgpOptions, ProgramArgs_doc, prog_doc, 0, 0};
 
 void initializeDefaultArgs(ProgramArgs* args) {
-  args->gpusToUse = 1;
-  args->blockSize = 1024;
-  args->threadsPerBlock = 1024;
   args->verbose = false;
   args->testGoogleApi = false;
   args->testFrameCache = false;
