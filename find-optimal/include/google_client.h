@@ -9,6 +9,8 @@
 #include <string.h>
 #include <time.h>
 
+#include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
@@ -350,20 +352,14 @@ static int googleGetBestResult() {
   return bestGenerations;
 }
 
-static std::vector<std::thread> gGoogleThreads;
-static std::mutex gGoogleThreadsMutex;
+static std::atomic<int> gActiveThreads(0);
+static std::condition_variable gThreadsFinished;
+static std::mutex gThreadsFinishedMutex;
 
 static void googleCleanup() {
   // Wait for all async threads to complete before cleaning up
-  {
-    std::lock_guard<std::mutex> lock(gGoogleThreadsMutex);
-    for (auto& t : gGoogleThreads) {
-      if (t.joinable()) {
-        t.join();
-      }
-    }
-    gGoogleThreads.clear();
-  }
+  std::unique_lock<std::mutex> lock(gThreadsFinishedMutex);
+  gThreadsFinished.wait(lock, [] { return gActiveThreads.load() == 0; });
 
   curl_global_cleanup();
 }
@@ -374,7 +370,10 @@ static void googleSendProgressAsync(uint64_t frameIdx, int kernelIdx, int bestGe
   // Copy the bestPatternBin string since the original may be destroyed
   std::string patternBinCopy(bestPatternBin ? bestPatternBin : "");
 
-  std::thread t([=]() {
+  // Increment active thread counter
+  gActiveThreads.fetch_add(1);
+
+  std::thread([=]() {
     const int maxRetries = 3;
     bool finalSuccess = false;
 
@@ -396,13 +395,12 @@ static void googleSendProgressAsync(uint64_t frameIdx, int kernelIdx, int bestGe
       Logging::out() << "timestamp=" << time(NULL) << ", ERROR=Failed to send progress after " << maxRetries
                      << " attempts (frame " << frameIdx << ")\n";
     }
-  });
 
-  // Store the thread for later joining
-  {
-    std::lock_guard<std::mutex> lock(gGoogleThreadsMutex);
-    gGoogleThreads.emplace_back(std::move(t));
-  }
+    // Decrement active thread counter and notify if this was the last thread
+    if (gActiveThreads.fetch_sub(1) == 1) {
+      gThreadsFinished.notify_all();
+    }
+  }).detach();
 }
 
 // Cache management functions
