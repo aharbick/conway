@@ -76,6 +76,11 @@ __host__ void *search(void *args) {
     }
   }
 
+#ifdef __NVCC__
+  // Ensure all CUDA operations complete before returning
+  cudaDeviceSynchronize();
+#endif
+
   return NULL;
 }
 
