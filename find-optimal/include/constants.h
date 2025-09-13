@@ -17,7 +17,7 @@
 #define MESSAGE_BUFFER_SIZE 64
 
 // Nivasch algorithm parameters
-#define NIVASCH_MAX_STACK_SIZE 32
-#define NIVASCH_NUM_STACKS 4
+#define NIVASCH_MAX_STACK_SIZE 50
+#define NIVASCH_NUM_STACKS 10
 
 #endif
