@@ -152,11 +152,15 @@ __host__ void compareCycleDetectionAlgorithms(ProgramArgs *cli, uint64_t frameId
   Logging::out() << "Nivasch's algorithm: " << std::fixed << std::setprecision(3) << nivaschTime << " seconds\n";
 
   if (floydTime < nivaschTime) {
-    Logging::out() << "Floyd's was faster by " << std::fixed << std::setprecision(3) << (nivaschTime - floydTime)
-                   << " seconds\n";
+    double timeDiff = nivaschTime - floydTime;
+    double percentDiff = (timeDiff / nivaschTime) * 100.0;
+    Logging::out() << "Floyd's was faster by " << std::fixed << std::setprecision(1) << percentDiff << "% ("
+                   << std::setprecision(3) << timeDiff << " seconds)\n";
   } else if (nivaschTime < floydTime) {
-    Logging::out() << "Nivasch's was faster by " << std::fixed << std::setprecision(3) << (floydTime - nivaschTime)
-                   << " seconds\n";
+    double timeDiff = floydTime - nivaschTime;
+    double percentDiff = (timeDiff / floydTime) * 100.0;
+    Logging::out() << "Nivasch's was faster by " << std::fixed << std::setprecision(1) << percentDiff << "% ("
+                   << std::setprecision(3) << timeDiff << " seconds)\n";
   } else {
     Logging::out() << "Both algorithms took the same time\n";
   }
