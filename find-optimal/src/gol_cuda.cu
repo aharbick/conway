@@ -11,9 +11,9 @@
 
 // CUDA kernels
 __global__ void processCandidates(uint64_t *candidates, uint64_t *numCandidates, uint64_t *bestPattern,
-                                  uint64_t *bestGenerations) {
+                                  uint64_t *bestGenerations, CycleDetectionAlgorithm algorithm) {
   for (uint64_t i = blockIdx.x * blockDim.x + threadIdx.x; i < *numCandidates; i += blockDim.x * gridDim.x) {
-    uint64_t generations = countGenerations(candidates[i]);
+    uint64_t generations = countGenerations(candidates[i], algorithm);
     if (generations > 0) {  // Only process if it actually ended
       // Check to see if it's higher and emit it in best(Pattern|Generations)
       uint64_t old = atomicMax((unsigned long long *)bestGenerations, (unsigned long long)generations);
@@ -71,7 +71,7 @@ __host__ void executeKernelSearch(gol::SearchMemory& mem, ProgramArgs *cli, uint
           cudaMemcpy(mem.d_bestGenerations(), mem.h_bestGenerations(), sizeof(uint64_t), cudaMemcpyHostToDevice));
       cudaCheckError(cudaMemcpy(mem.d_bestPattern(), mem.h_bestPattern(), sizeof(uint64_t), cudaMemcpyHostToDevice));
       processCandidates<<<FRAME_SEARCH_GRID_SIZE, FRAME_SEARCH_THREADS_PER_BLOCK>>>(mem.d_candidates(), mem.d_numCandidates(),
-                                                                  mem.d_bestPattern(), mem.d_bestGenerations());
+                                                                  mem.d_bestPattern(), mem.d_bestGenerations(), cli->cycleDetection);
       cudaCheckError(cudaGetLastError());
       cudaCheckError(cudaDeviceSynchronize());
 
@@ -96,7 +96,9 @@ __host__ void reportKernelResults(gol::SearchMemory& mem, ProgramArgs *cli, doub
               << ", kernelIdx=" << kernelIdx 
               << ", error=NO_PATTERNS_FOUND\n";
 
-    googleSendProgressAsync(frameIdx, kernelIdx, 0, 0, "ERROR");
+    if (!cli->dontSaveResults) {
+      googleSendProgressAsync(frameIdx, kernelIdx, 0, 0, "ERROR");
+    }
     return;
   }
 
@@ -114,7 +116,9 @@ __host__ void reportKernelResults(gol::SearchMemory& mem, ProgramArgs *cli, doub
             << ", bestPattern=" << *mem.h_bestPattern() << ", bestPatternBin=" << bestPatternBin 
             << ", patternsPerSec=" << formattedRate.str() << "\n";
 
-  googleSendProgressAsync(frameIdx, kernelIdx, (int)*mem.h_bestGenerations(), *mem.h_bestPattern(), bestPatternBin);
+  if (!cli->dontSaveResults) {
+    googleSendProgressAsync(frameIdx, kernelIdx, (int)*mem.h_bestGenerations(), *mem.h_bestPattern(), bestPatternBin);
+  }
 }
 
 #endif

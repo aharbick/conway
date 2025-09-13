@@ -16,4 +16,8 @@
 #define BINARY_STRING_BUFFER_SIZE 65
 #define MESSAGE_BUFFER_SIZE 64
 
+// Nivasch algorithm parameters
+#define NIVASCH_MAX_STACK_SIZE 32
+#define NIVASCH_NUM_STACKS 4
+
 #endif

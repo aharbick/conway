@@ -2,6 +2,10 @@
 #define _GOL_CORE_H_
 
 #include <cstdint>
+#include <string>
+
+#include "cli_parser.h"
+#include "constants.h"
 
 // CUDA decorators - defined here or by NVCC
 #ifndef __NVCC__
@@ -58,8 +62,92 @@ __host__ __device__ static inline int adjustGenerationsForDeadout(int generation
   return generations;
 }
 
+// Floyd's cycle detection algorithm
+__host__ __device__ static inline int floydCycleDetection(uint64_t startState, int startGenerations) {
+  bool ended = false;
+  int generations = startGenerations;
+
+  uint64_t slow = startState;
+  uint64_t fast = computeNextGeneration(slow);
+
+  do {
+    generations++;
+    uint64_t nextSlow = computeNextGeneration(slow);
+
+    if (slow == nextSlow) {
+      ended = true;  // If we didn't change then we ended
+      break;
+    }
+    slow = nextSlow;
+    fast = computeNextGeneration(computeNextGeneration(fast));
+  } while (slow != fast);
+
+  ended = slow == 0;  // If we died out then we ended
+  return ended ? generations : 0;
+}
+
+// Nivasch's cycle detection algorithm - stack-based approach
+struct NivaschStackEntry {
+  uint64_t value;
+  int time;
+};
+
+__host__ __device__ static inline int nivaschCycleDetection(uint64_t startState, int startGenerations) {
+  bool ended = false;
+
+  // Multi-stack Nivasch algorithm
+  NivaschStackEntry stacks[NIVASCH_NUM_STACKS][NIVASCH_MAX_STACK_SIZE];
+  int stackSizes[NIVASCH_NUM_STACKS] = {0};
+
+  uint64_t current = startState;
+  int time = startGenerations;
+
+  while (time < 10000) {  // Reasonable upper bound
+    // Determine which stack to use based on hash of current value
+    int stackIdx = (current % NIVASCH_NUM_STACKS);
+    NivaschStackEntry* stack = stacks[stackIdx];
+    int& stackSize = stackSizes[stackIdx];
+
+    // Pop entries from stack where value > current
+    while (stackSize > 0 && stack[stackSize - 1].value > current) {
+      stackSize--;
+    }
+
+    // Check if current value matches top of stack
+    if (stackSize > 0 && stack[stackSize - 1].value == current) {
+      // Found cycle! Return total generations until cycle detected
+      return time;
+    }
+
+    // Push current value onto stack if there's room
+    if (stackSize < NIVASCH_MAX_STACK_SIZE) {
+      stack[stackSize].value = current;
+      stack[stackSize].time = time;
+      stackSize++;
+    }
+
+    // Advance to next generation
+    uint64_t next = computeNextGeneration(current);
+    if (next == 0) {
+      ended = true;
+      break;
+    }
+    if (next == current) {
+      // Found stable state
+      break;
+    }
+
+    current = next;
+    time++;
+  }
+
+  ended = (current == 0);
+  return ended ? time : 0;
+}
+
 // Core generation counting logic - determines how long patterns run
-__host__ __device__ static inline int countGenerations(uint64_t pattern) {
+__host__ __device__ static inline int countGenerations(uint64_t pattern,
+                                                       CycleDetectionAlgorithm algorithm = CYCLE_DETECTION_FLOYD) {
   bool ended = false;
   int generations = 0;
 
@@ -89,23 +177,14 @@ __host__ __device__ static inline int countGenerations(uint64_t pattern) {
 
   } while (generations < FAST_SEARCH_MAX_GENERATIONS);
 
-  // Fall back to Floyd's cycle detection algorithm if we haven't
-  // we didn't exit the previous loop because of die out or cycle.
+  // Fall back to chosen cycle detection algorithm if we haven't
+  // exited the previous loop because of die out or cycle.
   if (!ended && generations >= FAST_SEARCH_MAX_GENERATIONS) {
-    uint64_t slow = g1;
-    uint64_t fast = computeNextGeneration(slow);
-    do {
-      generations++;
-      uint64_t nextSlow = computeNextGeneration(slow);
-
-      if (slow == nextSlow) {
-        ended = true;  // If we didn't change then we ended
-        break;
-      }
-      slow = nextSlow;
-      fast = computeNextGeneration(computeNextGeneration(fast));
-    } while (slow != fast);
-    ended = slow == 0;  // If we died out then we ended
+    if (algorithm == CYCLE_DETECTION_NIVASCH) {
+      return nivaschCycleDetection(g1, generations);
+    } else {
+      return floydCycleDetection(g1, generations);
+    }
   }
 
   return ended ? generations : 0;

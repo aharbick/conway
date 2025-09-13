@@ -4,14 +4,20 @@
 #include <cstdint>
 #include <string>
 
+typedef enum { CYCLE_DETECTION_FLOYD, CYCLE_DETECTION_NIVASCH } CycleDetectionAlgorithm;
+
 typedef struct ProgramArgs {
   bool verbose;
   bool testGoogleApi;
   bool testFrameCache;
   bool testMissingFrames;
   bool resumeFromDatabase;
+  bool compareCycleAlgorithms;
+  bool dontSaveResults;
   std::string frameMode;
   std::string logFilePath;
+  CycleDetectionAlgorithm cycleDetection;
+  uint64_t compareFrameIdx;
   int workerNum;
   int totalWorkers;
 } ProgramArgs;

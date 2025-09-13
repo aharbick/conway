@@ -44,5 +44,6 @@ __host__ void reportKernelResults(gol::SearchMemory &mem, ProgramArgs *cli, doub
 
 // Helper functions
 __host__ std::string getSearchDescription(ProgramArgs *cli);
+__host__ void compareCycleDetectionAlgorithms(ProgramArgs *cli, uint64_t frameIdx);
 
 #endif

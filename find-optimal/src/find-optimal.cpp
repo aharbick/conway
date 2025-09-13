@@ -166,6 +166,14 @@ int main(int argc, char** argv) {
     return 0;
   }
 
+  // Handle compare-cycle-algorithms flag
+  if (cli->compareCycleAlgorithms) {
+    compareCycleDetectionAlgorithms(cli, cli->compareFrameIdx);
+    cleanupProgramArgs(cli);
+    googleCleanup();
+    return 0;
+  }
+
 #ifdef __NVCC__
   printCudaDeviceInfo(cli);
 #endif

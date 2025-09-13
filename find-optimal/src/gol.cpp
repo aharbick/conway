@@ -103,3 +103,61 @@ __host__ std::string getSearchDescription(ProgramArgs *cli) {
 
   return oss.str();
 }
+
+__host__ void compareCycleDetectionAlgorithms(ProgramArgs *cli, uint64_t frameIdx) {
+  Logging::out() << "Comparing cycle detection algorithms on frameIdx: " << frameIdx << "\n";
+
+  uint64_t frame = getFrameByIndex(frameIdx);
+  if (frame == 0) {
+    std::cerr << "[ERROR] Invalid frame index: " << frameIdx << "\n";
+    return;
+  }
+
+  Logging::out() << "Frame value: " << std::hex << frame << std::dec << "\n\n";
+
+  gol::SearchMemory mem(FRAME_SEARCH_MAX_CANDIDATES);
+
+  // Save original settings
+  CycleDetectionAlgorithm originalAlgorithm = cli->cycleDetection;
+  bool originalDontSave = cli->dontSaveResults;
+
+  // Enable don't save results for testing
+  cli->dontSaveResults = true;
+
+  // Test Floyd's algorithm
+  cli->cycleDetection = CYCLE_DETECTION_FLOYD;
+  Logging::out() << "=== Testing Floyd's cycle detection ===\n";
+  double startTime = getHighResCurrentTime();
+  executeKernelSearch(mem, cli, frame, frameIdx);
+  double floydTime = getHighResCurrentTime() - startTime;
+  Logging::out() << "Floyd's algorithm completed in " << std::fixed << std::setprecision(3) << floydTime
+                 << " seconds\n\n";
+
+  // Test Nivasch's algorithm
+  cli->cycleDetection = CYCLE_DETECTION_NIVASCH;
+  Logging::out() << "=== Testing Nivasch's cycle detection ===\n";
+  startTime = getHighResCurrentTime();
+  executeKernelSearch(mem, cli, frame, frameIdx);
+  double nivaschTime = getHighResCurrentTime() - startTime;
+  Logging::out() << "Nivasch's algorithm completed in " << std::fixed << std::setprecision(3) << nivaschTime
+                 << " seconds\n\n";
+
+  // Restore original settings
+  cli->cycleDetection = originalAlgorithm;
+  cli->dontSaveResults = originalDontSave;
+
+  // Summary
+  Logging::out() << "=== Performance Comparison ===\n";
+  Logging::out() << "Floyd's algorithm:   " << std::fixed << std::setprecision(3) << floydTime << " seconds\n";
+  Logging::out() << "Nivasch's algorithm: " << std::fixed << std::setprecision(3) << nivaschTime << " seconds\n";
+
+  if (floydTime < nivaschTime) {
+    Logging::out() << "Floyd's was faster by " << std::fixed << std::setprecision(3) << (nivaschTime - floydTime)
+                   << " seconds\n";
+  } else if (nivaschTime < floydTime) {
+    Logging::out() << "Nivasch's was faster by " << std::fixed << std::setprecision(3) << (floydTime - nivaschTime)
+                   << " seconds\n";
+  } else {
+    Logging::out() << "Both algorithms took the same time\n";
+  }
+}
