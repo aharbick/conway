@@ -113,7 +113,7 @@ __host__ void compareCycleDetectionAlgorithms(ProgramArgs *cli, uint64_t frameId
     return;
   }
 
-  Logging::out() << "Frame value: " << std::hex << frame << std::dec << "\n\n";
+  Logging::out() << "Frame value: " << frame << "\n\n";
 
   gol::SearchMemory mem(FRAME_SEARCH_MAX_CANDIDATES);
 

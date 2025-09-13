@@ -103,6 +103,22 @@ __host__ __device__ static inline int nivaschCycleDetection(uint64_t startState,
   int time = startGenerations;
 
   while (time < 10000) {  // Reasonable upper bound
+    time++;
+    uint64_t next = computeNextGeneration(current);
+
+    // Check for stable state (no change)
+    if (current == next) {
+      ended = true;  // If we didn't change then we ended
+      break;
+    }
+
+    // Check for death (pattern becomes empty)
+    if (next == 0) {
+      ended = true;
+      current = next;
+      break;
+    }
+
     // Determine which stack to use based on hash of current value
     int stackIdx = (current % NIVASCH_NUM_STACKS);
     NivaschStackEntry* stack = stacks[stackIdx];
@@ -113,10 +129,11 @@ __host__ __device__ static inline int nivaschCycleDetection(uint64_t startState,
       stackSize--;
     }
 
-    // Check if current value matches top of stack
+    // Check if current value matches top of stack (cycle detected)
     if (stackSize > 0 && stack[stackSize - 1].value == current) {
-      // Found cycle! Return total generations until cycle detected
-      return time;
+      // Found cycle! Check if we died out
+      ended = (current == 0);
+      break;
     }
 
     // Push current value onto stack if there's room
@@ -126,22 +143,10 @@ __host__ __device__ static inline int nivaschCycleDetection(uint64_t startState,
       stackSize++;
     }
 
-    // Advance to next generation
-    uint64_t next = computeNextGeneration(current);
-    if (next == 0) {
-      ended = true;
-      break;
-    }
-    if (next == current) {
-      // Found stable state
-      break;
-    }
-
     current = next;
-    time++;
   }
 
-  ended = (current == 0);
+  // Only return generation count if pattern actually ended (died out or stabilized)
   return ended ? time : 0;
 }
 
