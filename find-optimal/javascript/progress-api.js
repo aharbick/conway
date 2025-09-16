@@ -360,3 +360,100 @@ function googleSendSummaryData(e, spreadsheetId) {
   });
 }
 
+/**
+ * UTILITY FUNCTION: Backfill Frame Completion sheet from Progress sheet data
+ * Call this manually in Apps Script console: backfillFrameCompletionFromProgress()
+ * Reads Progress sheet for kernelIdx=15 entries and populates Frame Completion bitmap
+ */
+function backfillFrameCompletionFromProgress() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+  console.log('Starting Frame Completion backfill...');
+
+  // Get Progress sheet
+  const progressSheet = spreadsheet.getSheetByName(PROGRESS_SHEET_NAME);
+  if (!progressSheet) {
+    console.error('Progress sheet not found');
+    return;
+  }
+
+  // Ensure Frame Completion sheet exists
+  const frameCompletionSheet = ensureFrameCompletionSheet(spreadsheet);
+
+  // Get all progress data
+  console.log('Reading Progress sheet data...');
+  const progressData = progressSheet.getDataRange().getValues();
+  if (progressData.length <= 1) {
+    console.log('No data found in Progress sheet');
+    return;
+  }
+
+  // Find column indices in Progress sheet
+  const progressHeaders = progressData[0];
+  const frameIdxCol = progressHeaders.indexOf('frameIdx');
+  const kernelIdxCol = progressHeaders.indexOf('kernelIdx');
+
+  if (frameIdxCol === -1 || kernelIdxCol === -1) {
+    console.error('Required columns (frameIdx, kernelIdx) not found in Progress sheet');
+    return;
+  }
+
+  console.log(`Found ${progressData.length - 1} total progress entries`);
+
+  // Collect all completed frames (kernelIdx == 15)
+  console.log('Collecting completed frames (kernelIdx=15)...');
+  const completedFrames = new Set();
+  for (let i = 1; i < progressData.length; i++) {
+    const row = progressData[i];
+    const frameIdx = parseInt(row[frameIdxCol]) || 0;
+    const kernelIdx = parseInt(row[kernelIdxCol]) || 0;
+
+    if (kernelIdx === 15 && frameIdx >= 0 && frameIdx < TOTAL_FRAMES) {
+      completedFrames.add(frameIdx);
+    }
+
+    // Progress report every 100k entries
+    if (i % 100000 === 0) {
+      console.log(`Processed ${i}/${progressData.length - 1} entries, found ${completedFrames.size} completed frames`);
+    }
+  }
+
+  console.log(`Found ${completedFrames.size} completed frames`);
+
+  // Read current Frame Completion data
+  console.log('Reading current Frame Completion data...');
+  const frameCompletionData = frameCompletionSheet.getRange(2, 1, FRAME_COMPLETION_ROWS, 1).getValues();
+
+  // Build new bitmap data
+  console.log('Building new bitmap data...');
+  const newBitmapData = [];
+  for (let rowIdx = 0; rowIdx < FRAME_COMPLETION_ROWS; rowIdx++) {
+    let rowBitmap = BigInt(frameCompletionData[rowIdx] ? frameCompletionData[rowIdx][0] || '0' : '0');
+
+    // Check each bit position in this row (64 frames per row)
+    for (let bitIdx = 0; bitIdx < FRAMES_PER_ROW; bitIdx++) {
+      const frameIdx = rowIdx * FRAMES_PER_ROW + bitIdx;
+      if (frameIdx >= TOTAL_FRAMES) break;
+
+      if (completedFrames.has(frameIdx)) {
+        // Set the bit for this completed frame
+        rowBitmap |= (BigInt(1) << BigInt(bitIdx));
+      }
+    }
+
+    newBitmapData.push([rowBitmap.toString()]);
+
+    // Progress report every 1000 rows
+    if (rowIdx % 1000 === 0) {
+      console.log(`Built bitmap for row ${rowIdx}/${FRAME_COMPLETION_ROWS}`);
+    }
+  }
+
+  // Write all the new bitmap data at once
+  console.log('Writing Frame Completion data...');
+  frameCompletionSheet.getRange(2, 1, FRAME_COMPLETION_ROWS, 1).setValues(newBitmapData);
+
+  console.log(`✅ Frame completion cache backfilled successfully!`);
+  console.log(`📊 Processed ${completedFrames.size} completed frames from ${progressData.length - 1} progress entries`);
+}
+
