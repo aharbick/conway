@@ -66,19 +66,15 @@ function PATTERN_TO_RLE(binstring) {
   }
 }
 
-// Function that turns the binary pattern string into the ulong64 value
-function PRECISE_BIN2DEC(binaryString) {
-  if (!binaryString || binaryString.length === 0) return "";
+// Function that turns the ulong64 value into the binPattern
+function PATTERN_TO_BIN(bestPattern) {
+  // Convert to BigInt to handle large numbers accurately
+  const bigIntValue = BigInt(bestPattern);
 
-  let result = BigInt(0);
-  const binary = binaryString.toString().trim();
+  // Convert to binary and pad to 64 characters
+  const binaryString = bigIntValue.toString(2);
 
-  for (let i = 0; i < binary.length; i++) {
-    if (binary[i] === '1') {
-      result += BigInt(2) ** BigInt(binary.length - 1 - i);
-    }
-  }
-
-  return result.toString();
+  // Pad with leading zeros to make it exactly 64 characters
+  return binaryString.padStart(64, '0');
 }
 
