@@ -114,7 +114,9 @@ __host__ void reportKernelResults(gol::SearchMemory& mem, ProgramArgs *cli, doub
             << ", patternsPerSec=" << formattedRate.str() << "\n";
 
   if (!cli->dontSaveResults) {
-    googleSendSummaryDataAsync((int)*mem.h_bestGenerations(), *mem.h_bestPattern(), bestPatternBin);
+    // Pass frameIdx if this completes the frame (kernelIdx == 15), otherwise pass UINT64_MAX
+    uint64_t completedFrameIdx = isFrameComplete ? frameIdx : UINT64_MAX;
+    googleSendSummaryDataAsync((int)*mem.h_bestGenerations(), *mem.h_bestPattern(), bestPatternBin, completedFrameIdx);
   }
 }
 

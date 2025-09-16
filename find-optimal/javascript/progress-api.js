@@ -302,6 +302,9 @@ function googleSendSummaryData(e, spreadsheetId) {
     const bestPattern = data.bestPattern;
     const bestPatternBin = data.bestPatternBin;
 
+    // Optional parameter for frame completion tracking
+    const completedFrameIdx = data.completedFrameIdx ? parseInt(data.completedFrameIdx) : null;
+
     // Get the spreadsheet and worksheet
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
     const sheet = spreadsheet.getSheetByName(SUMMARY_DATA_SHEET_NAME);
@@ -354,6 +357,12 @@ function googleSendSummaryData(e, spreadsheetId) {
         const sortRange = sheet.getRange(2, 1, lastRow - 1, 4);
         sortRange.sort({ column: bestGenerationsCol + 1, ascending: true });
       }
+    }
+
+    // Update Frame Completion sheet if completedFrameIdx is provided
+    if (completedFrameIdx !== null && completedFrameIdx >= 0 && completedFrameIdx < TOTAL_FRAMES) {
+      const frameCompletionSheet = ensureFrameCompletionSheet(spreadsheet);
+      setFrameComplete(frameCompletionSheet, completedFrameIdx);
     }
 
     return sendJsonResponse(true, 'Summary data saved successfully');

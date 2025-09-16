@@ -413,7 +413,8 @@ static bool googleIsFrameCompleteFromCache(uint64_t frameIdx) {
   return frameCache.isFrameComplete(frameIdx);
 }
 
-static bool googleSendSummaryData(int bestGenerations, uint64_t bestPattern, const char* bestPatternBin) {
+static bool googleSendSummaryData(int bestGenerations, uint64_t bestPattern, const char* bestPatternBin,
+                                  uint64_t completedFrameIdx = UINT64_MAX) {
   GoogleConfig config;
   if (googleGetConfig(&config) != GOOGLE_SUCCESS) {
     return false;
@@ -427,6 +428,11 @@ static bool googleSendSummaryData(int bestGenerations, uint64_t bestPattern, con
   params["bestPattern"] = std::to_string(bestPattern);
   params["bestPatternBin"] = std::string(bestPatternBin);
 
+  // Add completedFrameIdx if provided (not UINT64_MAX)
+  if (completedFrameIdx != UINT64_MAX) {
+    params["completedFrameIdx"] = std::to_string(completedFrameIdx);
+  }
+
   CurlResponse response;
   GoogleResult result = googleHttpRequest(config.webappUrl, params, &response, "sendSummaryData");
 
@@ -435,12 +441,14 @@ static bool googleSendSummaryData(int bestGenerations, uint64_t bestPattern, con
 }
 
 // Async version of googleSendSummaryData - "send and forget"
-static void googleSendSummaryDataAsync(int bestGenerations, uint64_t bestPattern, const char* bestPatternBin) {
+static void googleSendSummaryDataAsync(int bestGenerations, uint64_t bestPattern, const char* bestPatternBin,
+                                       uint64_t completedFrameIdx = UINT64_MAX) {
   // Copy the bestPatternBin string since the original may be destroyed
   std::string patternBinCopy(bestPatternBin ? bestPatternBin : "");
 
-  executeWithRetryAsync([=]() { return googleSendSummaryData(bestGenerations, bestPattern, patternBinCopy.c_str()); },
-                        "send summary data (bestGenerations=" + std::to_string(bestGenerations) + ")");
+  executeWithRetryAsync(
+      [=]() { return googleSendSummaryData(bestGenerations, bestPattern, patternBinCopy.c_str(), completedFrameIdx); },
+      "send summary data (bestGenerations=" + std::to_string(bestGenerations) + ")");
 }
 
 #endif
