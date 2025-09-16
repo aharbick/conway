@@ -22,15 +22,15 @@ static char ProgramArgs_doc[] = "";
 
 // Command line options
 static struct argp_option argp_options[] = {
-    {"frame-mode", 'f', "MODE", 0, "Frame search mode: 'random' or 'missing'"},
+    {"frame-mode", 'f', "MODE", 0, "Frame search mode: 'random'"},
     {"cycle-detection", 'D', "ALGORITHM", 0, "Cycle detection algorithm: 'floyd' or 'nivasch' (default: 'floyd')"},
     {"compare-cycle-algorithms", 'A', "FRAME_IDX", 0,
      "Compare Floyd's vs Nivasch's cycle detection on given frame index and exit."},
     {"dont-save-results", 'r', 0, 0, "Don't save results to Google Sheets (for testing/benchmarking)."},
     {"verbose", 'v', 0, 0, "Verbose output."},
-    {"test-google-api", 'T', 0, 0, "Test Google Sheets API functionality and exit."},
+    {"test-progress-api", 'T', 0, 0, "Test Google Sheets Progress API functionality and exit."},
+    {"test-summary-api", 'S', 0, 0, "Test Google Sheets Summary API functionality and exit."},
     {"test-frame-cache", 'C', 0, 0, "Test frame completion cache functionality and exit."},
-    {"test-missing-frames", 'M', 0, 0, "Test missing frames API and display incomplete frames."},
     {"log-file", 'l', "PATH", 0, "Path to log file for progress output."},
     {"worker", 'w', "N:M", 0,
      "Worker configuration N:M where N is worker number (1-based) and M is total workers (default: 1:1)."},
@@ -40,12 +40,12 @@ static struct argp_option argp_options[] = {
 static bool parseFrameMode(const char* arg, ProgramArgs* args) {
   std::string str(arg);
 
-  if (str == "random" || str == "missing") {
+  if (str == "random") {
     args->frameMode = str;
     return true;
   }
 
-  std::cerr << "[ERROR] Invalid frame mode '" << arg << "', expected 'random' or 'missing'\n";
+  std::cerr << "[ERROR] Invalid frame mode '" << arg << "', expected 'random'\n";
   return false;
 }
 
@@ -123,13 +123,13 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
     a->verbose = true;
     break;
   case 'T':
-    a->testGoogleApi = true;
+    a->testProgressApi = true;
+    break;
+  case 'S':
+    a->testSummaryApi = true;
     break;
   case 'C':
     a->testFrameCache = true;
-    break;
-  case 'M':
-    a->testMissingFrames = true;
     break;
   case 'l':
     if (!arg || *arg == '\0') {
@@ -153,9 +153,9 @@ struct argp argp = {argp_options, parseArgpOptions, ProgramArgs_doc, prog_doc, 0
 
 void initializeDefaultArgs(ProgramArgs* args) {
   args->verbose = false;
-  args->testGoogleApi = false;
+  args->testProgressApi = false;
+  args->testSummaryApi = false;
   args->testFrameCache = false;
-  args->testMissingFrames = false;
   args->resumeFromDatabase = false;
   args->compareCycleAlgorithms = false;
   args->dontSaveResults = false;

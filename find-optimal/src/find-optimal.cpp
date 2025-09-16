@@ -54,33 +54,6 @@ int main(int argc, char** argv) {
   // Initialize logging system
   Logging::LogManager::initialize(cli);
 
-  // Handle test-missing-frames flag
-  if (cli->testMissingFrames) {
-    std::cout << "Testing Missing Frames API...\n";
-
-    std::cout << "Calling googleGetIncompleteFrames()...\n";
-    std::vector<uint64_t> incompleteFrames = googleGetIncompleteFrames();
-
-    std::cout << "Found " << incompleteFrames.size() << " incomplete frames:\n";
-
-    if (incompleteFrames.empty()) {
-      std::cout << "No incomplete frames found.\n";
-    } else {
-      // Display first 20 frames to avoid overwhelming output
-      size_t displayCount = std::min(static_cast<size_t>(20), incompleteFrames.size());
-      for (size_t i = 0; i < displayCount; i++) {
-        std::cout << "  Frame " << incompleteFrames[i] << "\n";
-      }
-
-      if (incompleteFrames.size() > displayCount) {
-        std::cout << "  ... and " << (incompleteFrames.size() - displayCount) << " more frames\n";
-      }
-    }
-
-    cleanupProgramArgs(cli);
-    googleCleanup();
-    return 0;
-  }
 
   // Handle test-frame-cache flag
   if (cli->testFrameCache) {
@@ -126,9 +99,9 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  // Handle test-google-api flag
-  if (cli->testGoogleApi) {
-    std::cout << "Testing Google Sheets API with fake data...\n";
+  // Handle test-progress-api flag
+  if (cli->testProgressApi) {
+    std::cout << "Testing Google Sheets Progress API with fake data...\n";
 
     // Generate realistic but varying test data based on current time
     time_t now = time(NULL);
@@ -163,6 +136,45 @@ int main(int argc, char** argv) {
     cleanupProgramArgs(cli);
     googleCleanup();
     // Always return success - Google Sheets errors shouldn't fail the program
+    return 0;
+  }
+
+  // Handle test-summary-api flag
+  if (cli->testSummaryApi) {
+    std::cout << "Testing Google Sheets Summary API with test data...\n";
+
+    // Use easily identifiable test data (bestGenerations=6 is well below normal range)
+    time_t now = time(NULL);
+    srand(now);  // Seed random number generator with current time
+
+    // Generate test pattern data
+    uint64_t testPattern = ((uint64_t)rand() << 32) | rand();  // Random 64-bit pattern
+
+    // Generate a 64-bit binary pattern string
+    char testPatternBin[65];
+    for (int i = 0; i < 64; i++) {
+      testPatternBin[i] = ((testPattern >> (63 - i)) & 1) ? '1' : '0';
+    }
+    testPatternBin[64] = '\0';
+
+    // Test initial summary data upload with bestGenerations=6
+    std::cout << "Testing summary data upload (generations=6, pattern=" << testPattern << ")...\n";
+    bool success = googleSendSummaryData(6, testPattern, testPatternBin);
+    std::cout << "Summary data upload: " << (success ? "SUCCESS" : "FAILED") << "\n";
+
+    // Test duplicate entry (should increment count for bestGenerations=6)
+    uint64_t testPattern2 = ((uint64_t)rand() << 32) | rand();
+    for (int i = 0; i < 64; i++) {
+      testPatternBin[i] = ((testPattern2 >> (63 - i)) & 1) ? '1' : '0';
+    }
+
+    std::cout << "Testing DUPLICATE summary data upload (generations=6, pattern=" << testPattern2 << ")...\n";
+    success = googleSendSummaryData(6, testPattern2, testPatternBin);
+    std::cout << "Duplicate summary data upload: " << (success ? "SUCCESS" : "FAILED") << "\n";
+
+    // Cleanup and exit
+    cleanupProgramArgs(cli);
+    googleCleanup();
     return 0;
   }
 

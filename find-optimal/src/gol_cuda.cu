@@ -96,9 +96,6 @@ __host__ void reportKernelResults(gol::SearchMemory& mem, ProgramArgs *cli, doub
               << ", kernelIdx=" << kernelIdx 
               << ", error=NO_PATTERNS_FOUND\n";
 
-    if (!cli->dontSaveResults) {
-      googleSendProgressAsync(frameIdx, kernelIdx, 0, 0, "ERROR");
-    }
     return;
   }
 
@@ -117,7 +114,7 @@ __host__ void reportKernelResults(gol::SearchMemory& mem, ProgramArgs *cli, doub
             << ", patternsPerSec=" << formattedRate.str() << "\n";
 
   if (!cli->dontSaveResults) {
-    googleSendProgressAsync(frameIdx, kernelIdx, (int)*mem.h_bestGenerations(), *mem.h_bestPattern(), bestPatternBin);
+    googleSendSummaryDataAsync((int)*mem.h_bestGenerations(), *mem.h_bestPattern(), bestPatternBin);
   }
 }
 

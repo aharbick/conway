@@ -35,17 +35,7 @@ __host__ void *search(void *args) {
   // Build worker-specific frame list
   std::vector<uint64_t> workerFrames;
 
-  if (cli->frameMode == "missing") {
-    // Get incomplete frames from the API
-    std::vector<uint64_t> incompleteFrames = googleGetIncompleteFrames();
-
-    // Filter for this worker using modulo partitioning
-    for (uint64_t frameIdx : incompleteFrames) {
-      if ((frameIdx % cli->totalWorkers) == (cli->workerNum - 1)) {
-        workerFrames.push_back(frameIdx);
-      }
-    }
-  } else if (cli->frameMode == "random") {
+  if (cli->frameMode == "random") {
     // Generate all incomplete frames for this worker
     for (uint64_t frameIdx = 0; frameIdx < FRAME_SEARCH_TOTAL_MINIMAL_FRAMES; ++frameIdx) {
       // Check if this frame belongs to this worker using modulo partitioning
@@ -88,9 +78,7 @@ __host__ void *search(void *args) {
 __host__ std::string getSearchDescription(ProgramArgs *cli) {
   std::ostringstream oss;
 
-  if (cli->frameMode == "missing") {
-    oss << "SEQUENTIALLY through frames missing kernels";
-  } else if (cli->frameMode == "random") {
+  if (cli->frameMode == "random") {
     oss << "RANDOMLY among incomplete frames";
   } else {
     oss << "ERROR: Invalid frame mode";

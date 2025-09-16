@@ -7,13 +7,13 @@
  */
 function bestPatternBinToRLE(binstring) {
   if (!binstring || typeof binstring !== 'string') {
-    return '#CXRLE Pos=-4,-4\nx = 8, y = 8, rule = B3/S23:P8,8\n!';
+    return '';
   }
   
   // Remove any spaces or non-binary characters and ensure it's exactly 64 characters
   const cleanBin = binstring.replace(/[^01]/g, '');
   if (cleanBin.length !== 64) {
-    throw new Error('Binary string must be exactly 64 characters of 0/1 (8x8).');
+    return 'Binary string must be exactly 64 characters of 0/1 (8x8).';
   }
 
   // Split into 8 rows of 8 characters each
@@ -57,17 +57,17 @@ function bestPatternBinToRLE(binstring) {
   return '#CXRLE Pos=-4,-4\nx = 8, y = 8, rule = B3/S23:P8,8\n' + rleBody;
 }
 
-// For Google Apps Script usage, you might want a wrapper that works with sheet cell values
-function PATTERN_TO_RLE(binstring) {
-  try {
-    return bestPatternBinToRLE(binstring);
-  } catch (error) {
-    return 'ERROR: ' + error.message;
+/**
+ * Convert a 64-bit integer 64-bit binary string format.
+ * 
+ * @param {string} bestPattern - 64-bit integer as a string
+ * @returns {string} binary string
+ */
+function bestPatternToBin(bestPattern) {
+  if (!bestPattern || typeof bestPattern !== 'string' || bestPattern.length < 1) {
+    return '';
   }
-}
 
-// Function that turns the ulong64 value into the binPattern
-function PATTERN_TO_BIN(bestPattern) {
   // Convert to BigInt to handle large numbers accurately
   const bigIntValue = BigInt(bestPattern);
 
@@ -76,5 +76,20 @@ function PATTERN_TO_BIN(bestPattern) {
 
   // Pad with leading zeros to make it exactly 64 characters
   return binaryString.padStart(64, '0');
+}
+
+// For Google Apps Script usage, you might want a wrapper that works with sheet cell values
+function PATTERN_BIN_TO_RLE(bestPatternBin) {
+  return bestPatternBinToRLE(bestPatternBin);
+}
+
+function PATTERN_TO_RLE(bestPattern) {
+   const bestPatternBin = bestPatternToBin(bestPattern);
+   return bestPatternBinToRLE(bestPatternBin);
+}
+
+// Function that turns the ulong64 value into the binPattern
+function PATTERN_TO_BIN(bestPattern) {
+  return bestPatternToBin(bestPattern);
 }
 

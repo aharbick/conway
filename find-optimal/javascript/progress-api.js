@@ -3,10 +3,17 @@
  */
 
 const PROGRESS_SHEET_NAME = 'Progress';
+const FRAME_COMPLETION_SHEET_NAME = 'Frame Completion';
+const SUMMARY_DATA_SHEET_NAME = 'Summary Data';
 const LOCK_TIMEOUT_MS = 30000; // 30 seconds timeout for locks
 
 // Spreadsheet ID for our Progress data
 const SPREADSHEET_ID = '1bXt22T9cyv1A1vcdozR54n-imEFdIhsMcvEhEUMlsmY';
+
+// Frame completion constants
+const TOTAL_FRAMES = 2102800;
+const FRAMES_PER_ROW = 64; // 64 bits per cell
+const FRAME_COMPLETION_ROWS = Math.ceil(TOTAL_FRAMES / FRAMES_PER_ROW); // 32857 rows
 
 /**
  * Execute a function with script-level locking for concurrency safety
@@ -19,28 +26,87 @@ function withLock(operation) {
   try {
     // Acquire lock with timeout
     if (!lock.tryLock(LOCK_TIMEOUT_MS)) {
-      return ContentService
-        .createTextOutput(JSON.stringify({
-          success: false,
-          error: 'Could not acquire lock - operation timed out'
-        }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return sendJsonResponse(false, 'Could not acquire lock - operation timed out');
     }
 
     // Execute the operation
     return operation();
 
   } catch (error) {
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        success: false,
-        error: error.toString()
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return sendJsonResponse(false, error.toString());
   } finally {
     // Always release the lock
     lock.releaseLock();
   }
+}
+
+/**
+ * Helper function to create consistent JSON responses
+ * @param {boolean} success - Whether the operation was successful
+ * @param {string} message - The message to return
+ * @param {Object} additionalData - Optional additional data to include in response
+ * @returns {ContentService.TextOutput} The formatted response
+ */
+function sendJsonResponse(success, message, additionalData = {}) {
+  const responseData = {
+    success: success,
+    ...additionalData
+  };
+
+  if (success) {
+    responseData.message = message;
+  } else {
+    responseData.error = message;
+  }
+
+  return ContentService
+    .createTextOutput(JSON.stringify(responseData))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Ensure Frame Completion sheet exists and is properly initialized
+ * @param {Spreadsheet} spreadsheet - The spreadsheet object
+ * @returns {Sheet} The Frame Completion sheet
+ */
+function ensureFrameCompletionSheet(spreadsheet) {
+  let sheet = spreadsheet.getSheetByName(FRAME_COMPLETION_SHEET_NAME);
+
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(FRAME_COMPLETION_SHEET_NAME);
+    // Add header
+    sheet.getRange(1, 1).setValue('frameBitmap');
+
+    // Initialize all rows with 0 (no frames completed)
+    const initData = Array(FRAME_COMPLETION_ROWS).fill(['0']);
+    sheet.getRange(2, 1, FRAME_COMPLETION_ROWS, 1).setValues(initData);
+  }
+
+  return sheet;
+}
+
+/**
+ * Set a frame as completed in the Frame Completion sheet
+ * @param {Sheet} sheet - The Frame Completion sheet
+ * @param {number} frameIdx - The frame index to mark as complete
+ */
+function setFrameComplete(sheet, frameIdx) {
+  if (frameIdx < 0 || frameIdx >= TOTAL_FRAMES) {
+    return;
+  }
+
+  const rowIndex = Math.floor(frameIdx / FRAMES_PER_ROW) + 2; // +2 for header and 1-based indexing
+  const bitIndex = frameIdx % FRAMES_PER_ROW;
+
+  // Get current value
+  const currentValue = sheet.getRange(rowIndex, 1).getValue() || '0';
+  const currentBitmap = BigInt(currentValue);
+
+  // Set the bit
+  const newBitmap = currentBitmap | (BigInt(1) << BigInt(bitIndex));
+
+  // Write back as string to preserve precision
+  sheet.getRange(rowIndex, 1).setValue(newBitmap.toString());
 }
 
 /**
@@ -63,20 +129,12 @@ function handleRequest(e) {
     // Extract and validate API key
     const apiKey = data.apiKey;
     if (!apiKey) {
-      return ContentService
-        .createTextOutput(JSON.stringify({
-          error: 'Missing required parameter: apiKey'
-        }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return sendJsonResponse(false, 'Missing required parameter: apiKey');
     }
 
     // Validate API key
     if (apiKey !== AUTHORIZED_API_KEY) {
-      return ContentService
-        .createTextOutput(JSON.stringify({
-          error: 'Invalid API key'
-        }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return sendJsonResponse(false, 'Invalid API key');
     }
 
     const action = data.action;
@@ -84,25 +142,17 @@ function handleRequest(e) {
     switch (action) {
       case 'sendProgress':
         return googleSendProgress(e, SPREADSHEET_ID);
+      case 'sendSummaryData':
+        return googleSendSummaryData(e, SPREADSHEET_ID);
       case 'getBestResult':
         return googleGetBestResult(e, SPREADSHEET_ID);
       case 'getCompleteFrameCache':
         return googleGetCompleteFrameCache(e, SPREADSHEET_ID);
-      case 'getIncompleteFrames':
-        return googleGetIncompleteFrames(e, SPREADSHEET_ID);
       default:
-        return ContentService
-          .createTextOutput(JSON.stringify({
-            error: 'Invalid action. Use "sendProgress", "getBestResult", "getCompleteFrameCache", or "getIncompleteFrames"'
-          }))
-          .setMimeType(ContentService.MimeType.JSON);
+        return sendJsonResponse(false, 'Invalid action. Use "sendProgress", "sendSummaryData", "getBestResult", or "getCompleteFrameCache"');
     }
   } catch (error) {
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        error: error.toString()
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return sendJsonResponse(false, error.toString());
   }
 }
 
@@ -134,42 +184,33 @@ function googleSendProgress(e, spreadsheetId) {
 
     sheet.appendRow(newRow);
 
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        success: true,
-        message: 'Progress data saved successfully'
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
+    // Update Frame Completion sheet if this frame is complete (kernelIdx == 15)
+    if (kernelIdx === 15) {
+      const frameCompletionSheet = ensureFrameCompletionSheet(spreadsheet);
+      setFrameComplete(frameCompletionSheet, frameIdx);
+    }
+
+    return sendJsonResponse(true, 'Progress data saved successfully');
   });
 }
 
 /**
- * Returns the highest bestGenerations value from non-test records
+ * Returns the highest bestGenerations value from Summary Data sheet
  */
 function googleGetBestResult(e, spreadsheetId) {
   return withLock(() => {
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    const sheet = spreadsheet.getSheetByName(PROGRESS_SHEET_NAME);
+    const sheet = spreadsheet.getSheetByName(SUMMARY_DATA_SHEET_NAME);
 
     if (!sheet) {
-      return ContentService
-        .createTextOutput(JSON.stringify({
-          bestGenerations: 0,
-          message: 'No progress sheet found'
-        }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return sendJsonResponse(true, 'No Summary Data sheet found', { bestGenerations: 0 });
     }
 
     // Get all data from the sheet
     const data = sheet.getDataRange().getValues();
 
     if (data.length <= 1) { // Only header row or empty
-      return ContentService
-        .createTextOutput(JSON.stringify({
-          bestGenerations: 0,
-          message: 'No data found'
-        }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return sendJsonResponse(true, 'No data found', { bestGenerations: 0 });
     }
 
     // Find the column indices (assuming first row contains headers)
@@ -177,10 +218,11 @@ function googleGetBestResult(e, spreadsheetId) {
     const bestGenerationsCol = headers.indexOf('bestGenerations');
 
     if (bestGenerationsCol === -1) {
-      throw new Error('bestGenerations column not found');
+      return sendJsonResponse(false, 'bestGenerations column not found in Summary Data sheet');
     }
 
-    // Find the maximum bestGenerations value
+    // Find the maximum bestGenerations value (sheet should be sorted, so we can take the last row)
+    // But let's iterate to be safe in case sorting failed somewhere
     let maxGenerations = 0;
 
     for (let i = 1; i < data.length; i++) {
@@ -192,136 +234,129 @@ function googleGetBestResult(e, spreadsheetId) {
       }
     }
 
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        bestGenerations: maxGenerations
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return sendJsonResponse(true, 'Best result retrieved successfully', { bestGenerations: maxGenerations });
   });
 }
 
 /**
  * Get a bitmap of all completed frames for efficient caching
  * Returns a base64-encoded bitmap where each bit represents a frame's completion status
+ * Reads directly from the Frame Completion sheet for fast access
  */
 function googleGetCompleteFrameCache(e, spreadsheetId) {
   return withLock(() => {
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    const sheet = spreadsheet.getSheetByName(PROGRESS_SHEET_NAME);
+    const frameCompletionSheet = ensureFrameCompletionSheet(spreadsheet);
 
-    if (!sheet) {
-      return ContentService
-        .createTextOutput(JSON.stringify({
-          bitmap: "",
-          totalFrames: 0,
-          message: 'No progress sheet found'
-        }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
+    // Read all completion data from Frame Completion sheet
+    const dataRange = frameCompletionSheet.getRange(2, 1, FRAME_COMPLETION_ROWS, 1).getValues();
 
-    const dataRange = sheet.getDataRange().getValues();
-
-    if (dataRange.length <= 1) {
-      return ContentService
-        .createTextOutput(JSON.stringify({
-          bitmap: "",
-          totalFrames: 0,
-          message: 'No data found'
-        }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-
-    // Find column indices
-    const headers = dataRange[0];
-    const frameIdxCol = headers.indexOf('frameIdx');
-    const kernelIdxCol = headers.indexOf('kernelIdx');
-
-    if (frameIdxCol === -1 || kernelIdxCol === -1) {
-      throw new Error('Required columns not found');
-    }
-
-    // Create bitmap for 2,102,800 frames (262,850 bytes)
-    const TOTAL_FRAMES = 2102800;
+    // Convert 64-bit values to 8-bit bitmap
     const bitmapBytes = Math.ceil(TOTAL_FRAMES / 8);
     const bitmap = new Uint8Array(bitmapBytes);
 
-    // Process all rows and set bits for completed frames
-    for (let i = 1; i < dataRange.length; i++) {
-      const row = dataRange[i];
-      const kernelIdx = parseInt(row[kernelIdxCol]) || 0;
-      const frameIdx = parseInt(row[frameIdxCol]) || 0;
+    for (let rowIdx = 0; rowIdx < dataRange.length && rowIdx < FRAME_COMPLETION_ROWS; rowIdx++) {
+      const bitmapValue = BigInt(dataRange[rowIdx][0] || '0');
 
-      // Frame is complete when kernelIdx == 15
-      if (kernelIdx === 15 && frameIdx >= 0 && frameIdx < TOTAL_FRAMES) {
-        const byteIdx = Math.floor(frameIdx / 8);
-        const bitIdx = frameIdx % 8;
-        bitmap[byteIdx] |= (1 << bitIdx);
+      // Each row contains 64 bits, convert to 8 bytes
+      for (let byteInRow = 0; byteInRow < 8; byteInRow++) {
+        const globalByteIdx = rowIdx * 8 + byteInRow;
+        if (globalByteIdx >= bitmapBytes) break;
+
+        // Extract 8 bits from the 64-bit value
+        const byteValue = Number((bitmapValue >> BigInt(byteInRow * 8)) & BigInt(0xFF));
+        bitmap[globalByteIdx] = byteValue;
       }
     }
 
     // Convert bitmap to base64 for transmission
     const bitmapBase64 = Utilities.base64Encode(bitmap);
 
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        bitmap: bitmapBase64,
-        totalFrames: TOTAL_FRAMES,
-        bitmapSize: bitmapBytes
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return sendJsonResponse(true, 'Frame cache retrieved successfully', {
+      bitmap: bitmapBase64,
+      totalFrames: TOTAL_FRAMES,
+      bitmapSize: bitmapBytes
+    });
   });
 }
 
 /**
- * Get frames that do NOT have all 16 kernelIds (0-15) completed
- * Uses the "Kernel Counts" pivot table sheet for efficient lookup
- * Returns array of frameIdx values
+ * Updates summary data for histogram tracking
+ * Increments count if bestGenerations exists, otherwise creates new row
  */
-function googleGetIncompleteFrames(e, spreadsheetId) {
+function googleSendSummaryData(e, spreadsheetId) {
   return withLock(() => {
-    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    const sheet = spreadsheet.getSheetByName('Kernel Counts');
+    // Use GET parameters only
+    const data = e.parameter;
 
-    if (!sheet) {
-      return ContentService
-        .createTextOutput(JSON.stringify([]))
-        .setMimeType(ContentService.MimeType.JSON);
+    // Validate required parameters
+    if (!data.bestGenerations || !data.bestPattern || !data.bestPatternBin) {
+      return sendJsonResponse(false, 'Missing required parameters: bestGenerations, bestPattern, bestPatternBin');
     }
 
-    const dataRange = sheet.getDataRange().getValues();
+    const bestGenerations = parseInt(data.bestGenerations);
+    if (isNaN(bestGenerations) || bestGenerations < 0) {
+      return sendJsonResponse(false, 'Invalid bestGenerations parameter: must be a non-negative integer');
+    }
 
-    if (dataRange.length <= 1) {
-      return ContentService
-        .createTextOutput(JSON.stringify([]))
-        .setMimeType(ContentService.MimeType.JSON);
+    const bestPattern = data.bestPattern;
+    const bestPatternBin = data.bestPatternBin;
+
+    // Get the spreadsheet and worksheet
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    const sheet = spreadsheet.getSheetByName(SUMMARY_DATA_SHEET_NAME);
+
+    if (!sheet) {
+      return sendJsonResponse(false, 'Summary Data sheet not found');
+    }
+
+    // Get all data to search for existing row
+    const dataRange = sheet.getDataRange();
+    const data_values = dataRange.getValues();
+
+    if (data_values.length === 0) {
+      return sendJsonResponse(false, 'Summary Data sheet is empty');
     }
 
     // Find column indices
-    const headers = dataRange[0];
-    const frameIdxCol = headers.indexOf('frameIdx');
-    const kernelCountCol = headers.indexOf('kernelCount');
+    const headers = data_values[0];
+    const bestGenerationsCol = headers.indexOf('bestGenerations');
+    const countCol = headers.indexOf('count');
+    const bestPatternCol = headers.indexOf('bestPattern');
+    const bestPatternBinCol = headers.indexOf('bestPatternBin');
 
-    if (frameIdxCol === -1 || kernelCountCol === -1) {
-      throw new Error('Required columns (frameIdx, kernelCount) not found in Kernel Counts sheet');
+    if (bestGenerationsCol === -1 || countCol === -1 || bestPatternCol === -1 || bestPatternBinCol === -1) {
+      return sendJsonResponse(false, 'Required columns not found in Summary Data sheet: bestGenerations, count, bestPattern, bestPatternBin');
     }
 
-    // Find frames with incomplete kernel counts (< 16)
-    const incompleteFrames = [];
-    const expectedKernels = 16;
-
-    for (let i = 1; i < dataRange.length; i++) {
-      const row = dataRange[i];
-      const frameIdx = parseInt(row[frameIdxCol]) || 0;
-      const kernelCount = parseInt(row[kernelCountCol]) || 0;
-
-      // Frame is incomplete if it has fewer than 16 kernels
-      if (kernelCount < expectedKernels && frameIdx >= 0) {
-        incompleteFrames.push(frameIdx);
+    // Search for existing row with same bestGenerations
+    let foundRow = -1;
+    for (let i = 1; i < data_values.length; i++) {
+      const rowBestGenerations = parseInt(data_values[i][bestGenerationsCol]) || 0;
+      if (rowBestGenerations === bestGenerations) {
+        foundRow = i + 1; // Convert to 1-based row index
+        break;
       }
     }
 
-    return ContentService
-      .createTextOutput(JSON.stringify(incompleteFrames))
-      .setMimeType(ContentService.MimeType.JSON);
+    if (foundRow > 0) {
+      // Increment count in existing row
+      const currentCount = parseInt(data_values[foundRow - 1][countCol]) || 0;
+      sheet.getRange(foundRow, countCol + 1).setValue(currentCount + 1);
+    } else {
+      // Add new row
+      sheet.appendRow([bestGenerations, 1, bestPattern, bestPatternBin]);
+
+      // Sort the sheet by bestGenerations column (ascending order)
+      // Get the range of all data (excluding header row)
+      const lastRow = sheet.getLastRow();
+      if (lastRow > 1) {
+        const sortRange = sheet.getRange(2, 1, lastRow - 1, 4);
+        sortRange.sort({ column: bestGenerationsCol + 1, ascending: true });
+      }
+    }
+
+    return sendJsonResponse(true, 'Summary data saved successfully');
   });
 }
+

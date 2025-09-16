@@ -354,21 +354,15 @@ static void googleCleanup() {
   curl_global_cleanup();
 }
 
-// Async version of googleSendProgress - "send and forget"
-static void googleSendProgressAsync(uint64_t frameIdx, int kernelIdx, int bestGenerations, uint64_t bestPattern,
-                                    const char* bestPatternBin) {
-  // Copy the bestPatternBin string since the original may be destroyed
-  std::string patternBinCopy(bestPatternBin ? bestPatternBin : "");
-
-  // Launch detached thread using C++11 lambda with capture list
-  // [=] captures all variables by value (copy) to ensure thread safety
-  // The lambda runs googleSendProgress with retry logic in a separate thread, then thread is detached
+// Helper function to run any operation with retry logic in a separate thread
+template <typename Func>
+static void executeWithRetryAsync(Func operation, const std::string& operationName) {
   std::thread([=]() {
     const int maxRetries = 3;
     bool finalSuccess = false;
 
     for (int attempt = 0; attempt < maxRetries; ++attempt) {
-      bool success = googleSendProgress(frameIdx, kernelIdx, bestGenerations, bestPattern, patternBinCopy.c_str());
+      bool success = operation();
       if (success) {
         finalSuccess = true;
         break;  // Success, exit retry loop
@@ -382,10 +376,21 @@ static void googleSendProgressAsync(uint64_t frameIdx, int kernelIdx, int bestGe
     }
 
     if (!finalSuccess) {
-      Logging::out() << "timestamp=" << time(NULL) << ", ERROR=Failed to send progress after " << maxRetries
-                     << " attempts (frame " << frameIdx << ")\n";
+      Logging::out() << "timestamp=" << time(NULL) << ", ERROR=Failed to " << operationName << " after " << maxRetries
+                     << " attempts\n";
     }
   }).detach();
+}
+
+// Async version of googleSendProgress - "send and forget"
+static void googleSendProgressAsync(uint64_t frameIdx, int kernelIdx, int bestGenerations, uint64_t bestPattern,
+                                    const char* bestPatternBin) {
+  // Copy the bestPatternBin string since the original may be destroyed
+  std::string patternBinCopy(bestPatternBin ? bestPatternBin : "");
+
+  executeWithRetryAsync(
+      [=]() { return googleSendProgress(frameIdx, kernelIdx, bestGenerations, bestPattern, patternBinCopy.c_str()); },
+      "send progress (frame " + std::to_string(frameIdx) + ")");
 }
 
 // Cache management functions
@@ -408,39 +413,34 @@ static bool googleIsFrameCompleteFromCache(uint64_t frameIdx) {
   return frameCache.isFrameComplete(frameIdx);
 }
 
-static std::vector<uint64_t> googleGetIncompleteFrames() {
+static bool googleSendSummaryData(int bestGenerations, uint64_t bestPattern, const char* bestPatternBin) {
   GoogleConfig config;
   if (googleGetConfig(&config) != GOOGLE_SUCCESS) {
-    return {};
+    return false;
   }
 
   // Build parameters map
   std::map<std::string, std::string> params;
-  params["action"] = "getIncompleteFrames";
+  params["action"] = "sendSummaryData";
   params["apiKey"] = config.apiKey;
+  params["bestGenerations"] = std::to_string(bestGenerations);
+  params["bestPattern"] = std::to_string(bestPattern);
+  params["bestPatternBin"] = std::string(bestPatternBin);
 
   CurlResponse response;
-  GoogleResult result = googleHttpRequest(config.webappUrl, params, &response, "getIncompleteFrames");
-
-  std::vector<uint64_t> incompleteFrames;
-  if (result == GOOGLE_SUCCESS && !response.data.empty()) {
-    try {
-      // Parse JSON array
-      nlohmann::json j = nlohmann::json::parse(response.data);
-
-      // Convert JSON array to vector<uint64_t>
-      for (const auto& frameIdx : j) {
-        if (frameIdx.is_number_unsigned()) {
-          incompleteFrames.push_back(frameIdx.get<uint64_t>());
-        }
-      }
-    } catch (const nlohmann::json::exception& e) {
-      std::cerr << "[ERROR] Failed to parse incomplete frames JSON: " << e.what() << "\n";
-    }
-  }
+  GoogleResult result = googleHttpRequest(config.webappUrl, params, &response, "sendSummaryData");
 
   googleCleanupResponse(&response);
-  return incompleteFrames;
+  return (result == GOOGLE_SUCCESS);
+}
+
+// Async version of googleSendSummaryData - "send and forget"
+static void googleSendSummaryDataAsync(int bestGenerations, uint64_t bestPattern, const char* bestPatternBin) {
+  // Copy the bestPatternBin string since the original may be destroyed
+  std::string patternBinCopy(bestPatternBin ? bestPatternBin : "");
+
+  executeWithRetryAsync([=]() { return googleSendSummaryData(bestGenerations, bestPattern, patternBinCopy.c_str()); },
+                        "send summary data (bestGenerations=" + std::to_string(bestGenerations) + ")");
 }
 
 #endif
