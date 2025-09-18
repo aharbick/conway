@@ -82,8 +82,7 @@ int main(int argc, char** argv) {
       if (frameIdx > 0 && frameIdx % 100000 == 0) {
         double progress = (double)frameIdx / totalFrames * 100.0;
         std::cout << "Progress: " << frameIdx << "/" << totalFrames << " (" << std::fixed << std::setprecision(1)
-                  << progress << "%), "
-                  << "completed so far: " << completedFrames << "\n";
+                  << progress << "%), " << "completed so far: " << completedFrames << "\n";
       }
     }
 

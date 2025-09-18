@@ -25,23 +25,35 @@ HAS_CUDA := $(shell which nvcc)
 
 # Check for CUDA requirement
 ifeq (,$(HAS_CUDA))
-	$(error CUDA is required. Please install NVIDIA CUDA toolkit and ensure nvcc is in your PATH)
+$(error CUDA is required. Please install NVIDIA CUDA toolkit and ensure nvcc is in your PATH)
 endif
 
 # Set compiler to NVCC
 NVCC=nvcc -x cu
 
 # Auto-detect GPU architecture
-GPU_ARCH := $(shell nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d '.')
+GPU_COMPUTE_CAP := $(shell nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits 2>/dev/null | head -1)
+
+# Map compute capability to supported architecture
+ifeq ($(GPU_COMPUTE_CAP),12.0)
+	GPU_ARCH := 89
+else ifeq ($(GPU_COMPUTE_CAP),8.9)
+	GPU_ARCH := 89
+else ifeq ($(GPU_COMPUTE_CAP),8.7)
+	GPU_ARCH := 87
+else ifeq ($(GPU_COMPUTE_CAP),8.6)
+	GPU_ARCH := 86
+else ifeq ($(GPU_COMPUTE_CAP),7.5)
+	GPU_ARCH := 75
+else
+	GPU_ARCH := 87
+endif
 
 # Set CUDA compilation flags
 ifdef JETSON_NANO
 	NVCFLAGS=-arch=sm_53 -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
-else ifdef GPU_ARCH
-	NVCFLAGS=-arch=sm_$(GPU_ARCH) -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
 else
-	# Fallback for common architectures
-	NVCFLAGS=-arch=sm_87 -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
+	NVCFLAGS=-arch=sm_$(GPU_ARCH) -w -O3 --ptxas-options=-v -lineinfo --default-stream per-thread
 endif
 
 # Set platform-specific flags
