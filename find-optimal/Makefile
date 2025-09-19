@@ -22,6 +22,7 @@ ALL_SOURCES=$(CPP_SOURCES) $(HEADER_SOURCES) $(TEST_SOURCES_FORMAT)
 
 OS := $(shell uname -s)
 HAS_CUDA := $(shell which nvcc)
+IS_WSL := $(shell grep -q microsoft /proc/version 2>/dev/null && echo "true" || echo "false")
 
 # Check for CUDA requirement
 ifeq (,$(HAS_CUDA))
@@ -61,7 +62,11 @@ ifeq ($(OS),Darwin)
 	CFLAGS = -I/opt/homebrew/include
 	LIBS = -L/opt/homebrew/lib -largp -lpthread -lcurl -lssl -lcrypto -L/usr/local/cuda/lib64 -lcudart -lcuda
 else
-	LIBS = -L/usr/local/cuda/lib64 -lcudart -lcuda -lpthread -lcurl -lssl -lcrypto
+	ifeq ($(IS_WSL),true)
+		LIBS = -L/usr/local/cuda/lib64 -L/usr/lib/wsl/lib -lcudart -lcuda -lpthread -lcurl -lssl -lcrypto
+	else
+		LIBS = -L/usr/local/cuda/lib64 -lcudart -lcuda -lpthread -lcurl -lssl -lcrypto
+	endif
 endif
 
 all: setup format-check explore-cachability find-optimal
