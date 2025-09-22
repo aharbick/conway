@@ -7,6 +7,7 @@ sudo apt update
 
 sudo apt install -y pkgconf
 sudo apt install -y build-essential
+sudo apt install -y cmake
 
 # For NVIDIA... on laptop
 # wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.1-1_all.deb

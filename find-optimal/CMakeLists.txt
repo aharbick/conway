@@ -1,0 +1,176 @@
+cmake_minimum_required(VERSION 3.18)
+project(find-optimal LANGUAGES CXX CUDA)
+
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Find CUDA
+find_package(CUDAToolkit REQUIRED)
+enable_language(CUDA)
+
+# Auto-detect GPU architecture
+execute_process(
+    COMMAND nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits
+    OUTPUT_VARIABLE GPU_COMPUTE_CAP
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+
+# Map compute capability to supported architecture
+if(GPU_COMPUTE_CAP STREQUAL "12.0")
+    set(GPU_ARCH "89")
+elseif(GPU_COMPUTE_CAP STREQUAL "8.9")
+    set(GPU_ARCH "89")
+elseif(GPU_COMPUTE_CAP STREQUAL "8.7")
+    set(GPU_ARCH "87")
+elseif(GPU_COMPUTE_CAP STREQUAL "8.6")
+    set(GPU_ARCH "86")
+elseif(GPU_COMPUTE_CAP STREQUAL "7.5")
+    set(GPU_ARCH "75")
+else()
+    set(GPU_ARCH "87")  # Default fallback
+endif()
+
+message(STATUS "Detected GPU compute capability: ${GPU_COMPUTE_CAP}")
+message(STATUS "Using CUDA architecture: sm_${GPU_ARCH}")
+
+set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES ${GPU_ARCH})
+
+# Include directories
+include_directories(include)
+include_directories(${CUDAToolkit_INCLUDE_DIRS})
+
+# CPU-only source files
+set(CPU_SOURCES
+    src/cli_parser.cpp
+    src/utils.cpp
+    src/logging.cpp
+)
+
+# CUDA source files (including .cpp files that use CUDA)
+set(CUDA_SOURCES
+    src/gol_cuda.cu
+    src/gol.cpp
+    src/find-optimal.cpp
+)
+
+# Create executable
+add_executable(find-optimal ${CPU_SOURCES} ${CUDA_SOURCES})
+
+# Set CUDA properties for CUDA source files
+set_source_files_properties(${CUDA_SOURCES} PROPERTIES LANGUAGE CUDA)
+
+# Link libraries
+target_link_libraries(find-optimal
+    CUDA::cudart
+    CUDA::cuda_driver
+)
+
+# Platform-specific libraries
+if(WIN32)
+    target_link_libraries(find-optimal ws2_32 crypt32)
+else()
+    # Check if we're in WSL
+    execute_process(
+        COMMAND grep -q microsoft /proc/version
+        RESULT_VARIABLE IS_WSL
+        ERROR_QUIET
+    )
+
+    if(IS_WSL EQUAL 0)
+        # WSL-specific library paths
+        target_link_directories(find-optimal PRIVATE /usr/lib/wsl/lib)
+    endif()
+
+    target_link_libraries(find-optimal pthread curl ssl crypto)
+endif()
+
+# Set CUDA properties
+set_target_properties(find-optimal PROPERTIES
+    CUDA_RUNTIME_LIBRARY Static
+    CUDA_SEPARABLE_COMPILATION ON
+)
+
+# Additional executables
+add_executable(explore-cachability src/explore-cachability.cpp)
+add_executable(validate-frame-search-completeness src/validate_frame_search_completeness.cpp)
+
+# Code formatting targets
+find_program(CLANG_FORMAT_EXE NAMES "clang-format")
+if(CLANG_FORMAT_EXE)
+    # Collect all source files for formatting
+    file(GLOB_RECURSE ALL_SOURCE_FILES
+        ${CMAKE_SOURCE_DIR}/src/*.cpp
+        ${CMAKE_SOURCE_DIR}/src/*.cu
+        ${CMAKE_SOURCE_DIR}/include/*.h
+        ${CMAKE_SOURCE_DIR}/tests/*.cpp
+    )
+
+    # Format check target
+    add_custom_target(format-check
+        COMMAND ${CLANG_FORMAT_EXE} --dry-run --Werror ${ALL_SOURCE_FILES}
+        COMMENT "Checking if code formatting is needed..."
+        VERBATIM
+    )
+
+    # Format fix target
+    add_custom_target(format-fix
+        COMMAND ${CLANG_FORMAT_EXE} -i ${ALL_SOURCE_FILES}
+        COMMENT "Formatting code..."
+        VERBATIM
+    )
+else()
+    message(WARNING "clang-format not found - formatting targets will not be available")
+endif()
+
+# Unit testing support
+option(BUILD_TESTING "Build tests" ON)
+if(BUILD_TESTING)
+    enable_testing()
+
+    # Find required packages for testing
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GTEST REQUIRED gtest)
+
+    if(GTEST_FOUND)
+        # Collect test source files
+        file(GLOB TEST_SOURCES ${CMAKE_SOURCE_DIR}/tests/*.cpp)
+
+        if(TEST_SOURCES)
+            # Create test executable
+            add_executable(run_tests ${TEST_SOURCES})
+
+            # Link test libraries
+            target_link_libraries(run_tests
+                ${GTEST_LIBRARIES}
+                gtest_main
+                pthread
+                curl
+            )
+
+            # Include test directories
+            target_include_directories(run_tests PRIVATE
+                ${CMAKE_SOURCE_DIR}/include
+                ${GTEST_INCLUDE_DIRS}
+            )
+
+            # Add test compilation flags
+            target_compile_options(run_tests PRIVATE ${GTEST_CFLAGS})
+
+            # Register the test
+            add_test(NAME unit_tests COMMAND run_tests)
+
+            # Custom test target
+            add_custom_target(run-tests
+                COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+                DEPENDS run_tests
+                COMMENT "Running unit tests..."
+            )
+        else()
+            message(STATUS "No test files found in tests/ directory")
+        endif()
+    else()
+        message(WARNING "gtest not found - unit testing will not be available")
+    endif()
+endif()
