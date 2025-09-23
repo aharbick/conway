@@ -130,8 +130,19 @@ if(BUILD_TESTING)
     enable_testing()
 
     # Find required packages for testing
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(GTEST REQUIRED gtest)
+    if(WIN32)
+        # On Windows, try to find GTest directly
+        find_package(GTest)
+        set(GTEST_FOUND ${GTest_FOUND})
+        if(GTEST_FOUND)
+            set(GTEST_LIBRARIES GTest::gtest GTest::gtest_main)
+            set(GTEST_INCLUDE_DIRS "")
+        endif()
+    else()
+        # On Linux/WSL, use PkgConfig
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(GTEST REQUIRED gtest)
+    endif()
 
     if(GTEST_FOUND)
         # Collect test source files
