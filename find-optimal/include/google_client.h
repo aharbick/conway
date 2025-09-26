@@ -253,6 +253,10 @@ class FrameCompletionCache {
     return loaded;
   }
 
+  void markAsLoaded() {
+    loaded = true;
+  }
+
   uint64_t getCompletedCount() const {
     return completedCount;
   }
@@ -376,7 +380,7 @@ static void executeWithRetryAsync(Func operation, const std::string& operationNa
     }
 
     if (!finalSuccess) {
-      Logging::out() << "timestamp=" << time(NULL) << ", ERROR=Failed to " << operationName << " after " << maxRetries
+      Logger::out() << "timestamp=" << time(NULL) << ", ERROR=Failed to " << operationName << " after " << maxRetries
                      << " attempts\n";
     }
   }).detach();
@@ -402,15 +406,24 @@ static uint64_t googleGetFrameCacheCompletedCount() {
   return frameCache.getCompletedCount();
 }
 
-static bool googleIsFrameCompleteFromCache(uint64_t frameIdx) {
+static bool googleGetFrameCompleteFromCache(uint64_t frameIdx) {
   // Load cache on first use
   if (!frameCache.isLoaded()) {
     if (!frameCache.loadFromAPI()) {
-      // Cache loading failed, assume frame is incomplete to be safe
-      return false;
+      // Cache loading failed, but we should still mark it as loaded
+      // to start with an empty cache and rely on local state
+      frameCache.markAsLoaded();
     }
   }
   return frameCache.isFrameComplete(frameIdx);
+}
+
+static void googleSetFrameCompleteInCache(uint64_t frameIdx) {
+  // Ensure cache is initialized (even if just as empty cache)
+  if (!frameCache.isLoaded()) {
+    frameCache.markAsLoaded();
+  }
+  frameCache.setFrameComplete(frameIdx);
 }
 
 static bool googleSendSummaryData(int bestGenerations, uint64_t bestPattern, const char* bestPatternBin,

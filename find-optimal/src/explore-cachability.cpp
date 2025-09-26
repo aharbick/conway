@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
 
 #include <cstdint>
 #include <iomanip>
@@ -13,6 +12,7 @@
 #include <set>
 
 #include "display_utils.h"
+#include "platform_compat.h"
 using namespace std;
 
 static const uint64_t gNeighborFilters[64] = {
@@ -51,7 +51,7 @@ static const uint64_t gNeighborFilters[64] = {
 uint64_t computeNextGeneration(uint64_t currentGeneration) {
   uint64_t nextGeneration = currentGeneration;
   for (int i = 0; i < 64; i++) {
-    uint64_t neighbors = __builtin_popcountll(currentGeneration & gNeighborFilters[i]);
+    uint64_t neighbors = POPCOUNTLL(currentGeneration & gNeighborFilters[i]);
     if (currentGeneration & (1ULL << i)) {
       // Currently alive...
       if (neighbors <= 1) {

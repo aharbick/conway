@@ -109,9 +109,14 @@ __host__ void reportKernelResults(gol::SearchMemory &mem, ProgramArgs *cli, doub
   formattedRate.imbue(std::locale(""));
   formattedRate << patternsPerSec;
 
-  Logging::out() << "timestamp=" << time(NULL) << ", frameIdx=" << frameIdx << ", kernelIdx=" << kernelIdx
+  Logger::out() << "timestamp=" << time(NULL) << ", frameIdx=" << frameIdx << ", kernelIdx=" << kernelIdx
                  << ", bestGenerations=" << (int)*mem.h_bestGenerations() << ", bestPattern=" << *mem.h_bestPattern()
                  << ", bestPatternBin=" << bestPatternBin << ", patternsPerSec=" << formattedRate.str() << "\n";
+
+  // Always mark frame as complete locally when all kernels are done
+  if (isFrameComplete) {
+    googleSetFrameCompleteInCache(frameIdx);
+  }
 
   if (!cli->dontSaveResults) {
     // Pass frameIdx if this completes the frame (kernelIdx == 15), otherwise pass UINT64_MAX

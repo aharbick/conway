@@ -5,9 +5,73 @@ project(find-optimal LANGUAGES CXX CUDA)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Print helpful information for Windows users
+if(WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    message(STATUS "")
+    message(STATUS "Windows build detected. If you encounter dependency errors:")
+    message(STATUS "1. Install vcpkg dependencies: vcpkg install curl:x64-windows openssl:x64-windows nlohmann-json:x64-windows")
+    message(STATUS "2. Run vcpkg integration: vcpkg integrate install")
+    message(STATUS "3. Or set CMAKE_TOOLCHAIN_FILE to your vcpkg toolchain file")
+    message(STATUS "")
+endif()
+
 # Find CUDA
 find_package(CUDAToolkit REQUIRED)
 enable_language(CUDA)
+
+# Handle argp library for cross-platform support
+if(WIN32)
+    include(FetchContent)
+    FetchContent_Declare(
+        argp-standalone
+        GIT_REPOSITORY https://github.com/tom42/argp-standalone.git
+        GIT_TAG master
+    )
+    FetchContent_MakeAvailable(argp-standalone)
+    set(ARGP_LIBRARIES argp-standalone)
+else()
+    # On Unix systems, argp is typically part of glibc
+    set(ARGP_LIBRARIES "")
+endif()
+
+# Handle libcurl and OpenSSL dependencies
+find_package(CURL REQUIRED)
+if(NOT CURL_FOUND)
+    if(WIN32)
+        message(FATAL_ERROR "libcurl not found. Please install via vcpkg: vcpkg install curl:x64-windows")
+    else()
+        message(FATAL_ERROR "libcurl not found. Please install libcurl development package.")
+    endif()
+endif()
+
+find_package(OpenSSL REQUIRED)
+if(NOT OpenSSL_FOUND)
+    if(WIN32)
+        message(FATAL_ERROR "OpenSSL not found. Please install via vcpkg: vcpkg install openssl:x64-windows")
+    else()
+        message(FATAL_ERROR "OpenSSL not found. Please install OpenSSL development package.")
+    endif()
+endif()
+
+# Find nlohmann_json (used by google_client.h)
+find_package(nlohmann_json REQUIRED)
+if(NOT nlohmann_json_FOUND)
+    if(WIN32)
+        message(FATAL_ERROR "nlohmann_json not found. Please install via vcpkg: vcpkg install nlohmann-json:x64-windows")
+    else()
+        message(FATAL_ERROR "nlohmann_json not found. Please install nlohmann-json development package.")
+    endif()
+endif()
+
+if(WIN32)
+    # On Windows with vcpkg, use the imported targets
+    set(CURL_LIBRARIES CURL::libcurl)
+    set(OPENSSL_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
+else()
+    # On Unix systems, use the imported targets
+    set(CURL_LIBRARIES CURL::libcurl)
+    set(OPENSSL_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
+endif()
 
 # Auto-detect GPU architecture
 execute_process(
@@ -65,6 +129,10 @@ set_source_files_properties(${CUDA_SOURCES} PROPERTIES LANGUAGE CUDA)
 target_link_libraries(find-optimal
     CUDA::cudart
     CUDA::cuda_driver
+    ${ARGP_LIBRARIES}
+    ${CURL_LIBRARIES}
+    ${OPENSSL_LIBRARIES}
+    nlohmann_json::nlohmann_json
 )
 
 # Platform-specific libraries
@@ -83,7 +151,7 @@ else()
         target_link_directories(find-optimal PRIVATE /usr/lib/wsl/lib)
     endif()
 
-    target_link_libraries(find-optimal pthread curl ssl crypto)
+    target_link_libraries(find-optimal pthread)
 endif()
 
 # Set CUDA properties
@@ -131,8 +199,8 @@ if(BUILD_TESTING)
 
     # Find required packages for testing
     if(WIN32)
-        # On Windows, try to find GTest directly
-        find_package(GTest)
+        # On Windows with vcpkg, find GTest via CONFIG mode
+        find_package(GTest CONFIG)
         set(GTEST_FOUND ${GTest_FOUND})
         if(GTEST_FOUND)
             set(GTEST_LIBRARIES GTest::gtest GTest::gtest_main)
@@ -155,10 +223,14 @@ if(BUILD_TESTING)
             # Link test libraries
             target_link_libraries(run_tests
                 ${GTEST_LIBRARIES}
-                gtest_main
-                pthread
-                curl
+                ${CURL_LIBRARIES}
+                ${OPENSSL_LIBRARIES}
             )
+
+            # Platform-specific additional libraries
+            if(NOT WIN32)
+                target_link_libraries(run_tests pthread)
+            endif()
 
             # Include test directories
             target_include_directories(run_tests PRIVATE

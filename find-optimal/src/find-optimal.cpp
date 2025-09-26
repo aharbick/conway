@@ -1,11 +1,8 @@
 #include <locale.h>
-#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
-#include <unistd.h>
 
 #include <chrono>
 #include <iomanip>
@@ -18,12 +15,13 @@
 #include "constants.h"
 #include "gol.h"
 #include "logging.h"
+#include "platform_compat.h"
 
 static void printCudaDeviceInfo(ProgramArgs* cli) {
   int deviceCount;
   cudaGetDeviceCount(&deviceCount);
-  Logging::out() << "CUDA devices available: " << deviceCount << "\n";
-  Logging::out() << "Using 1 GPU with blockSize=" << FRAME_SEARCH_GRID_SIZE
+  Logger::out() << "CUDA devices available: " << deviceCount << "\n";
+  Logger::out() << "Using 1 GPU with blockSize=" << FRAME_SEARCH_GRID_SIZE
                  << ", threadsPerBlock=" << FRAME_SEARCH_THREADS_PER_BLOCK << "\n";
 }
 
@@ -34,25 +32,33 @@ int main(int argc, char** argv) {
   // Change stdout to not buffered
   setvbuf(stdout, NULL, _IONBF, 0);
 
-  // Initialize Google client
-  googleInit();
-
-  // Check Google configuration and warn once if not configured
-  GoogleConfig googleConfig;
-  if (googleGetConfig(&googleConfig) != GOOGLE_SUCCESS) {
-    std::cerr << "[ERROR] Progress will not be saved to Google Sheets\n";
-  }
-
-  // Process the arguments using CLI parser
+  // Process the arguments using CLI parser first
   auto* cli = parseCommandLineArgs(argc, argv);
   if (!cli) {
     std::cerr << "[ERROR] Failed to parse command line arguments\n";
-    googleCleanup();
     return 1;
   }
 
+  // Initialize Google client
+  googleInit();
+
   // Initialize logging system
-  Logging::LogManager::initialize(cli);
+  Logger::initialize(cli);
+
+  // Print CUDA device info early
+  printCudaDeviceInfo(cli);
+
+  // Handle Google Sheets configuration
+  if (cli->dontSaveResults) {
+    Logger::out() << "Not saving results to Google Sheets (--dont-save-results specified)\n";
+  } else {
+    // Check Google configuration and warn if not configured
+    GoogleConfig googleConfig;
+    if (googleGetConfig(&googleConfig) != GOOGLE_SUCCESS) {
+      Logger::out() << "Google Sheets API is not configured. Processing all frames and not saving results.\n";
+      cli->dontSaveResults = true;  // Prevent sending attempts
+    }
+  }
 
 
   // Handle test-frame-cache flag
@@ -74,7 +80,7 @@ int main(int argc, char** argv) {
 
     // Sample frames for progress reporting
     for (uint64_t frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
-      if (googleIsFrameCompleteFromCache(frameIdx)) {
+      if (googleGetFrameCompleteFromCache(frameIdx)) {
         completedFrames++;
       }
 
@@ -185,21 +191,18 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-#ifdef __NVCC__
-  printCudaDeviceInfo(cli);
-#endif
 
   // Initialize global best generations from Google Sheets database
   int dbBestGenerations = googleGetBestResult();
   if (dbBestGenerations > 0) {
     gBestGenerations = dbBestGenerations;
-    Logging::out() << "Best generations so far: " << gBestGenerations << "\n";
+    Logger::out() << "Best generations so far: " << gBestGenerations << "\n";
   }
 
   // Initialize frame completion cache
   if (googleLoadFrameCache()) {
     uint64_t completedFrames = googleGetFrameCacheCompletedCount();
-    Logging::out() << "Frame completion cache initialized with " << completedFrames << " completed frames\n";
+    Logger::out() << "Frame completion cache initialized with " << completedFrames << " completed frames\n";
   }
 
   search(cli);

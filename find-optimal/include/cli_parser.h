@@ -7,7 +7,6 @@
 typedef enum { CYCLE_DETECTION_FLOYD, CYCLE_DETECTION_NIVASCH } CycleDetectionAlgorithm;
 
 typedef struct ProgramArgs {
-  bool verbose;
   bool testProgressApi;
   bool testSummaryApi;
   bool testFrameCache;

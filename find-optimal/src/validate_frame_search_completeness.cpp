@@ -15,6 +15,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "platform_compat.h"
+
 #ifndef __NVCC__
 #define __host__
 #define __device__
@@ -95,7 +97,7 @@ class CompletenessValidator {
 
     // Verify frame mask covers exactly the perimeter
     uint64_t frameMask = extractFrame(0xFFFFFFFFFFFFFFFFULL);
-    int frameBits = __builtin_popcountll(frameMask);
+    int frameBits = POPCOUNTLL(frameMask);
 
     std::cout << "Frame bits: " << frameBits << "\n";
     std::cout << "Expected: 24 (perimeter of 8x8 grid)\n";

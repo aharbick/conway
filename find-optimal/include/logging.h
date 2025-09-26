@@ -7,22 +7,38 @@
 
 #include "cli_parser.h"
 
-namespace Logging {
-class LogManager {
+class Logger {
  private:
   std::unique_ptr<std::ofstream> logFile;
-  LogManager() = default;               // Private default constructor
-  LogManager(const ProgramArgs* args);  // Private constructor with args
+
+  // Private constructors for singleton
+  Logger() = default;
+  Logger(const ProgramArgs* args);
 
  public:
   static void initialize(const ProgramArgs* args);
-  static LogManager& getInstance();
-  std::ostream& out();  // Declaration only
-  ~LogManager() = default;
-};
+  static Logger& out();
 
-// Convenience function declaration
-std::ostream& out();
-}  // namespace Logging
+  template<typename T>
+  Logger& operator<<(const T& data) {
+    std::cout << data;
+    if (logFile && logFile->is_open()) {
+      *logFile << data;
+      logFile->flush();
+    }
+    return *this;
+  }
+
+  // Handle stream manipulators (endl, flush, etc.)
+  Logger& operator<<(std::ostream& (*manip)(std::ostream&)) {
+    manip(std::cout);
+    if (logFile && logFile->is_open()) {
+      manip(*logFile);
+    }
+    return *this;
+  }
+
+  ~Logger() = default;
+};
 
 #endif

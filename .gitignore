@@ -40,4 +40,5 @@ analysis
 build
 third-party
 .vscode
+.vs
 .ipynb_checkpoints

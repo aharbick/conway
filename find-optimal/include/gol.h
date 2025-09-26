@@ -5,13 +5,14 @@
 #include <assert.h>
 #include <limits.h>
 #include <locale.h>
-#include <pthread.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <unistd.h>
+
+// Platform compatibility
+#include "platform_compat.h"
 
 #include <cstdint>
 #include <mutex>

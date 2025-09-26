@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "platform_compat.h"
+
 #ifndef __NVCC__
 #define __host__
 #define __device__
@@ -80,8 +82,8 @@ TEST_F(SearchSpaceReductionTest, BitAllocationArithmetic) {
   uint64_t frameMask = extractFrame(0xFFFFFFFFFFFFFFFFULL);
   uint64_t kernelMask = (3ULL << 3) | (3ULL << 59);  // K bits
 
-  int frameBits = __builtin_popcountll(frameMask);
-  int kernelBits = __builtin_popcountll(kernelMask);
+  int frameBits = POPCOUNTLL(frameMask);
+  int kernelBits = POPCOUNTLL(kernelMask);
   int totalAccountedBits = frameBits + kernelBits;
   int interiorBits = 64 - totalAccountedBits;
 
@@ -189,30 +191,30 @@ TEST_F(SearchSpaceReductionTest, CUDAKernelBitCoverage) {
 
   uint64_t allCudaBits = tLowerMask | tUpperMask | bLowerMask | bUpperMask | pMask;
 
-  int tLowerBits = __builtin_popcountll(tLowerMask);
-  int tUpperBits = __builtin_popcountll(tUpperMask);
-  int bLowerBits = __builtin_popcountll(bLowerMask);
-  int bUpperBits = __builtin_popcountll(bUpperMask);
-  int pBits = __builtin_popcountll(pMask);
-  int totalCudaBits = __builtin_popcountll(allCudaBits);
+  int tLowerBits = POPCOUNTLL(tLowerMask);
+  int tUpperBits = POPCOUNTLL(tUpperMask);
+  int bLowerBits = POPCOUNTLL(bLowerMask);
+  int bUpperBits = POPCOUNTLL(bUpperMask);
+  int pBits = POPCOUNTLL(pMask);
+  int totalCudaBits = POPCOUNTLL(allCudaBits);
 
   // Verify this matches our expected interior bit count
   uint64_t frameMask = extractFrame(0xFFFFFFFFFFFFFFFFULL);
   uint64_t kernelMask = (3ULL << 3) | (3ULL << 59);
   uint64_t expectedInteriorMask = ~(frameMask | kernelMask);
-  int expectedInteriorBits = __builtin_popcountll(expectedInteriorMask);
+  int expectedInteriorBits = POPCOUNTLL(expectedInteriorMask);
 
   // The CUDA bits should cover exactly the interior bits
   uint64_t overlapWithExpected = allCudaBits & expectedInteriorMask;
-  int overlapBits = __builtin_popcountll(overlapWithExpected);
+  int overlapBits = POPCOUNTLL(overlapWithExpected);
 
   // Check for any uncovered interior bits
   uint64_t uncoveredInterior = expectedInteriorMask & ~allCudaBits;
-  int uncoveredBits = __builtin_popcountll(uncoveredInterior);
+  int uncoveredBits = POPCOUNTLL(uncoveredInterior);
 
   // Check for any CUDA bits that extend beyond interior
   uint64_t extraCudaBits = allCudaBits & ~expectedInteriorMask;
-  int extraBits = __builtin_popcountll(extraCudaBits);
+  int extraBits = POPCOUNTLL(extraCudaBits);
 
   // Allow for small discrepancies but ensure we're close
   EXPECT_GE(overlapBits, expectedInteriorBits - 5) << "CUDA should cover most interior bits";

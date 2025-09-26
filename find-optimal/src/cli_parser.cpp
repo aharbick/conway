@@ -27,7 +27,6 @@ static struct argp_option argp_options[] = {
     {"compare-cycle-algorithms", 'A', "FRAME_IDX", 0,
      "Compare Floyd's vs Nivasch's cycle detection on given frame index and exit."},
     {"dont-save-results", 'r', 0, 0, "Don't save results to Google Sheets (for testing/benchmarking)."},
-    {"verbose", 'v', 0, 0, "Verbose output."},
     {"test-progress-api", 'T', 0, 0, "Test Google Sheets Progress API functionality and exit."},
     {"test-summary-api", 'S', 0, 0, "Test Google Sheets Summary API functionality and exit."},
     {"test-frame-cache", 'C', 0, 0, "Test frame completion cache functionality and exit."},
@@ -120,7 +119,6 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
     a->dontSaveResults = true;
     break;
   case 'v':
-    a->verbose = true;
     break;
   case 'T':
     a->testProgressApi = true;
@@ -152,7 +150,6 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
 struct argp argp = {argp_options, parseArgpOptions, ProgramArgs_doc, prog_doc, 0, 0};
 
 void initializeDefaultArgs(ProgramArgs* args) {
-  args->verbose = false;
   args->testProgressApi = false;
   args->testSummaryApi = false;
   args->testFrameCache = false;

@@ -4,10 +4,8 @@
 #include <iostream>
 #include <memory>
 
-namespace Logging {
-
 // Private constructor implementation
-LogManager::LogManager(const ProgramArgs* args) {
+Logger::Logger(const ProgramArgs* args) {
   if (args && !args->logFilePath.empty()) {
     logFile = std::make_unique<std::ofstream>(args->logFilePath, std::ios::app);
     if (!logFile || !logFile->is_open()) {
@@ -21,30 +19,18 @@ LogManager::LogManager(const ProgramArgs* args) {
 }
 
 // Static shared instance
-static std::unique_ptr<LogManager> instance;
+static std::unique_ptr<Logger> instance;
 
 // Static initialize method
-void LogManager::initialize(const ProgramArgs* args) {
-  instance.reset(new LogManager(args));
+void Logger::initialize(const ProgramArgs* args) {
+  instance.reset(new Logger(args));
 }
 
-// Singleton getInstance implementation
-LogManager& LogManager::getInstance() {
+// Static out method (combines getInstance and out)
+Logger& Logger::out() {
   if (!instance) {
-    // If not initialized, create default instance (uses std::cout)
-    instance.reset(new LogManager());
+    // If not initialized, create default instance (console only)
+    instance.reset(new Logger());
   }
   return *instance;
 }
-
-// out() method implementation
-std::ostream& LogManager::out() {
-  return (logFile && logFile->is_open()) ? *logFile : std::cout;
-}
-
-// Convenience function implementation
-std::ostream& out() {
-  return LogManager::getInstance().out();
-}
-
-}  // namespace Logging

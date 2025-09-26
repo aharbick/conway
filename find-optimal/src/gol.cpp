@@ -28,7 +28,7 @@ __host__ void *search(void *args) {
   ProgramArgs *cli = static_cast<ProgramArgs *>(args);
 
   const std::string searchRangeMessage = getSearchDescription(cli);
-  Logging::out() << "Searching " << searchRangeMessage << "\n";
+  Logger::out() << "Searching " << searchRangeMessage << "\n";
 
   gol::SearchMemory mem(FRAME_SEARCH_MAX_CANDIDATES);
 
@@ -41,7 +41,7 @@ __host__ void *search(void *args) {
       // Check if this frame belongs to this worker using modulo partitioning
       if ((frameIdx % cli->totalWorkers) == (cli->workerNum - 1)) {
         // Check if frame is incomplete
-        if (!googleIsFrameCompleteFromCache(frameIdx)) {
+        if (!googleGetFrameCompleteFromCache(frameIdx)) {
           workerFrames.push_back(frameIdx);
         }
       }
@@ -55,7 +55,7 @@ __host__ void *search(void *args) {
   }
 
   // Report how many frames will be processed
-  Logging::out() << "Processing " << workerFrames.size() << " frames for this worker\n";
+  Logger::out() << "Processing " << workerFrames.size() << " frames for this worker\n";
 
   // Process all frames in the worker's list
   for (uint64_t frameIdx : workerFrames) {
@@ -93,7 +93,7 @@ __host__ std::string getSearchDescription(ProgramArgs *cli) {
 }
 
 __host__ void compareCycleDetectionAlgorithms(ProgramArgs *cli, uint64_t frameIdx) {
-  Logging::out() << "Comparing cycle detection algorithms on frameIdx: " << frameIdx << "\n";
+  Logger::out() << "Comparing cycle detection algorithms on frameIdx: " << frameIdx << "\n";
 
   uint64_t frame = getFrameByIndex(frameIdx);
   if (frame == 0) {
@@ -101,7 +101,7 @@ __host__ void compareCycleDetectionAlgorithms(ProgramArgs *cli, uint64_t frameId
     return;
   }
 
-  Logging::out() << "Frame value: " << frame << "\n\n";
+  Logger::out() << "Frame value: " << frame << "\n\n";
 
   gol::SearchMemory mem(FRAME_SEARCH_MAX_CANDIDATES);
 
@@ -114,20 +114,20 @@ __host__ void compareCycleDetectionAlgorithms(ProgramArgs *cli, uint64_t frameId
 
   // Test Floyd's algorithm
   cli->cycleDetection = CYCLE_DETECTION_FLOYD;
-  Logging::out() << "=== Testing Floyd's cycle detection ===\n";
+  Logger::out() << "=== Testing Floyd's cycle detection ===\n";
   double startTime = getHighResCurrentTime();
   executeKernelSearch(mem, cli, frame, frameIdx);
   double floydTime = getHighResCurrentTime() - startTime;
-  Logging::out() << "Floyd's algorithm completed in " << std::fixed << std::setprecision(3) << floydTime
+  Logger::out() << "Floyd's algorithm completed in " << std::fixed << std::setprecision(3) << floydTime
                  << " seconds\n\n";
 
   // Test Nivasch's algorithm
   cli->cycleDetection = CYCLE_DETECTION_NIVASCH;
-  Logging::out() << "=== Testing Nivasch's cycle detection ===\n";
+  Logger::out() << "=== Testing Nivasch's cycle detection ===\n";
   startTime = getHighResCurrentTime();
   executeKernelSearch(mem, cli, frame, frameIdx);
   double nivaschTime = getHighResCurrentTime() - startTime;
-  Logging::out() << "Nivasch's algorithm completed in " << std::fixed << std::setprecision(3) << nivaschTime
+  Logger::out() << "Nivasch's algorithm completed in " << std::fixed << std::setprecision(3) << nivaschTime
                  << " seconds\n\n";
 
   // Restore original settings
@@ -135,21 +135,21 @@ __host__ void compareCycleDetectionAlgorithms(ProgramArgs *cli, uint64_t frameId
   cli->dontSaveResults = originalDontSave;
 
   // Summary
-  Logging::out() << "=== Performance Comparison ===\n";
-  Logging::out() << "Floyd's algorithm:   " << std::fixed << std::setprecision(3) << floydTime << " seconds\n";
-  Logging::out() << "Nivasch's algorithm: " << std::fixed << std::setprecision(3) << nivaschTime << " seconds\n";
+  Logger::out() << "=== Performance Comparison ===\n";
+  Logger::out() << "Floyd's algorithm:   " << std::fixed << std::setprecision(3) << floydTime << " seconds\n";
+  Logger::out() << "Nivasch's algorithm: " << std::fixed << std::setprecision(3) << nivaschTime << " seconds\n";
 
   if (floydTime < nivaschTime) {
     double timeDiff = nivaschTime - floydTime;
     double percentDiff = (timeDiff / nivaschTime) * 100.0;
-    Logging::out() << "Floyd's was faster by " << std::fixed << std::setprecision(1) << percentDiff << "% ("
+    Logger::out() << "Floyd's was faster by " << std::fixed << std::setprecision(1) << percentDiff << "% ("
                    << std::setprecision(3) << timeDiff << " seconds)\n";
   } else if (nivaschTime < floydTime) {
     double timeDiff = floydTime - nivaschTime;
     double percentDiff = (timeDiff / floydTime) * 100.0;
-    Logging::out() << "Nivasch's was faster by " << std::fixed << std::setprecision(1) << percentDiff << "% ("
+    Logger::out() << "Nivasch's was faster by " << std::fixed << std::setprecision(1) << percentDiff << "% ("
                    << std::setprecision(3) << timeDiff << " seconds)\n";
   } else {
-    Logging::out() << "Both algorithms took the same time\n";
+    Logger::out() << "Both algorithms took the same time\n";
   }
 }
