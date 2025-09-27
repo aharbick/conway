@@ -207,9 +207,14 @@ if(BUILD_TESTING)
             set(GTEST_INCLUDE_DIRS "")
         endif()
     else()
-        # On Linux/WSL, use PkgConfig
+        # On Linux/WSL, use PkgConfig for both gtest and gtest_main
         find_package(PkgConfig REQUIRED)
         pkg_check_modules(GTEST REQUIRED gtest)
+        pkg_check_modules(GTEST_MAIN REQUIRED gtest_main)
+
+        # Combine the libraries
+        set(GTEST_LIBRARIES ${GTEST_LIBRARIES} ${GTEST_MAIN_LIBRARIES})
+        set(GTEST_INCLUDE_DIRS ${GTEST_INCLUDE_DIRS} ${GTEST_MAIN_INCLUDE_DIRS})
     endif()
 
     if(GTEST_FOUND)
