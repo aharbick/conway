@@ -251,7 +251,7 @@ if(BUILD_TESTING)
 
             # Custom test target
             add_custom_target(run-tests
-                COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+                COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
                 DEPENDS run_tests
                 COMMENT "Running unit tests..."
             )
