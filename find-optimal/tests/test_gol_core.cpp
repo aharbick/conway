@@ -795,3 +795,169 @@ TEST(GOLKernelTest, ConstructKernelBitPositions) {
     EXPECT_EQ((result & (1ULL << 60)) != 0, bit60Expected) << "Bit 60 incorrect for kernelIndex " << kernelIndex;
   }
 }
+
+// Test Toroidal Grid Mode - Tests patterns that behave differently on torus vs plane
+class GOLTorusTest : public GOLComputationTest {
+ protected:
+  // Helper to create a pattern from a binary string (most significant bit first)
+  uint64_t createPatternFromBinary(const std::string& binaryStr) {
+    uint64_t pattern = 0;
+    for (size_t i = 0; i < binaryStr.length() && i < 64; i++) {
+      if (binaryStr[i] == '1') {
+        pattern |= 1ULL << (63 - i);  // MSB first
+      }
+    }
+    return pattern;
+  }
+};
+
+TEST_F(GOLTorusTest, TorusStableVerticalEdges) {
+  // 1x2 blocks on top and bottom edges
+  // On torus: they connect to form a stable 2x2 block
+  // On plane: they die from underpopulation
+  // clang-format off
+  const char edgePattern[8][8] = {
+    {'0', '0', '0', '1', '1', '0', '0', '0'},  // 1x2 on top edge
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '1', '1', '0', '0', '0'}   // 1x2 on bottom edge
+  };
+  // clang-format on
+
+  uint64_t pattern = createPattern(edgePattern);
+
+  uint64_t planeResult = computeNextGeneration(pattern, GOL_GRID_MODE_PLANE);
+  uint64_t torusResult = computeNextGeneration(pattern, GOL_GRID_MODE_TORUS);
+
+  // On plane: should die out (both 1x2 blocks have insufficient neighbors)
+  EXPECT_EQ(planeResult, 0ULL) << "1x2 edge blocks should die on plane";
+
+  // On torus: should form stable pattern (they connect to form 2x2 block)
+  EXPECT_NE(torusResult, 0ULL) << "1x2 edge blocks should survive on torus";
+  EXPECT_NE(planeResult, torusResult) << "Results should be different between plane and torus";
+}
+
+TEST_F(GOLTorusTest, TorusStableHorizontalEdges) {
+  // 2x1 blocks on left and right edges
+  // On torus: they connect to form a stable 2x2 block
+  // On plane: they die from underpopulation
+  // clang-format off
+  const char edgePattern[8][8] = {
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'1', '0', '0', '0', '0', '0', '0', '1'},  // 2x1 blocks on
+    {'1', '0', '0', '0', '0', '0', '0', '1'},  // left and right edges
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'}
+  };
+  // clang-format on
+
+  uint64_t pattern = createPattern(edgePattern);
+
+  uint64_t planeResult = computeNextGeneration(pattern, GOL_GRID_MODE_PLANE);
+  uint64_t torusResult = computeNextGeneration(pattern, GOL_GRID_MODE_TORUS);
+
+  // On plane: should die out
+  EXPECT_EQ(planeResult, 0ULL) << "2x1 edge blocks should die on plane";
+
+  // On torus: should form stable pattern
+  EXPECT_NE(torusResult, 0ULL) << "2x1 edge blocks should survive on torus";
+  EXPECT_NE(planeResult, torusResult) << "Results should be different between plane and torus";
+}
+
+TEST_F(GOLTorusTest, TorusSpecificPattern213to33) {
+  // Test your specific pattern: 213 generations on plane -> stabilizes after 33 generations on torus
+  // clang-format off
+  const char initialPattern[8][8] = {
+    {'0', '0', '0', '1', '0', '0', '1', '1'},
+    {'1', '1', '1', '1', '1', '0', '0', '1'},
+    {'0', '0', '0', '0', '0', '1', '0', '0'},
+    {'0', '1', '0', '1', '0', '0', '0', '0'},
+    {'1', '1', '0', '0', '0', '1', '0', '0'},
+    {'1', '1', '1', '0', '0', '1', '0', '1'},
+    {'1', '1', '1', '1', '1', '0', '1', '0'},
+    {'0', '1', '1', '0', '1', '0', '0', '1'}
+  };
+  // clang-format on
+  uint64_t pattern = createPattern(initialPattern);
+
+  // Test that it runs for 213 generations on plane (dies out)
+  int planeGenerations = countGenerations(pattern, CYCLE_DETECTION_FLOYD, GOL_GRID_MODE_PLANE);
+  EXPECT_EQ(planeGenerations, 213) << "Pattern should run for 213 generations on plane";
+
+  // Test that it becomes stable on torus (returns 0 for infinite/stable)
+  int torusGenerations = countGenerations(pattern, CYCLE_DETECTION_FLOYD, GOL_GRID_MODE_TORUS);
+  EXPECT_EQ(torusGenerations, 0) << "Pattern should become stable on torus (infinite life)";
+
+  // Verify the final stable form on torus
+  // clang-format off
+  const char expectedFinalPattern[8][8] = {
+    {'0', '1', '0', '0', '0', '0', '1', '0'},
+    {'0', '1', '0', '0', '0', '0', '1', '0'},
+    {'1', '0', '0', '0', '0', '0', '0', '1'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'1', '0', '0', '0', '0', '0', '0', '1'}
+  };
+  // clang-format on
+  uint64_t expectedFinal = createPattern(expectedFinalPattern);
+
+  // Simulate 33 generations on torus to reach stable form
+  uint64_t currentPattern = pattern;
+  for (int i = 0; i < 33; i++) {
+    currentPattern = computeNextGeneration(currentPattern, GOL_GRID_MODE_TORUS);
+  }
+
+  EXPECT_EQ(currentPattern, expectedFinal) << "Pattern should stabilize to expected form after 33 generations on torus";
+}
+
+TEST_F(GOLTorusTest, TorusGliderCycle) {
+  // Test glider on torus - should have infinite life with cycle length 32
+  // Glider travels around 8x8 torus and returns to original position after 32 generations
+  // clang-format off
+  const char glider[8][8] = {
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '1', '0', '0', '0', '0', '0'},  // Standard glider pattern
+    {'0', '0', '0', '1', '0', '0', '0', '0'},
+    {'0', '1', '1', '1', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'},
+    {'0', '0', '0', '0', '0', '0', '0', '0'}
+  };
+  // clang-format on
+
+  uint64_t pattern = createPattern(glider);
+
+  // On torus: glider should be infinite/cyclical (return 0)
+  int torusGenerations = countGenerations(pattern, CYCLE_DETECTION_FLOYD, GOL_GRID_MODE_TORUS);
+  EXPECT_EQ(torusGenerations, 0) << "Glider should be infinite/cyclical on torus";
+
+  // Verify the 32-generation cycle: each generation should be different until cycle completes
+  uint64_t currentPattern = pattern;
+  uint64_t previousPattern = pattern;
+
+  for (int i = 1; i <= 32; i++) {
+    currentPattern = computeNextGeneration(currentPattern, GOL_GRID_MODE_TORUS);
+
+    if (i < 32) {
+      // Every generation before 32 should be different from original
+      EXPECT_NE(currentPattern, pattern) << "Generation " << i << " should be different from original";
+      // Every generation should be different from the previous one (glider keeps moving)
+      EXPECT_NE(currentPattern, previousPattern) << "Generation " << i << " should be different from generation " << (i-1);
+    } else {
+      // Generation 32 should return to original pattern
+      EXPECT_EQ(currentPattern, pattern) << "Generation 32 should return to original pattern";
+    }
+
+    previousPattern = currentPattern;
+  }
+}
