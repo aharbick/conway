@@ -1,0 +1,8 @@
+  # Allow specific vscode settings for find-optimal
+  !.vscode/
+  !.vscode/settings.json
+  !.vscode/launch.json.template
+
+  # Don't allow commiting launch.json because it probably has secrets in it.
+  .vscode/launch.json
+

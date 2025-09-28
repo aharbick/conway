@@ -1,0 +1,26 @@
+{
+    "files.associations": {
+        "*.h": "cuda-cpp",
+        "*.hpp": "cuda-cpp",
+        "*.cu": "cuda-cpp",
+        "*.cuh": "cuda-cpp"
+    },
+    "C_Cpp.default.defines": [
+        "__CUDACC__",
+        "__host__=",
+        "__device__=",
+        "__global__=",
+        "__shared__=",
+        "__constant__=",
+        "CUDA_VERSION=12000"
+    ],
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/include",
+        "${workspaceFolder}/**",
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v*/include",
+        "${vcpkgRoot}/x64-windows/include"
+    ],
+    "C_Cpp.default.compilerPath": "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/*/bin/Hostx64/x64/cl.exe",
+    "C_Cpp.default.intelliSenseMode": "windows-msvc-x64",
+    "C_Cpp.default.cppStandard": "c++17"
+}

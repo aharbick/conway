@@ -1,0 +1,107 @@
+{
+    "configurations": [
+        {
+            "name": "Attach by Process ID",
+            "processId": "${command:PickProcess}",
+            "request": "attach",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "type": "node"
+        },
+        {
+            "name": "find-optimal Search",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/find-optimal.exe",
+            "args": ["--frame-mode", "random", "--log-file", "${workspaceFolder}/logs/find-optimal-5090-vscode.log", "--worker", "1:2"],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "GOOGLE_WEBAPP_URL",
+                    "value": "https://script.google.com/macros/s/YOUR_APP_SCRIPT_ID/exec"
+                },
+                {
+                    "name": "GOOGLE_API_KEY",
+                    "value": "YOUR_SECRET_IN_APP_SCRIPT_SECRETS_GS"
+                }
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "find-optimal Test Summary API",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/find-optimal.exe",
+            "args": ["--test-summary-api"],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "GOOGLE_WEBAPP_URL",
+                    "value": "https://script.google.com/macros/s/YOUR_APP_SCRIPT_ID/exec"
+                },
+                {
+                    "name": "GOOGLE_API_KEY",
+                    "value": "YOUR_SECRET_IN_APP_SCRIPT_SECRETS_GS"
+                }
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "find-optimal Test Progress API",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/find-optimal.exe",
+            "args": ["--test-progress-api"],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "GOOGLE_WEBAPP_URL",
+                    "value": "https://script.google.com/macros/s/YOUR_APP_SCRIPT_ID/exec"
+                },
+                {
+                    "name": "GOOGLE_API_KEY",
+                    "value": "YOUR_SECRET_IN_APP_SCRIPT_SECRETS_GS"
+                }
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "find-optimal Test Frame Cache",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/find-optimal.exe",
+            "args": ["--test-frame-cache"],
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                {
+                    "name": "GOOGLE_WEBAPP_URL",
+                    "value": "https://script.google.com/macros/s/YOUR_APP_SCRIPT_ID/exec"
+                },
+                {
+                    "name": "GOOGLE_API_KEY",
+                    "value": "YOUR_SECRET_IN_APP_SCRIPT_SECRETS_GS"
+                }
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "find-optimal Simulate Torus",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/find-optimal.exe",
+            "args": ["--simulate", "--gol-grid-mode", "torus"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "find-optimal Simulate Planar",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/find-optimal.exe",
+            "args": ["--simulate", "--gol-grid-mode", "plane"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        }
+    ]
+}
