@@ -11,9 +11,9 @@
 
 // CUDA kernels
 __global__ void processCandidates(uint64_t *candidates, uint64_t *numCandidates, uint64_t *bestPattern,
-                                  uint64_t *bestGenerations, CycleDetectionAlgorithm algorithm) {
+                                  uint64_t *bestGenerations, CycleDetectionAlgorithm algorithm, GolGridMode gridMode) {
   for (uint64_t i = blockIdx.x * blockDim.x + threadIdx.x; i < *numCandidates; i += blockDim.x * gridDim.x) {
-    uint64_t generations = countGenerations(candidates[i], algorithm);
+    uint64_t generations = countGenerations(candidates[i], algorithm, gridMode);
     if (generations > 0) {  // Only process if it actually ended
       // Check to see if it's higher and emit it in best(Pattern|Generations)
       uint64_t old = atomicMax((unsigned long long *)bestGenerations, (unsigned long long)generations);
@@ -24,7 +24,7 @@ __global__ void processCandidates(uint64_t *candidates, uint64_t *numCandidates,
   }
 }
 
-__global__ void findCandidatesInKernel(uint64_t kernel, uint64_t *candidates, uint64_t *numCandidates) {
+__global__ void findCandidatesInKernel(uint64_t kernel, uint64_t *candidates, uint64_t *numCandidates, GolGridMode gridMode) {
   uint64_t startingPattern = kernel;
   startingPattern += ((uint64_t)(threadIdx.x & 15)) << 10;  // set the lower row of 4 'T' bits
   startingPattern += ((uint64_t)(threadIdx.x >> 4)) << 17;  // set the upper row of 6 'T' bits
@@ -40,7 +40,7 @@ __global__ void findCandidatesInKernel(uint64_t kernel, uint64_t *candidates, ui
     uint64_t generations = 0;
 
     while (generations < FAST_SEARCH_MAX_GENERATIONS) {
-      if (!step6GenerationsAndCheck(&g1, pattern, &generations, candidates, numCandidates)) {
+      if (!step6GenerationsAndCheck(&g1, pattern, &generations, candidates, numCandidates, gridMode)) {
         continue;
       }
       break;
@@ -60,7 +60,7 @@ __host__ void executeKernelSearch(gol::SearchMemory &mem, ProgramArgs *cli, uint
     *mem.h_numCandidates() = 0;
     cudaCheckError(cudaMemcpy(mem.d_numCandidates(), mem.h_numCandidates(), sizeof(uint64_t), cudaMemcpyHostToDevice));
     findCandidatesInKernel<<<FRAME_SEARCH_GRID_SIZE, FRAME_SEARCH_THREADS_PER_BLOCK>>>(kernel, mem.d_candidates(),
-                                                                                       mem.d_numCandidates());
+                                                                                       mem.d_numCandidates(), cli->golGridMode);
     cudaCheckError(cudaGetLastError());
     cudaCheckError(cudaDeviceSynchronize());
     cudaCheckError(cudaMemcpy(mem.h_numCandidates(), mem.d_numCandidates(), sizeof(uint64_t), cudaMemcpyDeviceToHost));
@@ -73,7 +73,7 @@ __host__ void executeKernelSearch(gol::SearchMemory &mem, ProgramArgs *cli, uint
           cudaMemcpy(mem.d_bestGenerations(), mem.h_bestGenerations(), sizeof(uint64_t), cudaMemcpyHostToDevice));
       cudaCheckError(cudaMemcpy(mem.d_bestPattern(), mem.h_bestPattern(), sizeof(uint64_t), cudaMemcpyHostToDevice));
       processCandidates<<<FRAME_SEARCH_GRID_SIZE, FRAME_SEARCH_THREADS_PER_BLOCK>>>(
-          mem.d_candidates(), mem.d_numCandidates(), mem.d_bestPattern(), mem.d_bestGenerations(), cli->cycleDetection);
+          mem.d_candidates(), mem.d_numCandidates(), mem.d_bestPattern(), mem.d_bestGenerations(), cli->cycleDetection, cli->golGridMode);
       cudaCheckError(cudaGetLastError());
       cudaCheckError(cudaDeviceSynchronize());
 

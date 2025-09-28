@@ -36,14 +36,50 @@ __host__ __device__ static inline void add3(uint64_t a, uint64_t b, uint64_t c, 
 }
 
 // Tom Rokicki's optimized 19-operation Conway's Game of Life computation
-__host__ __device__ static inline uint64_t computeNextGeneration(uint64_t a) {
+__host__ __device__ static inline uint64_t computeNextGeneration(uint64_t a, GolGridMode gridMode = GOL_GRID_MODE_PLANE) {
   uint64_t s0, sh2, a0, a1, sll, slh;
-  add2((a & GOL_HORIZONTAL_SHIFT_MASK) << 1, (a & GOL_VERTICAL_SHIFT_MASK) >> 1, s0, sh2);
+
+  // Compute horizontal shifts based on grid mode
+  uint64_t left_shift, right_shift;
+  if (gridMode == GOL_GRID_MODE_TORUS) {
+    // Toroidal: wrap-around shifts
+    left_shift = ((a & GOL_HORIZONTAL_SHIFT_MASK) << 1) | ((a & ~GOL_HORIZONTAL_SHIFT_MASK) >> 7);
+    right_shift = ((a & GOL_VERTICAL_SHIFT_MASK) >> 1) | ((a & ~GOL_VERTICAL_SHIFT_MASK) << 7);
+  } else {
+    // Planar: masked shifts (zeros at boundaries)
+    left_shift = (a & GOL_HORIZONTAL_SHIFT_MASK) << 1;
+    right_shift = (a & GOL_VERTICAL_SHIFT_MASK) >> 1;
+  }
+
+  add2(left_shift, right_shift, s0, sh2);
   add2(s0, a, a0, a1);
   a1 |= sh2;
-  add3(a0 >> 8, a0 << 8, s0, sll, slh);
-  uint64_t y = a1 >> 8;
-  uint64_t x = a1 << 8;
+
+  // Compute vertical shifts based on grid mode
+  uint64_t down_shift, up_shift;
+  if (gridMode == GOL_GRID_MODE_TORUS) {
+    // Toroidal: wrap-around shifts
+    down_shift = (a0 >> 8) | (a0 << 56);
+    up_shift = (a0 << 8) | (a0 >> 56);
+  } else {
+    // Planar: simple shifts (zeros at boundaries)
+    down_shift = a0 >> 8;
+    up_shift = a0 << 8;
+  }
+
+  add3(down_shift, up_shift, s0, sll, slh);
+
+  uint64_t y, x;
+  if (gridMode == GOL_GRID_MODE_TORUS) {
+    // Toroidal: wrap-around shifts
+    y = (a1 >> 8) | (a1 << 56);
+    x = (a1 << 8) | (a1 >> 56);
+  } else {
+    // Planar: simple shifts
+    y = a1 >> 8;
+    x = a1 << 8;
+  }
+
   return (x ^ y ^ sh2 ^ slh) & ((x | y) ^ (sh2 | slh)) & (sll | a);
 }
 
@@ -63,23 +99,23 @@ __host__ __device__ static inline int adjustGenerationsForDeadout(int generation
 }
 
 // Floyd's cycle detection algorithm
-__host__ __device__ static inline int floydCycleDetection(uint64_t startState, int startGenerations) {
+__host__ __device__ static inline int floydCycleDetection(uint64_t startState, int startGenerations, GolGridMode gridMode = GOL_GRID_MODE_PLANE) {
   bool ended = false;
   int generations = startGenerations;
 
   uint64_t slow = startState;
-  uint64_t fast = computeNextGeneration(slow);
+  uint64_t fast = computeNextGeneration(slow, gridMode);
 
   do {
     generations++;
-    uint64_t nextSlow = computeNextGeneration(slow);
+    uint64_t nextSlow = computeNextGeneration(slow, gridMode);
 
     if (slow == nextSlow) {
       ended = true;  // If we didn't change then we ended
       break;
     }
     slow = nextSlow;
-    fast = computeNextGeneration(computeNextGeneration(fast));
+    fast = computeNextGeneration(computeNextGeneration(fast, gridMode), gridMode);
   } while (slow != fast);
 
   ended = slow == 0;  // If we died out then we ended
@@ -92,7 +128,7 @@ struct NivaschStackEntry {
   int time;
 };
 
-__host__ __device__ static inline int nivaschCycleDetection(uint64_t startState, int startGenerations) {
+__host__ __device__ static inline int nivaschCycleDetection(uint64_t startState, int startGenerations, GolGridMode gridMode = GOL_GRID_MODE_PLANE) {
   bool ended = false;
 
   // Multi-stack Nivasch algorithm
@@ -104,7 +140,7 @@ __host__ __device__ static inline int nivaschCycleDetection(uint64_t startState,
 
   while (time < 10000) {  // Reasonable upper bound
     time++;
-    uint64_t next = computeNextGeneration(current);
+    uint64_t next = computeNextGeneration(current, gridMode);
 
     // Check for stable state (no change)
     if (current == next) {
@@ -152,7 +188,8 @@ __host__ __device__ static inline int nivaschCycleDetection(uint64_t startState,
 
 // Core generation counting logic - determines how long patterns run
 __host__ __device__ static inline int countGenerations(uint64_t pattern,
-                                                       CycleDetectionAlgorithm algorithm = CYCLE_DETECTION_FLOYD) {
+                                                       CycleDetectionAlgorithm algorithm = CYCLE_DETECTION_FLOYD,
+                                                       GolGridMode gridMode = GOL_GRID_MODE_PLANE) {
   bool ended = false;
   int generations = 0;
 
@@ -162,12 +199,12 @@ __host__ __device__ static inline int countGenerations(uint64_t pattern,
   g1 = pattern;
   do {
     generations += 6;
-    g2 = computeNextGeneration(g1);
-    g3 = computeNextGeneration(g2);
-    g4 = computeNextGeneration(g3);
-    g5 = computeNextGeneration(g4);
-    g6 = computeNextGeneration(g5);
-    g1 = computeNextGeneration(g6);
+    g2 = computeNextGeneration(g1, gridMode);
+    g3 = computeNextGeneration(g2, gridMode);
+    g4 = computeNextGeneration(g3, gridMode);
+    g5 = computeNextGeneration(g4, gridMode);
+    g6 = computeNextGeneration(g5, gridMode);
+    g1 = computeNextGeneration(g6, gridMode);
 
     if (g1 == 0) {
       ended = true;  // died out
@@ -186,9 +223,9 @@ __host__ __device__ static inline int countGenerations(uint64_t pattern,
   // exited the previous loop because of die out or cycle.
   if (!ended && generations >= FAST_SEARCH_MAX_GENERATIONS) {
     if (algorithm == CYCLE_DETECTION_NIVASCH) {
-      return nivaschCycleDetection(g1, generations);
+      return nivaschCycleDetection(g1, generations, gridMode);
     } else {
-      return floydCycleDetection(g1, generations);
+      return floydCycleDetection(g1, generations, gridMode);
     }
   }
 
@@ -215,14 +252,15 @@ __host__ __device__ static inline uint64_t getNextCandidateIndex(uint64_t* numCa
 // Core 6-generation stepping and cycle detection logic
 // Used by both CPU tests and CUDA kernels
 __host__ __device__ static inline bool step6GenerationsAndCheck(uint64_t* g1, uint64_t pattern, uint64_t* generations,
-                                                                uint64_t* candidates, uint64_t* numCandidates) {
+                                                                uint64_t* candidates, uint64_t* numCandidates,
+                                                                GolGridMode gridMode = GOL_GRID_MODE_PLANE) {
   *generations += 6;
-  uint64_t g2 = computeNextGeneration(*g1);
-  uint64_t g3 = computeNextGeneration(g2);
-  uint64_t g4 = computeNextGeneration(g3);
-  uint64_t g5 = computeNextGeneration(g4);
-  uint64_t g6 = computeNextGeneration(g5);
-  *g1 = computeNextGeneration(g6);
+  uint64_t g2 = computeNextGeneration(*g1, gridMode);
+  uint64_t g3 = computeNextGeneration(g2, gridMode);
+  uint64_t g4 = computeNextGeneration(g3, gridMode);
+  uint64_t g5 = computeNextGeneration(g4, gridMode);
+  uint64_t g6 = computeNextGeneration(g5, gridMode);
+  *g1 = computeNextGeneration(g6, gridMode);
 
   // Check for cycles
   if ((*g1 == g2) || (*g1 == g3) || (*g1 == g4)) {

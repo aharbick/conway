@@ -107,6 +107,7 @@ include_directories(${CUDAToolkit_INCLUDE_DIRS})
 
 # CPU-only source files
 set(CPU_SOURCES
+    src/api_test_handlers.cpp
     src/cli_parser.cpp
     src/utils.cpp
     src/logging.cpp
@@ -116,6 +117,8 @@ set(CPU_SOURCES
 set(CUDA_SOURCES
     src/gol_cuda.cu
     src/gol.cpp
+    src/gol_search.cpp
+    src/simulation_handlers.cpp
     src/find-optimal.cpp
 )
 

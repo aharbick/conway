@@ -24,6 +24,8 @@ static char ProgramArgs_doc[] = "";
 static struct argp_option argp_options[] = {
     {"frame-mode", 'f', "MODE", 0, "Frame search mode: 'random'"},
     {"cycle-detection", 'D', "ALGORITHM", 0, "Cycle detection algorithm: 'floyd' or 'nivasch' (default: 'floyd')"},
+    {"gol-grid-mode", 'g', "MODE", 0, "Game of Life grid mode: 'plane' or 'torus' (default: 'plane')"},
+    {"simulate", 's', 0, 0, "Simulate pattern evolution step by step (interactive mode)."},
     {"compare-cycle-algorithms", 'A', "FRAME_IDX", 0,
      "Compare Floyd's vs Nivasch's cycle detection on given frame index and exit."},
     {"dont-save-results", 'r', 0, 0, "Don't save results to Google Sheets (for testing/benchmarking)."},
@@ -60,6 +62,21 @@ static bool parseCycleDetection(const char* arg, ProgramArgs* args) {
   }
 
   std::cerr << "[ERROR] Invalid cycle detection algorithm '" << arg << "', expected 'floyd' or 'nivasch'\n";
+  return false;
+}
+
+static bool parseGolGridMode(const char* arg, ProgramArgs* args) {
+  std::string str(arg);
+
+  if (str == "plane") {
+    args->golGridMode = GOL_GRID_MODE_PLANE;
+    return true;
+  } else if (str == "torus") {
+    args->golGridMode = GOL_GRID_MODE_TORUS;
+    return true;
+  }
+
+  std::cerr << "[ERROR] Invalid GoL grid mode '" << arg << "', expected 'plane' or 'torus'\n";
   return false;
 }
 
@@ -106,6 +123,14 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
     if (!parseCycleDetection(arg, a)) {
       argp_failure(state, 1, 0, "Invalid cycle detection algorithm");
     }
+    break;
+  case 'g':
+    if (!parseGolGridMode(arg, a)) {
+      argp_failure(state, 1, 0, "Invalid GoL grid mode");
+    }
+    break;
+  case 's':
+    a->simulateMode = true;
     break;
   case 'A':
     try {
@@ -156,9 +181,11 @@ void initializeDefaultArgs(ProgramArgs* args) {
   args->resumeFromDatabase = false;
   args->compareCycleAlgorithms = false;
   args->dontSaveResults = false;
+  args->simulateMode = false;
   args->frameMode = "";
   args->logFilePath = "";
   args->cycleDetection = CYCLE_DETECTION_FLOYD;
+  args->golGridMode = GOL_GRID_MODE_PLANE;
   args->compareFrameIdx = 0;
   args->workerNum = 1;
   args->totalWorkers = 1;
