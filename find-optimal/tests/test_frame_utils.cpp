@@ -384,6 +384,27 @@ TEST_F(FrameUtilsTest, GetFrameByIndexSequentialFramesDiffer) {
   EXPECT_NE(frame1, frame3) << "Sequential frames should be different";
 }
 
+// Test basic properties of transformation functions
+TEST_F(FrameUtilsTest, TransformationProperties) {
+  uint64_t pattern = 0x123456789ABCDEFULL;
+
+  // Test that 4 rotations return to original
+  uint64_t result = pattern;
+  for (int i = 0; i < 4; i++) {
+    result = rotate90(result);
+  }
+  EXPECT_EQ(result, pattern) << "4 rotations should return original";
+
+  // Test that double horizontal flip returns to original
+  uint64_t flip = reflectHorizontal(reflectHorizontal(pattern));
+  EXPECT_EQ(flip, pattern) << "Double horizontal flip should return original";
+
+  // Test transpose self-inverse property
+  uint64_t transposed = transpose8x8(pattern);
+  uint64_t doubleTransposed = transpose8x8(transposed);
+  EXPECT_EQ(pattern, doubleTransposed) << "Double transpose should return original";
+}
+
 TEST_F(FrameUtilsTest, ValidateTotalMinimalFrames) {
   // Validate that FRAME_SEARCH_TOTAL_MINIMAL_FRAMES is correct by counting
   // all minimal frames from 0 to 2^24-1

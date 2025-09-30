@@ -9,31 +9,51 @@
 
 // See the algorithm described in PERFORMANCE under "Eliminating Rotations"
 
-// Rotates a pattern 90 degrees clockwise
-__host__ __device__ inline uint64_t rotate90(uint64_t pattern) {
-  uint64_t result = 0;
-  for (int row = 0; row < 8; row++) {
-    for (int col = 0; col < 8; col++) {
-      if (pattern & (1ULL << (row * 8 + col))) {
-        // In rotated pattern, row becomes col, col becomes (7-row)
-        result |= 1ULL << ((7 - col) * 8 + row);
-      }
-    }
-  }
-  return result;
+// Optimized bit manipulation functions using bit tricks instead of loops
+// Ultra-fast 8x8 transpose using bit manipulation (18 operations total)
+__host__ __device__ inline uint64_t transpose8x8(uint64_t x) {
+  uint64_t t;
+  t = (x ^ (x >> 7)) & 0x00AA00AA00AA00AA;
+  x = x ^ t ^ (t << 7);
+  t = (x ^ (x >> 14)) & 0x0000CCCC0000CCCC;
+  x = x ^ t ^ (t << 14);
+  t = (x ^ (x >> 28)) & 0x00000000F0F0F0F0;
+  x = x ^ t ^ (t << 28);
+  return x;
 }
 
-// Reflects a pattern horizontally
+// Optimized horizontal flip using bit reversal (12 operations total)
+__host__ __device__ inline uint64_t flipHorizontal8x8(uint64_t x) {
+  // Reverse bits in each 8-bit row using bit manipulation
+  x = ((x & 0x0F0F0F0F0F0F0F0F) << 4) | ((x & 0xF0F0F0F0F0F0F0F0) >> 4);
+  x = ((x & 0x3333333333333333) << 2) | ((x & 0xCCCCCCCCCCCCCCCC) >> 2);
+  x = ((x & 0x5555555555555555) << 1) | ((x & 0xAAAAAAAAAAAAAAAA) >> 1);
+  return x;
+}
+
+// Optimized vertical flip using bit manipulation (6 operations total)
+__host__ __device__ inline uint64_t flipVertical8x8(uint64_t x) {
+  // Swap rows: 0↔7, 1↔6, 2↔5, 3↔4
+  // First swap 4-row blocks (top 4 rows ↔ bottom 4 rows)
+  x = ((x & 0x00000000FFFFFFFF) << 32) | ((x & 0xFFFFFFFF00000000) >> 32);
+
+  // Then swap 2-row blocks within each 4-row block
+  x = ((x & 0x0000FFFF0000FFFF) << 16) | ((x & 0xFFFF0000FFFF0000) >> 16);
+
+  // Finally swap 1-row blocks within each 2-row block
+  x = ((x & 0x00FF00FF00FF00FF) << 8) | ((x & 0xFF00FF00FF00FF00) >> 8);
+
+  return x;
+}
+
+// Rotates a pattern 90 degrees clockwise using optimized bit manipulation
+__host__ __device__ inline uint64_t rotate90(uint64_t pattern) {
+  return flipVertical8x8(transpose8x8(pattern));
+}
+
+// Reflects a pattern horizontally using optimized bit manipulation
 __host__ __device__ inline uint64_t reflectHorizontal(uint64_t pattern) {
-  uint64_t result = 0;
-  for (int row = 0; row < 8; row++) {
-    for (int col = 0; col < 8; col++) {
-      if (pattern & (1ULL << (row * 8 + col))) {
-        result |= 1ULL << (row * 8 + (7 - col));
-      }
-    }
-  }
-  return result;
+  return flipHorizontal8x8(pattern);
 }
 
 // Extract frame bits from a pattern
