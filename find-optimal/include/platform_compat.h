@@ -15,8 +15,12 @@
 #include <intrin.h>
 #include <chrono>
 
-// Population count (count set bits) - use MSVC intrinsic
+// Population count (count set bits) - use CUDA builtin when on device, otherwise MSVC intrinsic
+#ifdef __CUDA_ARCH__
+#define POPCOUNTLL(x) __popcll(x)
+#else
 #define POPCOUNTLL(x) __popcnt64(x)
+#endif
 
 // High-resolution time function
 inline double getPlatformHighResTime() {
@@ -38,8 +42,12 @@ inline double getPlatformHighResTime() {
 #include <unistd.h>
 #include <time.h>
 
-// Population count (count set bits) - use GCC builtin
+// Population count (count set bits) - use CUDA builtin when on device, otherwise GCC builtin
+#ifdef __CUDA_ARCH__
+#define POPCOUNTLL(x) __popcll(x)
+#else
 #define POPCOUNTLL(x) __builtin_popcountll(x)
+#endif
 
 // High-resolution time function
 inline double getPlatformHighResTime() {

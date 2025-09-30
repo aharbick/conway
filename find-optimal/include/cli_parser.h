@@ -6,7 +6,6 @@
 
 typedef enum { CYCLE_DETECTION_FLOYD, CYCLE_DETECTION_NIVASCH } CycleDetectionAlgorithm;
 
-typedef enum { GOL_GRID_MODE_PLANE, GOL_GRID_MODE_TORUS } GolGridMode;
 
 typedef struct ProgramArgs {
   bool testProgressApi;
@@ -16,10 +15,10 @@ typedef struct ProgramArgs {
   bool compareCycleAlgorithms;
   bool dontSaveResults;
   bool simulateMode;
+  std::string simulateType;
   std::string frameMode;
   std::string logFilePath;
   CycleDetectionAlgorithm cycleDetection;
-  GolGridMode golGridMode;
   uint64_t compareFrameIdx;
   int workerNum;
   int totalWorkers;

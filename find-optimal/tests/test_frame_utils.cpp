@@ -8,6 +8,7 @@
 #endif
 
 #include "frame_utils.h"
+#include "test_utils.h"
 
 // Test frame utility functions (these don't have problematic dependencies)
 class FrameUtilsTest : public ::testing::Test {
@@ -381,4 +382,21 @@ TEST_F(FrameUtilsTest, GetFrameByIndexSequentialFramesDiffer) {
   EXPECT_NE(frame1, frame2) << "Sequential frames should be different";
   EXPECT_NE(frame2, frame3) << "Sequential frames should be different";
   EXPECT_NE(frame1, frame3) << "Sequential frames should be different";
+}
+
+TEST_F(FrameUtilsTest, ValidateTotalMinimalFrames) {
+  // Validate that FRAME_SEARCH_TOTAL_MINIMAL_FRAMES is correct by counting
+  // all minimal frames from 0 to 2^24-1
+  uint64_t minimalFrameCount = 0;
+  const uint64_t maxFrames = 1ULL << 24;  // 2^24
+
+  for (uint64_t i = 0; i < maxFrames; ++i) {
+    const uint64_t frame = spreadBitsToFrame(i);
+    if (isMinimalFrame(frame)) {
+      minimalFrameCount++;
+    }
+  }
+
+  EXPECT_EQ(minimalFrameCount, FRAME_SEARCH_TOTAL_MINIMAL_FRAMES)
+    << "Actual minimal frame count should match FRAME_SEARCH_TOTAL_MINIMAL_FRAMES constant";
 }
