@@ -1,4 +1,30 @@
 cmake_minimum_required(VERSION 3.18)
+
+# Auto-detect GPU architecture BEFORE project declaration to avoid caching issues
+execute_process(
+    COMMAND nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits
+    OUTPUT_VARIABLE GPU_COMPUTE_CAP
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+
+# Map compute capability to supported architecture and force cache override
+if(GPU_COMPUTE_CAP STREQUAL "12.0")
+    set(CMAKE_CUDA_ARCHITECTURES "89" CACHE STRING "CUDA architectures" FORCE)
+elseif(GPU_COMPUTE_CAP STREQUAL "8.9")
+    set(CMAKE_CUDA_ARCHITECTURES "89" CACHE STRING "CUDA architectures" FORCE)
+elseif(GPU_COMPUTE_CAP STREQUAL "8.7")
+    set(CMAKE_CUDA_ARCHITECTURES "87" CACHE STRING "CUDA architectures" FORCE)
+elseif(GPU_COMPUTE_CAP STREQUAL "8.6")
+    set(CMAKE_CUDA_ARCHITECTURES "86" CACHE STRING "CUDA architectures" FORCE)
+elseif(GPU_COMPUTE_CAP STREQUAL "7.5")
+    set(CMAKE_CUDA_ARCHITECTURES "75" CACHE STRING "CUDA architectures" FORCE)
+else()
+    set(CMAKE_CUDA_ARCHITECTURES "87" CACHE STRING "CUDA architectures" FORCE)  # Default fallback
+endif()
+
+message(STATUS "Pre-project GPU detection: ${GPU_COMPUTE_CAP} -> sm_${CMAKE_CUDA_ARCHITECTURES}")
+
 project(find-optimal LANGUAGES CXX CUDA)
 
 # Set C++ standard
@@ -78,33 +104,7 @@ else()
     set(OPENSSL_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
-# Auto-detect GPU architecture
-execute_process(
-    COMMAND nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits
-    OUTPUT_VARIABLE GPU_COMPUTE_CAP
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-)
-
-# Map compute capability to supported architecture
-if(GPU_COMPUTE_CAP STREQUAL "12.0")
-    set(GPU_ARCH "89")
-elseif(GPU_COMPUTE_CAP STREQUAL "8.9")
-    set(GPU_ARCH "89")
-elseif(GPU_COMPUTE_CAP STREQUAL "8.7")
-    set(GPU_ARCH "87")
-elseif(GPU_COMPUTE_CAP STREQUAL "8.6")
-    set(GPU_ARCH "86")
-elseif(GPU_COMPUTE_CAP STREQUAL "7.5")
-    set(GPU_ARCH "75")
-else()
-    set(GPU_ARCH "87")  # Default fallback
-endif()
-
-message(STATUS "Detected GPU compute capability: ${GPU_COMPUTE_CAP}")
-message(STATUS "Using CUDA architecture: sm_${GPU_ARCH}")
-
-set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES ${GPU_ARCH})
+# GPU architecture was already detected and set before project() declaration
 
 # Include directories
 include_directories(include)
