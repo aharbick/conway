@@ -26,6 +26,7 @@
 #include "gol_core.h"
 #include "gol_memory.h"
 #include "google_client.h"
+#include "google_request_queue.h"
 #include "utils.h"
 
 // Global variables updated across threads

@@ -10,15 +10,15 @@
 
 int executeMainSearch(ProgramArgs* cli) {
   // Initialize global best generations from Google Sheets database
-  int dbBestGenerations = googleGetBestResult();
+  int dbBestGenerations = getGoogleBestResult();
   if (dbBestGenerations > 0) {
     gBestGenerations = dbBestGenerations;
     Logger::out() << "Best generations so far: " << gBestGenerations << "\n";
   }
 
   // Initialize frame completion cache
-  if (googleLoadFrameCache()) {
-    uint64_t completedFrames = googleGetFrameCacheCompletedCount();
+  if (loadGoogleFrameCache()) {
+    uint64_t completedFrames = getGoogleFrameCacheCompletedCount();
     Logger::out() << "Frame completion cache initialized with " << completedFrames << " completed frames\n";
   }
 

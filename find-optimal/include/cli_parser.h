@@ -18,6 +18,7 @@ typedef struct ProgramArgs {
   std::string simulateType;
   std::string frameMode;
   std::string logFilePath;
+  std::string queueDirectory;
   CycleDetectionAlgorithm cycleDetection;
   uint64_t compareFrameIdx;
   int workerNum;

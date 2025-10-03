@@ -22,7 +22,7 @@ static char ProgramArgs_doc[] = "";
 
 // Command line options
 static struct argp_option argp_options[] = {
-    {"frame-mode", 'f', "MODE", 0, "Frame search mode: 'random'"},
+    {"frame-mode", 'f', "MODE", 0, "Frame search mode: 'random' or 'sequential'"},
     {"cycle-detection", 'D', "ALGORITHM", 0, "Cycle detection algorithm: 'floyd' or 'nivasch' (default: 'floyd')"},
     {"simulate", 's', "TYPE", 0, "Simulate mode: 'pattern' (evolution) or 'symmetry' (transformations)."},
     {"compare-cycle-algorithms", 'A', "FRAME_IDX", 0,
@@ -34,18 +34,19 @@ static struct argp_option argp_options[] = {
     {"log-file", 'l', "PATH", 0, "Path to log file for progress output."},
     {"worker", 'w', "N:M", 0,
      "Worker configuration N:M where N is worker number (1-based) and M is total workers (default: 1:1)."},
+    {"queue-directory", 'q', "PATH", 0, "Directory for persistent request queue (default: ./request-queue)."},
     {0}};
 
 
 static bool parseFrameMode(const char* arg, ProgramArgs* args) {
   std::string str(arg);
 
-  if (str == "random") {
+  if (str == "random" || str == "sequential") {
     args->frameMode = str;
     return true;
   }
 
-  std::cerr << "[ERROR] Invalid frame mode '" << arg << "', expected 'random'\n";
+  std::cerr << "[ERROR] Invalid frame mode '" << arg << "', expected 'random' or 'sequential'\n";
   return false;
 }
 
@@ -163,6 +164,12 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
       argp_failure(state, 1, 0, "Invalid worker configuration");
     }
     break;
+  case 'q':
+    if (!arg || *arg == '\0') {
+      argp_failure(state, 1, 0, "Queue directory path cannot be empty");
+    }
+    a->queueDirectory = std::string(arg);
+    break;
   default:
     return ARGP_ERR_UNKNOWN;
   }
@@ -183,6 +190,7 @@ void initializeDefaultArgs(ProgramArgs* args) {
   args->simulateType = "";
   args->frameMode = "";
   args->logFilePath = "";
+  args->queueDirectory = "./request-queue";
   args->cycleDetection = CYCLE_DETECTION_FLOYD;
   args->compareFrameIdx = 0;
   args->workerNum = 1;

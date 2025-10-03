@@ -9,6 +9,7 @@
 #include "constants.h"
 #include "gol_search.h"
 #include "google_client.h"
+#include "google_request_queue.h"
 #include "logging.h"
 #include "simulation_handlers.h"
 
@@ -35,7 +36,7 @@ int main(int argc, char** argv) {
   }
 
   // Initialize Google client
-  googleInit();
+  initGoogleClient();
 
   // Initialize logging system
   Logger::initialize(cli);
@@ -49,9 +50,17 @@ int main(int argc, char** argv) {
   } else {
     // Check Google configuration and warn if not configured
     GoogleConfig googleConfig;
-    if (googleGetConfig(&googleConfig) != GOOGLE_SUCCESS) {
+    if (getGoogleConfig(&googleConfig) != GOOGLE_SUCCESS) {
       Logger::out() << "Google Sheets API is not configured. Processing all frames and not saving results.\n";
       cli->dontSaveResults = true;  // Prevent sending attempts
+    } else {
+      // Initialize and start the request queue
+      if (!initGoogleRequestQueue(cli->queueDirectory)) {
+        std::cerr << "[ERROR] Failed to initialize request queue\n";
+        cleanupProgramArgs(cli);
+        cleanupGoogleClient();
+        return 1;
+      }
     }
   }
 
@@ -76,8 +85,9 @@ int main(int argc, char** argv) {
   }
 
   // Common cleanup for all execution paths
+  stopGoogleRequestQueue();
   cleanupProgramArgs(cli);
-  googleCleanup();
+  cleanupGoogleClient();
 
   return result;
 }

@@ -115,17 +115,17 @@ __host__ void reportKernelResults(gol::SearchMemory &mem, ProgramArgs *cli, doub
 
   // Always mark frame as complete locally when all kernels are done
   if (isFrameComplete) {
-    googleSetFrameCompleteInCache(frameIdx);
+    setGoogleFrameCompleteInCache(frameIdx);
   }
 
   if (!cli->dontSaveResults) {
     // Pass frameIdx if this completes the frame (kernelIdx == 15), otherwise pass UINT64_MAX
     uint64_t completedFrameIdx = isFrameComplete ? frameIdx : UINT64_MAX;
-    googleSendSummaryDataAsync((int)*mem.h_bestGenerations(), *mem.h_bestPattern(), bestPatternBin, completedFrameIdx);
+    queueGoogleSummaryData((int)*mem.h_bestGenerations(), *mem.h_bestPattern(), bestPatternBin, completedFrameIdx);
 
     // Send progress data to Google if generations >= 200
     if ((int)*mem.h_bestGenerations() >= 200) {
-      googleSendProgressAsync(frameIdx, kernelIdx, (int)*mem.h_bestGenerations(), *mem.h_bestPattern(), bestPatternBin);
+      queueGoogleProgress(frameIdx, kernelIdx, (int)*mem.h_bestGenerations(), *mem.h_bestPattern(), bestPatternBin);
     }
   }
 }

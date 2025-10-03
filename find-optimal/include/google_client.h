@@ -16,7 +16,6 @@
 #include <nlohmann/json.hpp>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "logging.h"
@@ -64,7 +63,7 @@ static size_t WriteMemoryCallback(void* contents, size_t size, size_t nmemb, Cur
   }
 }
 
-static GoogleResult googleGetConfig(GoogleConfig* config) {
+static GoogleResult getGoogleConfig(GoogleConfig* config) {
   config->webappUrl = getenv("GOOGLE_WEBAPP_URL");
   config->apiKey = getenv("GOOGLE_API_KEY");
 
@@ -75,13 +74,13 @@ static GoogleResult googleGetConfig(GoogleConfig* config) {
   return GOOGLE_SUCCESS;
 }
 
-static void googleCleanupResponse(CurlResponse* response) {
+static void cleanupGoogleResponse(CurlResponse* response) {
   response->clear();
 }
 
 
-static GoogleResult googleHttpRequest(const std::string& baseUrl, const std::map<std::string, std::string>& params,
-                                      CurlResponse* response, const std::string& apiName = "unknown") {
+static GoogleResult sendGoogleHttpRequest(const std::string& baseUrl, const std::map<std::string, std::string>& params,
+                                          CurlResponse* response, const std::string& apiName = "unknown") {
   CURL* curl = curl_easy_init();
   if (!curl) {
     std::cerr << "[ERROR] Failed to initialize curl\n";
@@ -166,7 +165,7 @@ class FrameCompletionCache {
   // Load cache from Google Sheets API
   bool loadFromAPI() {
     GoogleConfig config;
-    if (googleGetConfig(&config) != GOOGLE_SUCCESS) {
+    if (getGoogleConfig(&config) != GOOGLE_SUCCESS) {
       return false;
     }
 
@@ -176,7 +175,7 @@ class FrameCompletionCache {
     params["apiKey"] = config.apiKey;
 
     CurlResponse response;
-    GoogleResult result = googleHttpRequest(config.webappUrl, params, &response, "getCompleteFrameCache");
+    GoogleResult result = sendGoogleHttpRequest(config.webappUrl, params, &response, "getCompleteFrameCache");
 
     if (result != GOOGLE_SUCCESS) {
       return false;
@@ -193,16 +192,16 @@ class FrameCompletionCache {
       if (j.contains("bitmap") && j["bitmap"].is_string()) {
         bitmapBase64 = j["bitmap"].get<std::string>();
       } else {
-        googleCleanupResponse(&response);
+        cleanupGoogleResponse(&response);
         return false;
       }
     } catch (const nlohmann::json::exception& e) {
       std::cerr << "[ERROR] Failed to parse frame cache JSON: " << e.what() << "\n";
-      googleCleanupResponse(&response);
+      cleanupGoogleResponse(&response);
       return false;
     }
 
-    googleCleanupResponse(&response);
+    cleanupGoogleResponse(&response);
 
     // Decode base64 to bitmap
     if (!decodeBase64(bitmapBase64)) {
@@ -285,10 +284,10 @@ class FrameCompletionCache {
 // Global cache instance
 static FrameCompletionCache frameCache;
 
-static bool googleSendProgress(uint64_t frameIdx, int kernelIdx, int bestGenerations, uint64_t bestPattern,
+static bool sendGoogleProgress(uint64_t frameIdx, int kernelIdx, int bestGenerations, uint64_t bestPattern,
                                const char* bestPatternBin) {
   GoogleConfig config;
-  if (googleGetConfig(&config) != GOOGLE_SUCCESS) {
+  if (getGoogleConfig(&config) != GOOGLE_SUCCESS) {
     return false;
   }
 
@@ -302,9 +301,9 @@ static bool googleSendProgress(uint64_t frameIdx, int kernelIdx, int bestGenerat
   params["bestPattern"] = std::string(bestPatternBin) + ":" + std::to_string(bestPattern);
 
   CurlResponse response;
-  GoogleResult result = googleHttpRequest(config.webappUrl, params, &response, "sendProgress");
+  GoogleResult result = sendGoogleHttpRequest(config.webappUrl, params, &response, "sendProgress");
 
-  googleCleanupResponse(&response);
+  cleanupGoogleResponse(&response);
 
   // Update cache if frame is complete
   if (result == GOOGLE_SUCCESS && kernelIdx == 15) {
@@ -315,7 +314,7 @@ static bool googleSendProgress(uint64_t frameIdx, int kernelIdx, int bestGenerat
 }
 
 
-static bool googleInit() {
+static bool initGoogleClient() {
   CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
   if (res != CURLE_OK) {
     std::cerr << "[ERROR] Failed to initialize libcurl: " << curl_easy_strerror(res) << "\n";
@@ -324,9 +323,9 @@ static bool googleInit() {
   return true;
 }
 
-static int googleGetBestResult() {
+static int getGoogleBestResult() {
   GoogleConfig config;
-  if (googleGetConfig(&config) != GOOGLE_SUCCESS) {
+  if (getGoogleConfig(&config) != GOOGLE_SUCCESS) {
     return -1;
   }
 
@@ -336,7 +335,7 @@ static int googleGetBestResult() {
   params["apiKey"] = config.apiKey;
 
   CurlResponse response;
-  GoogleResult result = googleHttpRequest(config.webappUrl, params, &response, "getBestResult");
+  GoogleResult result = sendGoogleHttpRequest(config.webappUrl, params, &response, "getBestResult");
 
   int bestGenerations = 0;
   if (result == GOOGLE_SUCCESS && !response.data.empty()) {
@@ -350,63 +349,25 @@ static int googleGetBestResult() {
     }
   }
 
-  googleCleanupResponse(&response);
+  cleanupGoogleResponse(&response);
   return bestGenerations;
 }
 
-static void googleCleanup() {
+static void cleanupGoogleClient() {
   curl_global_cleanup();
 }
 
-// Helper function to run any operation with retry logic in a separate thread
-template <typename Func>
-static void executeWithRetryAsync(Func operation, const std::string& operationName) {
-  std::thread([=]() {
-    const int maxRetries = 3;
-    bool finalSuccess = false;
-
-    for (int attempt = 0; attempt < maxRetries; ++attempt) {
-      bool success = operation();
-      if (success) {
-        finalSuccess = true;
-        break;  // Success, exit retry loop
-      }
-
-      // If not the last attempt, wait with exponential backoff
-      if (attempt < maxRetries - 1) {
-        int delayMs = 500 * (1 << attempt);  // 500 * 2^attempt: 500, 1000, 2000ms
-        std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
-      }
-    }
-
-    if (!finalSuccess) {
-      Logger::out() << "timestamp=" << time(NULL) << ", ERROR=Failed to " << operationName << " after " << maxRetries
-                     << " attempts\n";
-    }
-  }).detach();
-}
-
-// Async version of googleSendProgress - "send and forget"
-static void googleSendProgressAsync(uint64_t frameIdx, int kernelIdx, int bestGenerations, uint64_t bestPattern,
-                                    const char* bestPatternBin) {
-  // Copy the bestPatternBin string since the original may be destroyed
-  std::string patternBinCopy(bestPatternBin ? bestPatternBin : "");
-
-  executeWithRetryAsync(
-      [=]() { return googleSendProgress(frameIdx, kernelIdx, bestGenerations, bestPattern, patternBinCopy.c_str()); },
-      "send progress (frame " + std::to_string(frameIdx) + ")");
-}
 
 // Cache management functions
-static bool googleLoadFrameCache() {
+static bool loadGoogleFrameCache() {
   return frameCache.loadFromAPI();
 }
 
-static uint64_t googleGetFrameCacheCompletedCount() {
+static uint64_t getGoogleFrameCacheCompletedCount() {
   return frameCache.getCompletedCount();
 }
 
-static bool googleGetFrameCompleteFromCache(uint64_t frameIdx) {
+static bool getGoogleFrameCompleteFromCache(uint64_t frameIdx) {
   // Load cache on first use
   if (!frameCache.isLoaded()) {
     if (!frameCache.loadFromAPI()) {
@@ -418,7 +379,7 @@ static bool googleGetFrameCompleteFromCache(uint64_t frameIdx) {
   return frameCache.isFrameComplete(frameIdx);
 }
 
-static void googleSetFrameCompleteInCache(uint64_t frameIdx) {
+static void setGoogleFrameCompleteInCache(uint64_t frameIdx) {
   // Ensure cache is initialized (even if just as empty cache)
   if (!frameCache.isLoaded()) {
     frameCache.markAsLoaded();
@@ -426,10 +387,10 @@ static void googleSetFrameCompleteInCache(uint64_t frameIdx) {
   frameCache.setFrameComplete(frameIdx);
 }
 
-static bool googleSendSummaryData(int bestGenerations, uint64_t bestPattern, const char* bestPatternBin,
+static bool sendGoogleSummaryData(int bestGenerations, uint64_t bestPattern, const char* bestPatternBin,
                                   uint64_t completedFrameIdx = UINT64_MAX) {
   GoogleConfig config;
-  if (googleGetConfig(&config) != GOOGLE_SUCCESS) {
+  if (getGoogleConfig(&config) != GOOGLE_SUCCESS) {
     return false;
   }
 
@@ -447,21 +408,10 @@ static bool googleSendSummaryData(int bestGenerations, uint64_t bestPattern, con
   }
 
   CurlResponse response;
-  GoogleResult result = googleHttpRequest(config.webappUrl, params, &response, "sendSummaryData");
+  GoogleResult result = sendGoogleHttpRequest(config.webappUrl, params, &response, "sendSummaryData");
 
-  googleCleanupResponse(&response);
+  cleanupGoogleResponse(&response);
   return (result == GOOGLE_SUCCESS);
-}
-
-// Async version of googleSendSummaryData - "send and forget"
-static void googleSendSummaryDataAsync(int bestGenerations, uint64_t bestPattern, const char* bestPatternBin,
-                                       uint64_t completedFrameIdx = UINT64_MAX) {
-  // Copy the bestPatternBin string since the original may be destroyed
-  std::string patternBinCopy(bestPatternBin ? bestPatternBin : "");
-
-  executeWithRetryAsync(
-      [=]() { return googleSendSummaryData(bestGenerations, bestPattern, patternBinCopy.c_str(), completedFrameIdx); },
-      "send summary data (bestGenerations=" + std::to_string(bestGenerations) + ")");
 }
 
 #endif

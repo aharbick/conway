@@ -11,7 +11,7 @@ int handleTestFrameCache(ProgramArgs* cli) {
   std::cout << "Testing Frame Completion Cache...\n";
 
   std::cout << "Loading frame cache from Google Sheets...\n";
-  if (!googleLoadFrameCache()) {
+  if (!loadGoogleFrameCache()) {
     std::cerr << "[ERROR] Failed to load frame cache from Google Sheets API\n";
     return 1;
   }
@@ -23,7 +23,7 @@ int handleTestFrameCache(ProgramArgs* cli) {
 
   // Sample frames for progress reporting
   for (uint64_t frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
-    if (googleGetFrameCompleteFromCache(frameIdx)) {
+    if (getGoogleFrameCompleteFromCache(frameIdx)) {
       completedFrames++;
     }
 
@@ -70,11 +70,11 @@ int handleTestProgressApi(ProgramArgs* cli) {
   // Test unified progress upload with best result data
   std::cout << "Testing progress upload (frameIdx=" << testFrameId << ", kernelIdx=" << testKernelId
             << ", generations=" << testGenerations << ", pattern=" << std::hex << testPattern << std::dec << ")...\n";
-  bool success = googleSendProgress(testFrameId, testKernelId, testGenerations, testPattern, testPatternBin);
+  bool success = sendGoogleProgress(testFrameId, testKernelId, testGenerations, testPattern, testPatternBin);
   std::cout << "Progress upload: " << (success ? "SUCCESS" : "FAILED") << "\n";
 
   // Test querying best result
-  int bestResult = googleGetBestResult();
+  int bestResult = getGoogleBestResult();
   std::cout << "Best result query: " << bestResult << "\n";
 
   return 0;
@@ -99,7 +99,7 @@ int handleTestSummaryApi(ProgramArgs* cli) {
 
   // Test initial summary data upload with bestGenerations=6
   std::cout << "Testing summary data upload (generations=6, pattern=" << testPattern << ")...\n";
-  bool success = googleSendSummaryData(6, testPattern, testPatternBin);
+  bool success = sendGoogleSummaryData(6, testPattern, testPatternBin);
   std::cout << "Summary data upload: " << (success ? "SUCCESS" : "FAILED") << "\n";
 
   // Test duplicate entry (should increment count for bestGenerations=6)
@@ -109,7 +109,7 @@ int handleTestSummaryApi(ProgramArgs* cli) {
   }
 
   std::cout << "Testing DUPLICATE summary data upload (generations=6, pattern=" << testPattern2 << ")...\n";
-  success = googleSendSummaryData(6, testPattern2, testPatternBin);
+  success = sendGoogleSummaryData(6, testPattern2, testPatternBin);
   std::cout << "Duplicate summary data upload: " << (success ? "SUCCESS" : "FAILED") << "\n";
 
   return 0;

@@ -35,20 +35,20 @@ __host__ void *search(void *args) {
   // Build worker-specific frame list
   std::vector<uint64_t> workerFrames;
 
-  if (cli->frameMode == "random") {
+  if (cli->frameMode == "random" || cli->frameMode == "sequential") {
     // Generate all incomplete frames for this worker
     for (uint64_t frameIdx = 0; frameIdx < FRAME_SEARCH_TOTAL_MINIMAL_FRAMES; ++frameIdx) {
       // Check if this frame belongs to this worker using modulo partitioning
       if ((frameIdx % cli->totalWorkers) == (cli->workerNum - 1)) {
         // Check if frame is incomplete
-        if (!googleGetFrameCompleteFromCache(frameIdx)) {
+        if (!getGoogleFrameCompleteFromCache(frameIdx)) {
           workerFrames.push_back(frameIdx);
         }
       }
     }
 
-    // Shuffle for random mode
-    if (!workerFrames.empty()) {
+    // Shuffle for random mode, keep in order for sequential mode
+    if (cli->frameMode == "random" && !workerFrames.empty()) {
       std::mt19937_64 rng(static_cast<uint64_t>(time(nullptr)) + cli->workerNum);
       std::shuffle(workerFrames.begin(), workerFrames.end(), rng);
     }
@@ -80,6 +80,8 @@ __host__ std::string getSearchDescription(ProgramArgs *cli) {
 
   if (cli->frameMode == "random") {
     oss << "RANDOMLY among incomplete frames";
+  } else if (cli->frameMode == "sequential") {
+    oss << "SEQUENTIALLY through incomplete frames";
   } else {
     oss << "ERROR: Invalid frame mode";
   }
