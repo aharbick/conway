@@ -124,6 +124,8 @@ set(CUDA_SOURCES
     src/gol.cpp
     src/gol_search.cpp
     src/simulation_handlers.cpp
+    src/subgrid_cache_cuda.cu
+    src/subgrid_cache.cpp
     src/find-optimal.cpp
 )
 

@@ -36,6 +36,7 @@
 
 # Directories
 logs
+data
 analysis
 build
 third-party
