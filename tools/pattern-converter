@@ -76,24 +76,22 @@ def bin_to_rle(binstring):
     return "$".join(rle_rows) + "!"
 
 def main():
-    parser = argparse.ArgumentParser(description="Convert between RLE and binary patterns (8x8).")
-    parser.add_argument("-f", "--file", required=True, help="Path to RLE file (read or write)")
-    parser.add_argument("-b", "--binary", help="64-bit binary string to write as RLE")
+    parser = argparse.ArgumentParser(description="Convert between RLE files, binary strings, and integers (8x8).")
+    parser.add_argument("-i", "--input", help="Path to RLE file to read")
+    parser.add_argument("-o", "--output", help="Path to RLE file to write")
+    parser.add_argument("-b", "--binary", help="64-character binary string (0s and 1s)")
+    parser.add_argument("-p", "--pattern", help="64-bit integer pattern value")
     args = parser.parse_args()
 
-    if args.binary:
-        # Binary → RLE file
-        rle_body = bin_to_rle(args.binary)
-        with open(args.file, "w") as f:
-            f.write("\n".join(HEADER) + "\n")
-            f.write(rle_body + "\n")
-        print(f"Wrote RLE file to {args.file}")
-    else:
-        # RLE file → binary
-        if not os.path.exists(args.file):
-            print(f"Error: file {args.file} does not exist", file=sys.stderr)
+    binstring = None
+
+    # Determine the input source
+    if args.input:
+        # Read RLE file → binary string
+        if not os.path.exists(args.input):
+            print(f"Error: file {args.input} does not exist", file=sys.stderr)
             sys.exit(1)
-        with open(args.file) as f:
+        with open(args.input) as f:
             lines = f.read().splitlines()
 
         # Ignore the two header lines
@@ -107,7 +105,42 @@ def main():
         rle_str = "".join(body_lines).replace("!", "")
         rle_rows = rle_str.split("$") if rle_str else []
         binstring = rle_to_bin(rle_rows)
-        print(binstring)
+
+        # Show both formats
+        pattern_int = int(binstring, 2)
+        print(f"Binary: {binstring}")
+        print(f"Integer: {pattern_int}")
+
+    elif args.pattern:
+        # Integer → binary string
+        pattern_int = int(args.pattern)
+        if pattern_int < 0 or pattern_int >= 2**64:
+            print(f"Error: pattern must be a 64-bit unsigned integer (0 to {2**64-1})", file=sys.stderr)
+            sys.exit(1)
+        binstring = format(pattern_int, '064b')
+        print(f"Binary: {binstring}")
+
+    elif args.binary:
+        # Binary string → integer
+        if len(args.binary) != 64 or any(c not in '01' for c in args.binary):
+            print("Error: binary string must be exactly 64 characters of 0/1", file=sys.stderr)
+            sys.exit(1)
+        binstring = args.binary
+        pattern_int = int(binstring, 2)
+        print(f"Integer: {pattern_int}")
+
+    else:
+        print("Error: must specify one of -i, -p, or -b", file=sys.stderr)
+        parser.print_help()
+        sys.exit(1)
+
+    # Write output RLE file if requested
+    if args.output and binstring:
+        rle_body = bin_to_rle(binstring)
+        with open(args.output, "w") as f:
+            f.write("\n".join(HEADER) + "\n")
+            f.write(rle_body + "\n")
+        print(f"Wrote RLE file to {args.output}")
 
 if __name__ == "__main__":
     main()
