@@ -124,6 +124,8 @@ set(CUDA_SOURCES
     src/gol.cpp
     src/gol_search.cpp
     src/simulation_handlers.cpp
+    src/subgrid_cache_cuda.cu
+    src/subgrid_cache.cpp
     src/find-optimal.cpp
 )
 
@@ -169,7 +171,7 @@ set_target_properties(find-optimal PROPERTIES
 )
 
 # Additional executables
-add_executable(explore-cachability src/explore-cachability.cpp)
+add_executable(explore-subgrid src/explore-subgrid.cpp)
 add_executable(validate-frame-search-completeness src/validate_frame_search_completeness.cpp)
 
 # Code formatting targets

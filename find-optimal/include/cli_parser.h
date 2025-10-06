@@ -15,12 +15,15 @@ typedef struct ProgramArgs {
   bool compareCycleAlgorithms;
   bool dontSaveResults;
   bool simulateMode;
+  bool computeSubgridCache;
   std::string simulateType;
   std::string frameMode;
   std::string logFilePath;
   std::string queueDirectory;
+  std::string subgridCachePath;
   CycleDetectionAlgorithm cycleDetection;
   uint64_t compareFrameIdx;
+  uint64_t subgridCacheBegin;
   int workerNum;
   int totalWorkers;
 } ProgramArgs;

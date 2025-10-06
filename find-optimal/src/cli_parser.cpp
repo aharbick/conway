@@ -27,6 +27,8 @@ static struct argp_option argp_options[] = {
     {"simulate", 's', "TYPE", 0, "Simulate mode: 'pattern' (evolution) or 'symmetry' (transformations)."},
     {"compare-cycle-algorithms", 'A', "FRAME_IDX", 0,
      "Compare Floyd's vs Nivasch's cycle detection on given frame index and exit."},
+    {"compute-subgrid-cache", 'c', "PATH", 0, "Compute 7x7 subgrid cache for all 2^49 patterns and save to disk at PATH."},
+    {"subgrid-cache-begin", 'b', "NUMBER", 0, "Starting pattern index for subgrid cache computation (for resuming)."},
     {"dont-save-results", 'r', 0, 0, "Don't save results to Google Sheets (for testing/benchmarking)."},
     {"test-progress-api", 'T', 0, 0, "Test Google Sheets Progress API functionality and exit."},
     {"test-summary-api", 'S', 0, 0, "Test Google Sheets Summary API functionality and exit."},
@@ -139,6 +141,20 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
       argp_failure(state, 1, 0, "Invalid frame index for comparison");
     }
     break;
+  case 'c':
+    if (!arg || *arg == '\0') {
+      argp_failure(state, 1, 0, "Subgrid cache path cannot be empty");
+    }
+    a->subgridCachePath = arg;
+    a->computeSubgridCache = true;
+    break;
+  case 'b':
+    try {
+      a->subgridCacheBegin = std::stoull(arg);
+    } catch (const std::exception&) {
+      argp_failure(state, 1, 0, "Invalid subgrid cache begin value");
+    }
+    break;
   case 'r':
     a->dontSaveResults = true;
     break;
@@ -187,12 +203,15 @@ void initializeDefaultArgs(ProgramArgs* args) {
   args->compareCycleAlgorithms = false;
   args->dontSaveResults = false;
   args->simulateMode = false;
+  args->computeSubgridCache = false;
   args->simulateType = "";
   args->frameMode = "";
   args->logFilePath = "";
   args->queueDirectory = "./request-queue";
+  args->subgridCachePath = "";
   args->cycleDetection = CYCLE_DETECTION_FLOYD;
   args->compareFrameIdx = 0;
+  args->subgridCacheBegin = 0;
   args->workerNum = 1;
   args->totalWorkers = 1;
 }

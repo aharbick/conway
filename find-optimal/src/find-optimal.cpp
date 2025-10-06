@@ -12,6 +12,7 @@
 #include "google_request_queue.h"
 #include "logging.h"
 #include "simulation_handlers.h"
+#include "subgrid_cache.h"
 
 static void printCudaDeviceInfo(ProgramArgs* cli) {
   int deviceCount;
@@ -67,7 +68,9 @@ int main(int argc, char** argv) {
 
   // Determine which action to take and execute it
   int result;
-  if (cli->testFrameCache) {
+  if (cli->computeSubgridCache) {
+    result = computeSubgridCache(cli);
+  } else if (cli->testFrameCache) {
     result = handleTestFrameCache(cli);
   } else if (cli->testProgressApi) {
     handleTestProgressApi(cli);

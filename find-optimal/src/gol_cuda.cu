@@ -104,14 +104,9 @@ __host__ void reportKernelResults(gol::SearchMemory &mem, ProgramArgs *cli, doub
   char bestPatternBin[BINARY_STRING_BUFFER_SIZE] = {'\0'};
   asBinary(*mem.h_bestPattern(), bestPatternBin);
 
-  // Format patternsPerSec with commas using a separate stringstream
-  std::ostringstream formattedRate;
-  formattedRate.imbue(std::locale(""));
-  formattedRate << patternsPerSec;
-
   Logger::out() << "timestamp=" << time(NULL) << ", frameIdx=" << frameIdx << ", kernelIdx=" << kernelIdx
                  << ", bestGenerations=" << (int)*mem.h_bestGenerations() << ", bestPattern=" << *mem.h_bestPattern()
-                 << ", bestPatternBin=" << bestPatternBin << ", patternsPerSec=" << formattedRate.str() << "\n";
+                 << ", bestPatternBin=" << bestPatternBin << ", patternsPerSec=" << formatWithCommas(patternsPerSec) << "\n";
 
   // Always mark frame as complete locally when all kernels are done
   if (isFrameComplete) {
