@@ -153,6 +153,11 @@ __host__ __device__ static inline int nivaschCycleDetection(uint64_t startState,
 // Core generation counting logic - determines how long patterns run
 __host__ __device__ static inline int countGenerations(uint64_t pattern,
                                                        CycleDetectionAlgorithm algorithm = CYCLE_DETECTION_FLOYD) {
+  // Empty pattern (all zeros) has 0 generations
+  if (pattern == 0) {
+    return 0;
+  }
+
   bool ended = false;
   int generations = 0;
 

@@ -772,3 +772,10 @@ TEST(GOLKernelTest, ConstructKernelBitPositions) {
     EXPECT_EQ((result & (1ULL << 60)) != 0, bit60Expected) << "Bit 60 incorrect for kernelIndex " << kernelIndex;
   }
 }
+
+TEST_F(GOLComputationTest, CountGenerations_EmptyPattern) {
+  // Empty pattern (all zeros) should return 0 generations
+  uint64_t empty = 0;
+  int gens = countGenerations(empty, CYCLE_DETECTION_FLOYD);
+  EXPECT_EQ(gens, 0) << "Empty pattern should have 0 generations";
+}
