@@ -440,12 +440,12 @@ TEST_F(SubgridCacheTest, FindSubgridCandidates_RangeWithLowThreshold) {
 }
 
 TEST_F(SubgridCacheTest, FindSubgridCandidates_EmptyPattern) {
-  // Pattern 0 (all zeros) should die immediately
+  // Pattern 0 (all zeros) returns 0 generations, so with minGenerations=1 it produces 0 candidates
   std::vector<SubgridCacheEntry> candidates;
   findSubgridCandidatesCPU(0, 1, candidates, CYCLE_DETECTION_FLOYD, 1);
 
   EXPECT_EQ(candidates.size(), 0)
-      << "Empty pattern should produce 0 candidates";
+      << "Empty pattern has 0 generations and should produce 0 candidates with minGenerations=1";
 }
 
 TEST_F(SubgridCacheTest, FindSubgridCandidates_EdgePatternFiltering) {

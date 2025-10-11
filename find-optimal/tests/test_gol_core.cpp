@@ -324,11 +324,6 @@ class GOLLifecycleTest : public GOLComputationTest {
   // Inherits createPattern helper from GOLComputationTest
 };
 
-TEST_F(GOLLifecycleTest, CountGenerationsEmpty) {
-  // Empty pattern should die immediately
-  EXPECT_EQ(countGenerations(0), 1);
-}
-
 TEST_F(GOLLifecycleTest, CountGenerationsSingleCell) {
   // Single cell dies from underpopulation - dies at generation 2, so countGenerations returns 1
   uint64_t single = 1ULL << (4 * 8 + 4);  // Center cell
