@@ -173,7 +173,6 @@ set_target_properties(find-optimal PROPERTIES
 # Additional executables
 add_executable(explore-subgrid src/explore-subgrid.cpp)
 add_executable(validate-frame-search-completeness src/validate_frame_search_completeness.cpp)
-add_executable(debug-subgrid-patterns src/debug_subgrid_patterns.cpp)
 
 # Code formatting targets
 find_program(CLANG_FORMAT_EXE NAMES "clang-format")
