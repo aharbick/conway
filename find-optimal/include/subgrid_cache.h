@@ -39,7 +39,7 @@ __device__ __host__ inline uint64_t expand7x7To8x8(uint64_t pattern7x7, int rowO
 #ifdef __NVCC__
 __global__ void findSubgridCandidates(uint64_t rangeStart, uint64_t rangeEnd,
                                       SubgridCacheEntry* candidates, uint64_t* numCandidates,
-                                      CycleDetectionAlgorithm algorithm);
+                                      CycleDetectionAlgorithm algorithm, int minGenerations = SUBGRID_MIN_GENERATIONS);
 #endif
 
 #endif

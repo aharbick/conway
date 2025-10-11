@@ -10,7 +10,7 @@
 // Each thread processes SUBGRID_PATTERNS_PER_THREAD patterns across 4 translations
 __global__ void findSubgridCandidates(uint64_t rangeStart, uint64_t rangeEnd,
                                       SubgridCacheEntry* candidates, uint64_t* numCandidates,
-                                      CycleDetectionAlgorithm algorithm) {
+                                      CycleDetectionAlgorithm algorithm, int minGenerations = SUBGRID_MIN_GENERATIONS) {
   // Calculate which 7x7 base pattern this thread is responsible for
   uint64_t threadId = blockIdx.x * blockDim.x + threadIdx.x;
   uint64_t patternsPerThread = SUBGRID_PATTERNS_PER_THREAD;
@@ -41,7 +41,7 @@ __global__ void findSubgridCandidates(uint64_t rangeStart, uint64_t rangeEnd,
       int gens = countGenerations(pattern8x8, algorithm);
 
       // Save each 8x8 pattern that meets the threshold
-      if (gens >= SUBGRID_MIN_GENERATIONS) {
+      if (gens >= minGenerations) {
         uint64_t idx = atomicAdd((unsigned long long*)numCandidates, 1ULL);
         candidates[idx].pattern = pattern8x8;  // Store the 8x8 pattern
         candidates[idx].generations = gens;
