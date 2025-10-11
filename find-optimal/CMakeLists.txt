@@ -173,6 +173,7 @@ set_target_properties(find-optimal PROPERTIES
 # Additional executables
 add_executable(explore-subgrid src/explore-subgrid.cpp)
 add_executable(validate-frame-search-completeness src/validate_frame_search_completeness.cpp)
+add_executable(debug-subgrid-patterns src/debug_subgrid_patterns.cpp)
 
 # Code formatting targets
 find_program(CLANG_FORMAT_EXE NAMES "clang-format")
@@ -232,8 +233,14 @@ if(BUILD_TESTING)
         file(GLOB TEST_SOURCES ${CMAKE_SOURCE_DIR}/tests/*.cpp)
 
         if(TEST_SOURCES)
-            # Create test executable
-            add_executable(run_tests ${TEST_SOURCES})
+            # Test-specific source files (non-CUDA sources needed for tests)
+            set(TEST_IMPL_SOURCES
+                src/utils.cpp
+                src/logging.cpp
+            )
+
+            # Create test executable with both test sources and implementation sources
+            add_executable(run_tests ${TEST_SOURCES} ${TEST_IMPL_SOURCES})
 
             # Link test libraries
             target_link_libraries(run_tests

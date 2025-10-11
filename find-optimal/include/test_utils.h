@@ -30,4 +30,17 @@ inline void verifyPattern(uint64_t pattern, const char expected[8][8]) {
   }
 }
 
+// Helper function to create a 7x7 pattern from a 2D char array
+inline uint64_t createPattern7x7(const char grid[7][7]) {
+  uint64_t pattern = 0;
+  for (int row = 0; row < 7; row++) {
+    for (int col = 0; col < 7; col++) {
+      if (grid[row][col] == '1') {
+        pattern |= 1ULL << (row * 7 + col);
+      }
+    }
+  }
+  return pattern;
+}
+
 #endif // _TEST_UTILS_H_
