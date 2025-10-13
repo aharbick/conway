@@ -8,14 +8,12 @@ typedef enum { CYCLE_DETECTION_FLOYD, CYCLE_DETECTION_NIVASCH } CycleDetectionAl
 
 
 typedef struct ProgramArgs {
-  bool testProgressApi;
-  bool testSummaryApi;
-  bool testFrameCache;
   bool resumeFromDatabase;
   bool compareCycleAlgorithms;
   bool dontSaveResults;
   bool simulateMode;
   bool computeSubgridCache;
+  std::string testApi;
   std::string simulateType;
   std::string frameMode;
   std::string logFilePath;

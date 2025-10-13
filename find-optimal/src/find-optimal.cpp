@@ -70,14 +70,16 @@ int main(int argc, char** argv) {
   int result;
   if (cli->computeSubgridCache) {
     result = computeSubgridCache(cli);
-  } else if (cli->testFrameCache) {
-    result = handleTestFrameCache(cli);
-  } else if (cli->testProgressApi) {
-    handleTestProgressApi(cli);
-    result = 0;  // API tests always return success
-  } else if (cli->testSummaryApi) {
-    handleTestSummaryApi(cli);
-    result = 0;  // API tests always return success
+  } else if (!cli->testApi.empty()) {
+    if (cli->testApi == "framecache") {
+      result = handleTestFrameCache(cli);
+    } else if (cli->testApi == "progress") {
+      handleTestProgressApi(cli);
+      result = 0;  // API tests always return success
+    } else {  // testApi == "summary"
+      handleTestSummaryApi(cli);
+      result = 0;  // API tests always return success
+    }
   } else if (cli->compareCycleAlgorithms) {
     result = handleCompareCycleAlgorithms(cli);
   } else if (cli->simulateMode) {

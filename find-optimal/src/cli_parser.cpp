@@ -30,9 +30,7 @@ static struct argp_option argp_options[] = {
     {"compute-subgrid-cache", 'c', "PATH", 0, "Compute 7x7 subgrid cache for all 2^49 patterns and save to disk at PATH."},
     {"subgrid-cache-begin", 'b', "NUMBER", 0, "Starting pattern index for subgrid cache computation (for resuming)."},
     {"dont-save-results", 'r', 0, 0, "Don't save results to Google Sheets (for testing/benchmarking)."},
-    {"test-progress-api", 'T', 0, 0, "Test Google Sheets Progress API functionality and exit."},
-    {"test-summary-api", 'S', 0, 0, "Test Google Sheets Summary API functionality and exit."},
-    {"test-frame-cache", 'C', 0, 0, "Test frame completion cache functionality and exit."},
+    {"test-api", 'T', "TYPE", 0, "Test API functionality and exit: 'progress', 'summary', or 'framecache'."},
     {"log-file", 'l', "PATH", 0, "Path to log file for progress output."},
     {"worker", 'w', "N:M", 0,
      "Worker configuration N:M where N is worker number (1-based) and M is total workers (default: 1:1)."},
@@ -113,6 +111,18 @@ static bool parseWorkerConfig(const char* arg, ProgramArgs* a) {
   }
 }
 
+static bool parseTestApi(const char* arg, ProgramArgs* args) {
+  std::string str(arg);
+
+  if (str == "progress" || str == "summary" || str == "framecache") {
+    args->testApi = str;
+    return true;
+  }
+
+  std::cerr << "[ERROR] Invalid test API type '" << arg << "', expected 'progress', 'summary', or 'framecache'\n";
+  return false;
+}
+
 static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
   ProgramArgs* a = (ProgramArgs*)state->input;
 
@@ -161,13 +171,9 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
   case 'v':
     break;
   case 'T':
-    a->testProgressApi = true;
-    break;
-  case 'S':
-    a->testSummaryApi = true;
-    break;
-  case 'C':
-    a->testFrameCache = true;
+    if (!parseTestApi(arg, a)) {
+      argp_failure(state, 1, 0, "Invalid test API type");
+    }
     break;
   case 'l':
     if (!arg || *arg == '\0') {
@@ -196,14 +202,12 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
 struct argp argp = {argp_options, parseArgpOptions, ProgramArgs_doc, prog_doc, 0, 0};
 
 void initializeDefaultArgs(ProgramArgs* args) {
-  args->testProgressApi = false;
-  args->testSummaryApi = false;
-  args->testFrameCache = false;
   args->resumeFromDatabase = false;
   args->compareCycleAlgorithms = false;
   args->dontSaveResults = false;
   args->simulateMode = false;
   args->computeSubgridCache = false;
+  args->testApi = "";
   args->simulateType = "";
   args->frameMode = "";
   args->logFilePath = "";
