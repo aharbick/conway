@@ -52,6 +52,10 @@ __host__ void *search(void *args) {
       std::mt19937_64 rng(static_cast<uint64_t>(time(nullptr)) + cli->workerNum);
       std::shuffle(workerFrames.begin(), workerFrames.end(), rng);
     }
+  } else if (cli->frameMode.substr(0, 6) == "index:") {
+    // Parse single frame index from "index:XXXXX" (already validated in CLI parser)
+    uint64_t frameIdx = std::stoull(cli->frameMode.substr(6));
+    workerFrames.push_back(frameIdx);
   }
 
   // Report how many frames will be processed
@@ -82,6 +86,9 @@ __host__ std::string getSearchDescription(ProgramArgs *cli) {
     oss << "RANDOMLY among incomplete frames";
   } else if (cli->frameMode == "sequential") {
     oss << "SEQUENTIALLY through incomplete frames";
+  } else if (cli->frameMode.substr(0, 6) == "index:") {
+    uint64_t frameIdx = std::stoull(cli->frameMode.substr(6));
+    oss << "SINGLE frame at index " << frameIdx;
   } else {
     oss << "ERROR: Invalid frame mode";
   }

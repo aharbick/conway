@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "cuda_utils.h"
+#include "subgrid_cache.h"
 
 namespace gol {
 
@@ -89,12 +90,16 @@ class SearchMemory {
   // CUDA device memory
   CudaMemory d_candidates_;
   CudaMemory d_numCandidates_;
+  CudaMemory d_coveredCandidates_;
+  CudaMemory d_numCoveredCandidates_;
   CudaMemory d_bestPattern_;
   CudaMemory d_bestGenerations_;
 
   // Host memory
   HostPtr<uint64_t> h_candidates_;
   HostPtr<uint64_t> h_numCandidates_;
+  HostPtr<uint64_t> h_coveredCandidates_;
+  HostPtr<uint64_t> h_numCoveredCandidates_;
   HostPtr<uint64_t> h_bestPattern_;
   HostPtr<uint64_t> h_bestGenerations_;
 
@@ -102,10 +107,14 @@ class SearchMemory {
   SearchMemory(size_t candidateSize)
       : d_candidates_(sizeof(uint64_t) * candidateSize),
         d_numCandidates_(sizeof(uint64_t)),
+        d_coveredCandidates_(sizeof(CoveredCandidate) * candidateSize),
+        d_numCoveredCandidates_(sizeof(uint64_t)),
         d_bestPattern_(sizeof(uint64_t)),
         d_bestGenerations_(sizeof(uint64_t)),
         h_candidates_(make_host_ptr_zeroed<uint64_t>(candidateSize)),
         h_numCandidates_(make_host_ptr<uint64_t>()),
+        h_coveredCandidates_(make_host_ptr_zeroed<uint64_t>(candidateSize * 2)),  // pattern + generations
+        h_numCoveredCandidates_(make_host_ptr<uint64_t>()),
         h_bestPattern_(make_host_ptr<uint64_t>()),
         h_bestGenerations_(make_host_ptr<uint64_t>()) {
     // Constructor automatically handles all allocations
@@ -127,6 +136,12 @@ class SearchMemory {
   uint64_t* d_numCandidates() const {
     return d_numCandidates_.as<uint64_t>();
   }
+  CoveredCandidate* d_coveredCandidates() const {
+    return d_coveredCandidates_.as<CoveredCandidate>();
+  }
+  uint64_t* d_numCoveredCandidates() const {
+    return d_numCoveredCandidates_.as<uint64_t>();
+  }
   uint64_t* d_bestPattern() const {
     return d_bestPattern_.as<uint64_t>();
   }
@@ -139,6 +154,12 @@ class SearchMemory {
   }
   uint64_t* h_numCandidates() const {
     return h_numCandidates_.get();
+  }
+  CoveredCandidate* h_coveredCandidates() const {
+    return reinterpret_cast<CoveredCandidate*>(h_coveredCandidates_.get());
+  }
+  uint64_t* h_numCoveredCandidates() const {
+    return h_numCoveredCandidates_.get();
   }
   uint64_t* h_bestPattern() const {
     return h_bestPattern_.get();

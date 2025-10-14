@@ -66,6 +66,11 @@ int main(int argc, char** argv) {
   }
 
 
+  // Load subgrid cache if specified (but not when computing it)
+  if (!cli->subgridCachePath.empty() && !cli->computeSubgridCache) {
+    SubgridCache::getInstance().load(cli->subgridCachePath);
+  }
+
   // Determine which action to take and execute it
   int result;
   if (cli->computeSubgridCache) {

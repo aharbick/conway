@@ -22,13 +22,14 @@ static char ProgramArgs_doc[] = "";
 
 // Command line options
 static struct argp_option argp_options[] = {
-    {"frame-mode", 'f', "MODE", 0, "Frame search mode: 'random' or 'sequential'"},
+    {"frame-mode", 'f', "MODE", 0, "Frame search mode: 'random', 'sequential', or 'index:XXXXX' (single frame by index)"},
     {"cycle-detection", 'D', "ALGORITHM", 0, "Cycle detection algorithm: 'floyd' or 'nivasch' (default: 'floyd')"},
     {"simulate", 's', "TYPE", 0, "Simulate mode: 'pattern' (evolution) or 'symmetry' (transformations)."},
     {"compare-cycle-algorithms", 'A', "FRAME_IDX", 0,
      "Compare Floyd's vs Nivasch's cycle detection on given frame index and exit."},
     {"compute-subgrid-cache", 'c', "PATH", 0, "Compute 7x7 subgrid cache for all 2^49 patterns and save to disk at PATH."},
     {"subgrid-cache-begin", 'b', "NUMBER", 0, "Starting pattern index for subgrid cache computation (for resuming)."},
+    {"subgrid-cache-file", 'C', "FILE", 0, "Load 7x7 subgrid cache from FILE to use for early termination optimization."},
     {"dont-save-results", 'r', 0, 0, "Don't save results to Google Sheets (for testing/benchmarking)."},
     {"test-api", 'T', "TYPE", 0, "Test API functionality and exit: 'progress', 'summary', or 'framecache'."},
     {"log-file", 'l', "PATH", 0, "Path to log file for progress output."},
@@ -46,7 +47,31 @@ static bool parseFrameMode(const char* arg, ProgramArgs* args) {
     return true;
   }
 
-  std::cerr << "[ERROR] Invalid frame mode '" << arg << "', expected 'random' or 'sequential'\n";
+  // Check for index:XXXXX format
+  if (str.substr(0, 6) == "index:") {
+    std::string frameIdxStr = str.substr(6);
+    if (frameIdxStr.empty()) {
+      std::cerr << "[ERROR] Frame mode 'index:' requires a frame index\n";
+      return false;
+    }
+
+    // Validate that the frame index is a valid number
+    try {
+      uint64_t frameIdx = std::stoull(frameIdxStr);
+      if (frameIdx >= FRAME_SEARCH_TOTAL_MINIMAL_FRAMES) {
+        std::cerr << "[ERROR] Frame index " << frameIdx << " exceeds total frames ("
+                  << FRAME_SEARCH_TOTAL_MINIMAL_FRAMES << ")\n";
+        return false;
+      }
+      args->frameMode = str;
+      return true;
+    } catch (const std::exception&) {
+      std::cerr << "[ERROR] Invalid frame index '" << frameIdxStr << "', expected a valid integer\n";
+      return false;
+    }
+  }
+
+  std::cerr << "[ERROR] Invalid frame mode '" << arg << "', expected 'random', 'sequential', or 'index:XXXXX'\n";
   return false;
 }
 
@@ -164,6 +189,12 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
     } catch (const std::exception&) {
       argp_failure(state, 1, 0, "Invalid subgrid cache begin value");
     }
+    break;
+  case 'C':
+    if (!arg || *arg == '\0') {
+      argp_failure(state, 1, 0, "Subgrid cache file path cannot be empty");
+    }
+    a->subgridCachePath = arg;
     break;
   case 'r':
     a->dontSaveResults = true;

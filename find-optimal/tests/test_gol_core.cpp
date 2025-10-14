@@ -507,7 +507,7 @@ TEST_F(GOLStep6Test, Step6GenerationsAndCheckCycleDetection) {
   // Test cycle detection after 6 generations
   uint64_t candidates[100];
   uint64_t numCandidates = 0;
-  uint64_t generations = 0;
+  uint16_t generations = 0;
 
   // Use a blinker pattern that cycles every 2 generations
   // After 6 generations (g1), it should detect g1 == g3 (both vertical)
@@ -538,7 +538,7 @@ TEST_F(GOLStep6Test, Step6GenerationsAndCheckCandidateGeneration) {
   // Test candidate generation when reaching MIN_CANDIDATE_GENERATIONS
   uint64_t candidates[100];
   uint64_t numCandidates = 0;
-  uint64_t generations = MIN_CANDIDATE_GENERATIONS - 6;  // Will reach exactly MIN_CANDIDATE_GENERATIONS
+  uint16_t generations = MIN_CANDIDATE_GENERATIONS - 6;  // Will reach exactly MIN_CANDIDATE_GENERATIONS
 
   // Use a pattern we know runs for 193+ generations
   uint64_t pattern = 12510220043743999556ULL;  // Known 193-generation pattern
@@ -556,7 +556,7 @@ TEST_F(GOLStep6Test, Step6GenerationsAndCheckContinuePattern) {
   // Test continuing with pattern that hasn't reached criteria yet
   uint64_t candidates[100];
   uint64_t numCandidates = 0;
-  uint64_t generations = 50;  // Well below MIN_CANDIDATE_GENERATIONS
+  uint16_t generations = 50;  // Well below MIN_CANDIDATE_GENERATIONS
 
   // Use a pattern we know runs for 193+ generations
   uint64_t pattern = 12510220043743999556ULL;  // Known long-runner
@@ -574,7 +574,7 @@ TEST_F(GOLStep6Test, Step6GenerationsAndCheckDeadPattern) {
   // Test pattern that dies out within 6 generations
   uint64_t candidates[100];
   uint64_t numCandidates = 0;
-  uint64_t generations = 0;
+  uint16_t generations = 0;
 
   // Single cell dies quickly
   uint64_t pattern = 1ULL << (4 * 8 + 4);  // Center cell
@@ -592,7 +592,7 @@ TEST_F(GOLStep6Test, Step6GenerationsAndCheckMultipleCandidates) {
   // Test multiple patterns being added as candidates
   uint64_t candidates[100];
   uint64_t numCandidates = 0;
-  uint64_t generations = MIN_CANDIDATE_GENERATIONS - 6;
+  uint16_t generations = MIN_CANDIDATE_GENERATIONS - 6;
 
   // Add first candidate - use known long-running pattern
   uint64_t pattern1 = 12510220043743999556ULL;  // 193-generation pattern
@@ -614,7 +614,7 @@ TEST_F(GOLStep6Test, Step6GenerationsAndCheckExactCyclePeriods) {
   // Test detection of different cycle periods (2, 3, 4)
   uint64_t candidates[100];
   uint64_t numCandidates = 0;
-  uint64_t generations = 0;
+  uint16_t generations = 0;
 
   // Test with a stable pattern (period 1)
   // clang-format off

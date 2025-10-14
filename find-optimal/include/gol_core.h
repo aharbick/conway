@@ -6,6 +6,7 @@
 
 #include "cli_parser.h"
 #include "constants.h"
+#include "subgrid_cache.h"
 
 // CUDA decorators - defined here or by NVCC
 #ifndef __NVCC__
@@ -217,9 +218,46 @@ __host__ __device__ static inline uint64_t getNextCandidateIndex(uint64_t* numCa
 #endif
 }
 
+// Expand a compact 7x7 pattern (7 bits/row) to 8x8 grid format (8 bits/row) at given position
+// pattern7x7: compact format with 7 consecutive bits per row (49 bits total)
+// rowOffset: 0 for rows 0-6, 1 for rows 1-7
+// colOffset: 0 for cols 0-6, 1 for cols 1-7
+__host__ __device__ static inline uint64_t expand7x7To8x8(uint64_t pattern7x7, int rowOffset, int colOffset) {
+  uint64_t result = 0;
+
+  // Extract each row from compact format and place in 8x8 grid
+  for (int row = 0; row < 7; row++) {
+    // Extract 7 bits for this row from compact pattern
+    uint64_t rowBits = (pattern7x7 >> (row * 7)) & 0x7F;
+
+    // Place in 8x8 grid at the appropriate row and column offset
+    result |= (rowBits << colOffset) << ((row + rowOffset) * 8);
+  }
+
+  return result;
+}
+
+// Check if all live cells in a pattern can be covered by a 7x7 subgrid
+// Returns true if coverable, false otherwise
+__host__ __device__ static inline bool isCoverableBy7x7(uint64_t pattern) {
+  if (pattern == 0) return false;
+
+  // Test 4 possible 7x7 positions within the 8x8 grid:
+  // Position 1: rows 0-6, cols 0-6
+  if ((pattern & ~0x7F7F7F7F7F7F7FULL) == 0) return true;
+  // Position 2: rows 0-6, cols 1-7
+  if ((pattern & ~0xFEFEFEFEFEFEFEULL) == 0) return true;
+  // Position 3: rows 1-7, cols 0-6
+  if ((pattern & ~0x7F7F7F7F7F7F7F00ULL) == 0) return true;
+  // Position 4: rows 1-7, cols 1-7
+  if ((pattern & ~0xFEFEFEFEFEFEFE00ULL) == 0) return true;
+
+  return false;
+}
+
 // Core 6-generation stepping and cycle detection logic
 // Used by both CPU tests and CUDA kernels
-__host__ __device__ static inline bool step6GenerationsAndCheck(uint64_t* g1, uint64_t pattern, uint64_t* generations,
+__host__ __device__ static inline bool step6GenerationsAndCheck(uint64_t* g1, uint64_t pattern, uint16_t* generations,
                                                                 uint64_t* candidates, uint64_t* numCandidates) {
   *generations += 6;
   uint64_t g2 = computeNextGeneration(*g1);
@@ -239,6 +277,89 @@ __host__ __device__ static inline bool step6GenerationsAndCheck(uint64_t* g1, ui
   if (*generations >= MIN_CANDIDATE_GENERATIONS) {
     uint64_t idx = getNextCandidateIndex(numCandidates);
     candidates[idx] = pattern;
+    *generations = 0;
+    return true;  // Candidate found, advance to next
+  }
+
+  return false;  // Continue with current pattern
+}
+
+// Version with 7x7 subgrid coverage detection
+// Splits candidates into covered vs uncovered arrays
+__host__ __device__ static inline bool step6GenerationsAndCheckWithCoverage(
+    uint64_t* g1, uint64_t pattern, uint16_t* generations,
+    uint64_t* uncoveredCandidates, uint64_t* numUncoveredCandidates,
+    CoveredCandidate* coveredCandidates, uint64_t* numCoveredCandidates) {
+
+  // Check if current state has 7x7 coverage
+  if (isCoverableBy7x7(*g1)) {
+    uint64_t idx = getNextCandidateIndex(numCoveredCandidates);
+    coveredCandidates[idx] = {pattern, *g1, *generations};
+    *generations = 0;
+    return true;
+  }
+
+  // Compute next 6 generations, checking for coverage after each step
+  uint64_t g2 = computeNextGeneration(*g1);
+  if (isCoverableBy7x7(g2)) {
+    uint64_t idx = getNextCandidateIndex(numCoveredCandidates);
+    coveredCandidates[idx] = {pattern, g2, (uint16_t)(*generations + 1)};
+    *generations = 0;
+    return true;
+  }
+
+  uint64_t g3 = computeNextGeneration(g2);
+  if (isCoverableBy7x7(g3)) {
+    uint64_t idx = getNextCandidateIndex(numCoveredCandidates);
+    coveredCandidates[idx] = {pattern, g3, (uint16_t)(*generations + 2)};
+    *generations = 0;
+    return true;
+  }
+
+  uint64_t g4 = computeNextGeneration(g3);
+  if (isCoverableBy7x7(g4)) {
+    uint64_t idx = getNextCandidateIndex(numCoveredCandidates);
+    coveredCandidates[idx] = {pattern, g4, (uint16_t)(*generations + 3)};
+    *generations = 0;
+    return true;
+  }
+
+  uint64_t g5 = computeNextGeneration(g4);
+  if (isCoverableBy7x7(g5)) {
+    uint64_t idx = getNextCandidateIndex(numCoveredCandidates);
+    coveredCandidates[idx] = {pattern, g5, (uint16_t)(*generations + 4)};
+    *generations = 0;
+    return true;
+  }
+
+  uint64_t g6 = computeNextGeneration(g5);
+  if (isCoverableBy7x7(g6)) {
+    uint64_t idx = getNextCandidateIndex(numCoveredCandidates);
+    coveredCandidates[idx] = {pattern, g6, (uint16_t)(*generations + 5)};
+    *generations = 0;
+    return true;
+  }
+
+  *g1 = computeNextGeneration(g6);
+  if (isCoverableBy7x7(*g1)) {
+    uint64_t idx = getNextCandidateIndex(numCoveredCandidates);
+    coveredCandidates[idx] = {pattern, *g1, (uint16_t)(*generations + 6)};
+    *generations = 0;
+    return true;
+  }
+
+  *generations += 6;
+
+  // Check for cycles
+  if ((*g1 == g2) || (*g1 == g3) || (*g1 == g4)) {
+    *generations = 0;
+    return true;  // Pattern ended/cyclical, advance to next
+  }
+
+  // Check if reached minimum candidate generations (not covered)
+  if (*generations >= MIN_CANDIDATE_GENERATIONS) {
+    uint64_t idx = getNextCandidateIndex(numUncoveredCandidates);
+    uncoveredCandidates[idx] = pattern;
     *generations = 0;
     return true;  // Candidate found, advance to next
   }

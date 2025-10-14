@@ -124,7 +124,6 @@ set(CUDA_SOURCES
     src/gol.cpp
     src/gol_search.cpp
     src/simulation_handlers.cpp
-    src/subgrid_cache_cuda.cu
     src/subgrid_cache.cpp
     src/find-optimal.cpp
 )
@@ -169,6 +168,9 @@ set_target_properties(find-optimal PROPERTIES
     CUDA_RUNTIME_LIBRARY Static
     CUDA_SEPARABLE_COMPILATION ON
 )
+
+# Enable extended lambda for CUDA (required for device lambdas)
+target_compile_options(find-optimal PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--extended-lambda>)
 
 # Additional executables
 add_executable(explore-subgrid src/explore-subgrid.cpp)

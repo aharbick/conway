@@ -1,0 +1,248 @@
+#!/bin/bash
+
+# Script to compare find-optimal results with and without subgrid cache
+# Verifies that the cache optimization produces identical results
+#
+# Usage: compare-subgrid-cache-results [FRAME_INDEX] [LOG_FILE]
+#   FRAME_INDEX: Frame index to test (default: 978679)
+#   LOG_FILE:    Optional log file for detailed progress output
+#
+# Examples:
+#   ./bin/compare-subgrid-cache-results
+#   ./bin/compare-subgrid-cache-results 978679
+#   ./bin/compare-subgrid-cache-results 978679 /tmp/search.log
+#
+# When using a log file, you can monitor progress in another terminal:
+#   tail -f /tmp/search.log
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+FIND_OPTIMAL="$PROJECT_ROOT/build/find-optimal"
+CACHE_FILE="$PROJECT_ROOT/data/7x7subgrid-cache.json"
+
+# Parse arguments
+TEST_FRAME="${1:-978679}"
+LOG_FILE="${2:-}"
+
+# Function to run find-optimal and return results
+run_search() {
+    local use_cache=$1
+    local extra_args=""
+
+    if [ "$use_cache" = true ]; then
+        extra_args="--subgrid-cache-file $CACHE_FILE"
+    fi
+
+    if [ -n "$LOG_FILE" ]; then
+        extra_args="$extra_args --log-file $LOG_FILE"
+    fi
+
+    "$FIND_OPTIMAL" --frame-mode "index:$TEST_FRAME" --dont-save-results $extra_args 2>&1
+}
+
+# Function to parse results into associative array
+parse_results() {
+    local output="$1"
+    local -n result_map=$2
+
+    while IFS= read -r line; do
+        if [[ $line =~ frameIdx=$TEST_FRAME.*kernelIdx=([0-9]+).*bestGenerations=([0-9]+).*bestPattern=([0-9]+) ]]; then
+            local kernel_idx="${BASH_REMATCH[1]}"
+            local generations="${BASH_REMATCH[2]}"
+            local pattern="${BASH_REMATCH[3]}"
+            result_map["$kernel_idx"]="$generations:$pattern"
+        fi
+    done <<< "$(echo "$output" | grep -E "frameIdx=$TEST_FRAME.*bestGenerations=[0-9]+")"
+}
+
+# Function to compare two result maps
+compare_results() {
+    local -n map1=$1
+    local -n map2=$2
+    local mismatches=0
+    local matches=0
+
+    # Get all unique kernel indices and sort them
+    local all_kernels=()
+    for kernel_idx in "${!map1[@]}" "${!map2[@]}"; do
+        if [[ ! " ${all_kernels[@]} " =~ " ${kernel_idx} " ]]; then
+            all_kernels+=("$kernel_idx")
+        fi
+    done
+
+    IFS=$'\n' sorted_kernels=($(sort -n <<<"${all_kernels[*]}"))
+    unset IFS
+
+    for kernel_idx in "${sorted_kernels[@]}"; do
+        local result1="${map1[$kernel_idx]:-}"
+        local result2="${map2[$kernel_idx]:-}"
+
+        if [ -z "$result1" ]; then
+            echo -e "${RED}MISMATCH: Kernel $kernel_idx found in cached run but not in non-cached run${NC}"
+            ((mismatches++))
+            continue
+        fi
+
+        if [ -z "$result2" ]; then
+            echo -e "${RED}MISMATCH: Kernel $kernel_idx found in non-cached run but not in cached run${NC}"
+            ((mismatches++))
+            continue
+        fi
+
+        if [ "$result1" != "$result2" ]; then
+            echo -e "${RED}MISMATCH: Kernel $kernel_idx${NC}"
+            echo "  Without cache: $result1"
+            echo "  With cache:    $result2"
+            ((mismatches++))
+        else
+            local gens="${result1%%:*}"
+            echo -e "${GREEN}MATCH: Kernel $kernel_idx - ${gens} generations${NC}"
+            ((matches++))
+        fi
+    done
+
+    echo ""
+    echo "Matching kernels: $matches"
+    echo "Mismatched kernels: $mismatches"
+
+    return $mismatches
+}
+
+# Main script
+echo "=================================="
+echo "Subgrid Cache Comparison Test"
+echo "=================================="
+echo ""
+echo "Frame index: $TEST_FRAME"
+echo "Cache file: $CACHE_FILE"
+if [ -n "$LOG_FILE" ]; then
+    echo "Log file: $LOG_FILE"
+    echo ""
+    echo "Tip: You can monitor progress with: tail -f $LOG_FILE"
+fi
+echo ""
+
+# Check if find-optimal exists
+if [ ! -f "$FIND_OPTIMAL" ]; then
+    echo -e "${RED}ERROR: find-optimal not found at $FIND_OPTIMAL${NC}"
+    echo "Please run: cmake --build build"
+    exit 1
+fi
+
+# Check if cache file exists
+CACHE_EXISTS=false
+if [ -f "$CACHE_FILE" ]; then
+    CACHE_EXISTS=true
+else
+    echo -e "${YELLOW}WARNING: Cache file not found at $CACHE_FILE${NC}"
+    echo "The cache-enabled test will be skipped."
+    echo ""
+fi
+
+echo "=================================="
+echo "Running WITHOUT subgrid cache"
+echo "=================================="
+echo ""
+
+NO_CACHE_OUTPUT=$(run_search false)
+NO_CACHE_RESULTS=$(echo "$NO_CACHE_OUTPUT" | grep -E "frameIdx=$TEST_FRAME.*bestGenerations=[0-9]+" || true)
+
+if [ -z "$NO_CACHE_RESULTS" ]; then
+    echo -e "${RED}ERROR: No output from non-cached run${NC}"
+    echo "Full output:"
+    echo "$NO_CACHE_OUTPUT"
+    exit 1
+fi
+
+echo "Results without cache:"
+echo "$NO_CACHE_RESULTS"
+echo ""
+
+declare -A NO_CACHE_MAP
+parse_results "$NO_CACHE_OUTPUT" NO_CACHE_MAP
+
+if [ ${#NO_CACHE_MAP[@]} -eq 0 ]; then
+    echo -e "${RED}ERROR: Could not parse non-cached results${NC}"
+    exit 1
+fi
+
+echo "Parsed ${#NO_CACHE_MAP[@]} kernel results from non-cached run"
+echo ""
+
+# Only run cache test if cache file exists
+if [ "$CACHE_EXISTS" = true ]; then
+    echo "=================================="
+    echo "Running WITH subgrid cache"
+    echo "=================================="
+    echo ""
+
+    CACHE_OUTPUT=$(run_search true)
+    CACHE_RESULTS=$(echo "$CACHE_OUTPUT" | grep -E "(frameIdx=$TEST_FRAME.*bestGenerations=[0-9]+|Using subgrid cache)" || true)
+
+    if [ -z "$CACHE_RESULTS" ]; then
+        echo -e "${RED}ERROR: No output from cached run${NC}"
+        echo "Full output:"
+        echo "$CACHE_OUTPUT"
+        exit 1
+    fi
+
+    echo "Results with cache:"
+    echo "$CACHE_RESULTS"
+    echo ""
+
+    declare -A CACHE_MAP
+    parse_results "$CACHE_OUTPUT" CACHE_MAP
+
+    if [ ${#CACHE_MAP[@]} -eq 0 ]; then
+        echo -e "${RED}ERROR: Could not parse cached results${NC}"
+        exit 1
+    fi
+
+    echo "Parsed ${#CACHE_MAP[@]} kernel results from cached run"
+    echo ""
+
+    # Compare results
+    echo "=================================="
+    echo "Comparing Results"
+    echo "=================================="
+    echo ""
+
+    if compare_results NO_CACHE_MAP CACHE_MAP; then
+        echo ""
+        echo "=================================="
+        echo "Summary"
+        echo "=================================="
+        echo ""
+        echo -e "${GREEN}SUCCESS: All results match!${NC}"
+        echo "The subgrid cache optimization produces identical results."
+        exit 0
+    else
+        echo ""
+        echo "=================================="
+        echo "Summary"
+        echo "=================================="
+        echo ""
+        echo -e "${RED}FAILURE: Results do not match!${NC}"
+        echo "The subgrid cache optimization is producing different results."
+        exit 1
+    fi
+else
+    echo "=================================="
+    echo "Summary"
+    echo "=================================="
+    echo ""
+    echo -e "${YELLOW}Cache comparison skipped (no cache file)${NC}"
+    echo "Non-cached run completed successfully with ${#NO_CACHE_MAP[@]} kernel results."
+    echo ""
+    echo "To run full comparison, create cache with:"
+    echo "  ./build/find-optimal --compute-subgrid-cache PATH"
+    exit 0
+fi

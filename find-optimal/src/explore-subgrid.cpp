@@ -286,34 +286,6 @@ struct SubgridStats {
   }
 };
 
-// Check if all live cells in a pattern can be covered by a 7x7 subgrid
-// Returns true if coverable, false otherwise
-bool isCoverableBy7x7(uint64_t pattern) {
-  if (pattern == 0) return false;
-
-  // 7x7 mask: 0x7F7F7F7F7F7F7F (7 bits per row, 7 rows)
-  // But we need to test 4 positions:
-  // Top-left 7x7, top-right 7x7, bottom-left 7x7, bottom-right 7x7
-
-  // Position 1: rows 0-6, cols 0-6
-  uint64_t mask1 = 0x7F7F7F7F7F7F7FULL;
-  if ((pattern & ~mask1) == 0) return true;
-
-  // Position 2: rows 0-6, cols 1-7
-  uint64_t mask2 = 0xFEFEFEFEFEFEFEULL;
-  if ((pattern & ~mask2) == 0) return true;
-
-  // Position 3: rows 1-7, cols 0-6
-  uint64_t mask3 = 0x7F7F7F7F7F7F7F00ULL;
-  if ((pattern & ~mask3) == 0) return true;
-
-  // Position 4: rows 1-7, cols 1-7
-  uint64_t mask4 = 0xFEFEFEFEFEFEFE00ULL;
-  if ((pattern & ~mask4) == 0) return true;
-
-  return false;
-}
-
 // Simulate a single pattern and track when it becomes coverable
 void analyzePattern(uint64_t pattern, SubgridStats& stats) {
   int coverableAtGeneration = -1;
