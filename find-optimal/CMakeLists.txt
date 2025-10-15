@@ -169,9 +169,6 @@ set_target_properties(find-optimal PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
 )
 
-# Enable extended lambda for CUDA (required for device lambdas)
-target_compile_options(find-optimal PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--extended-lambda>)
-
 # Additional executables
 add_executable(explore-subgrid src/explore-subgrid.cpp)
 add_executable(validate-frame-search-completeness src/validate_frame_search_completeness.cpp)

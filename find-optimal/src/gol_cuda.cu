@@ -74,9 +74,7 @@ __global__ void processCandidates(uint64_t *candidates, uint64_t *numCandidates,
   }
 }
 
-// Template function for finding candidates (shared implementation)
-template<typename StepFunction>
-__device__ void findCandidatesInKernelImpl(uint64_t kernel, StepFunction stepFunc) {
+__global__ void findCandidatesInKernel(uint64_t kernel, uint64_t *candidates, uint64_t *numCandidates) {
   uint64_t startingPattern = kernel;
   startingPattern += ((uint64_t)(threadIdx.x & 15)) << 10;  // set the lower row of 4 'T' bits
   startingPattern += ((uint64_t)(threadIdx.x >> 4)) << 17;  // set the upper row of 6 'T' bits
@@ -92,7 +90,7 @@ __device__ void findCandidatesInKernelImpl(uint64_t kernel, StepFunction stepFun
     uint16_t generations = 0;
 
     while (generations < FAST_SEARCH_MAX_GENERATIONS) {
-      if (!stepFunc(&g1, pattern, &generations)) {
+      if (!step6GenerationsAndCheck(&g1, pattern, &generations, candidates, numCandidates)) {
         continue;
       }
       break;
@@ -100,67 +98,27 @@ __device__ void findCandidatesInKernelImpl(uint64_t kernel, StepFunction stepFun
   }
 }
 
-__global__ void findCandidatesInKernel(uint64_t kernel, uint64_t *candidates, uint64_t *numCandidates) {
-  auto stepFunc = [candidates, numCandidates] __device__ (uint64_t* g1, uint64_t pattern, uint16_t* generations) {
-    return step6GenerationsAndCheck(g1, pattern, generations, candidates, numCandidates);
-  };
-  findCandidatesInKernelImpl(kernel, stepFunc);
-}
-
-__global__ void findCandidatesInKernelWithCoverage(uint64_t kernel,
-                                                    uint64_t *uncoveredCandidates, uint64_t *numUncoveredCandidates,
-                                                    CoveredCandidate *coveredCandidates, uint64_t *numCoveredCandidates) {
-  auto stepFunc = [uncoveredCandidates, numUncoveredCandidates, coveredCandidates, numCoveredCandidates]
-                  __device__ (uint64_t* g1, uint64_t pattern, uint16_t* generations) {
-    return step6GenerationsAndCheckWithCoverage(g1, pattern, generations,
-                                                 uncoveredCandidates, numUncoveredCandidates,
-                                                 coveredCandidates, numCoveredCandidates);
-  };
-  findCandidatesInKernelImpl(kernel, stepFunc);
-}
-
 // CUDA execution functions
 
 __host__ void executeKernelSearch(gol::SearchMemory &mem, ProgramArgs *cli, uint64_t frame, uint64_t frameIdx) {
-  bool useCacheOptimization = SubgridCache::getInstance().isLoaded();
-
   // Loop over all kernels for this frame
   for (int kernelIdx = 0; kernelIdx < (1ULL << FRAME_SEARCH_NUM_K_BITS); ++kernelIdx) {
     const uint64_t kernel = constructKernel(frame, kernelIdx);
     const double startTime = getHighResCurrentTime();
 
     // Phase 1: Find candidates in this kernel
-    if (useCacheOptimization) {
-      // Use coverage-aware kernel that terminates counting when subgrid cache contains the pattern
-      *mem.h_numCandidates() = 0;  // Reuse for uncovered candidates
-      *mem.h_numCoveredCandidates() = 0;
-      cudaCheckError(cudaMemcpy(mem.d_numCandidates(), mem.h_numCandidates(), sizeof(uint64_t), cudaMemcpyHostToDevice));
-      cudaCheckError(cudaMemcpy(mem.d_numCoveredCandidates(), mem.h_numCoveredCandidates(), sizeof(uint64_t), cudaMemcpyHostToDevice));
-
-      findCandidatesInKernelWithCoverage<<<FRAME_SEARCH_GRID_SIZE, FRAME_SEARCH_THREADS_PER_BLOCK>>>(
-          kernel, mem.d_candidates(), mem.d_numCandidates(),
-          mem.d_coveredCandidates(), mem.d_numCoveredCandidates());
-
-      cudaCheckError(cudaGetLastError());
-      cudaCheckError(cudaDeviceSynchronize());
-      cudaCheckError(cudaMemcpy(mem.h_numCandidates(), mem.d_numCandidates(), sizeof(uint64_t), cudaMemcpyDeviceToHost));
-      cudaCheckError(cudaMemcpy(mem.h_numCoveredCandidates(), mem.d_numCoveredCandidates(), sizeof(uint64_t), cudaMemcpyDeviceToHost));
-    } else {
-      // Use standard kernel
-      *mem.h_numCandidates() = 0;
-      cudaCheckError(cudaMemcpy(mem.d_numCandidates(), mem.h_numCandidates(), sizeof(uint64_t), cudaMemcpyHostToDevice));
-      findCandidatesInKernel<<<FRAME_SEARCH_GRID_SIZE, FRAME_SEARCH_THREADS_PER_BLOCK>>>(kernel, mem.d_candidates(),
-                                                                                         mem.d_numCandidates());
-      cudaCheckError(cudaGetLastError());
-      cudaCheckError(cudaDeviceSynchronize());
-      cudaCheckError(cudaMemcpy(mem.h_numCandidates(), mem.d_numCandidates(), sizeof(uint64_t), cudaMemcpyDeviceToHost));
-    }
+    *mem.h_numCandidates() = 0;
+    cudaCheckError(cudaMemcpy(mem.d_numCandidates(), mem.h_numCandidates(), sizeof(uint64_t), cudaMemcpyHostToDevice));
+    findCandidatesInKernel<<<FRAME_SEARCH_GRID_SIZE, FRAME_SEARCH_THREADS_PER_BLOCK>>>(kernel, mem.d_candidates(),
+                                                                                       mem.d_numCandidates());
+    cudaCheckError(cudaGetLastError());
+    cudaCheckError(cudaDeviceSynchronize());
+    cudaCheckError(cudaMemcpy(mem.h_numCandidates(), mem.d_numCandidates(), sizeof(uint64_t), cudaMemcpyDeviceToHost));
 
     // Phase 2: Process candidates if found
     *mem.h_bestGenerations() = 0;
     *mem.h_bestPattern() = 0;
 
-    // Process uncovered candidates with GPU (always have these)
     if (*mem.h_numCandidates() > 0) {
       cudaCheckError(
           cudaMemcpy(mem.d_bestGenerations(), mem.h_bestGenerations(), sizeof(uint64_t), cudaMemcpyHostToDevice));
@@ -174,31 +132,6 @@ __host__ void executeKernelSearch(gol::SearchMemory &mem, ProgramArgs *cli, uint
       cudaCheckError(
           cudaMemcpy(mem.h_bestGenerations(), mem.d_bestGenerations(), sizeof(uint64_t), cudaMemcpyDeviceToHost));
       updateBestGenerations(*mem.h_bestGenerations());
-    }
-
-    // Process covered candidates with CPU + cache lookup
-    if (useCacheOptimization && *mem.h_numCoveredCandidates() > 0) {
-      // Copy covered candidates from device to host
-      cudaCheckError(cudaMemcpy(mem.h_coveredCandidates(), mem.d_coveredCandidates(),
-                                *mem.h_numCoveredCandidates() * sizeof(CoveredCandidate), cudaMemcpyDeviceToHost));
-
-      // Process each covered candidate
-      for (uint64_t i = 0; i < *mem.h_numCoveredCandidates(); i++) {
-        CoveredCandidate* candidate = &mem.h_coveredCandidates()[i];
-
-        // Look up the covered pattern in the cache
-        uint16_t cachedGenerations = SubgridCache::getInstance().lookup(candidate->patternWhenCovered);
-
-        // Calculate total generations
-        if (cachedGenerations > 0) {
-          uint16_t totalGenerations = candidate->generationsUntilCovered + cachedGenerations;
-          if (totalGenerations > *mem.h_bestGenerations()) {
-            *mem.h_bestGenerations() = totalGenerations;
-            *mem.h_bestPattern() = candidate->pattern;
-            updateBestGenerations(totalGenerations);
-          }
-        }
-      }
     }
 
     bool isFrameComplete = (kernelIdx == (1ULL << FRAME_SEARCH_NUM_K_BITS) - 1);

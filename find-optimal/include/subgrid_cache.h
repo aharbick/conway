@@ -14,13 +14,6 @@ struct SubgridCacheEntry {
   uint16_t generations;  // Number of generations (180-65535)
 };
 
-// Candidate that reached 7x7 coverage during search
-struct CoveredCandidate {
-  uint64_t pattern;                  // The original 8x8 pattern
-  uint64_t patternWhenCovered;       // The 8x8 pattern when it became covered (used for cache lookup)
-  uint16_t generationsUntilCovered;  // Generations before 7x7 coverage was reached
-};
-
 // Singleton class for managing the subgrid cache
 class SubgridCache {
  private:
