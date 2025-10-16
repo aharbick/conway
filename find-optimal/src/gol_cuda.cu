@@ -98,6 +98,32 @@ __global__ void findCandidatesInKernel(uint64_t kernel, uint64_t *candidates, ui
   }
 }
 
+// Cache-accelerated version of findCandidatesInKernel
+__global__ void findCandidatesInKernelWithCache(uint64_t kernel, uint64_t *candidates, uint64_t *numCandidates,
+                                                 const SubgridHashTable* cache) {
+  uint64_t startingPattern = kernel;
+  startingPattern += ((uint64_t)(threadIdx.x & 15)) << 10;  // set the lower row of 4 'T' bits
+  startingPattern += ((uint64_t)(threadIdx.x >> 4)) << 17;  // set the upper row of 6 'T' bits
+  startingPattern += ((uint64_t)(blockIdx.x & 63)) << 41;   // set the lower row of 6 'B' bits
+  startingPattern += ((uint64_t)(blockIdx.x >> 6)) << 50;   // set the upper row of 4 'B' bits
+
+  uint64_t endAt = startingPattern +
+                   ((1ULL << FRAME_SEARCH_NUM_P_BITS) << 23);  // 2^16 = 65536 increments for the P bits (bits 23-38)
+  uint64_t beginAt = startingPattern;
+
+  for (uint64_t pattern = beginAt; pattern < endAt; pattern += (1ULL << 23)) {
+    uint64_t g1 = pattern;
+    uint16_t generations = 0;
+
+    while (generations < FAST_SEARCH_MAX_GENERATIONS) {
+      if (!step6GenerationsAndCheckWithCache(&g1, pattern, &generations, candidates, numCandidates, cache)) {
+        continue;
+      }
+      break;
+    }
+  }
+}
+
 // CUDA execution functions
 
 __host__ void executeKernelSearch(gol::SearchMemory &mem, ProgramArgs *cli, uint64_t frame, uint64_t frameIdx) {
@@ -109,8 +135,16 @@ __host__ void executeKernelSearch(gol::SearchMemory &mem, ProgramArgs *cli, uint
     // Phase 1: Find candidates in this kernel
     *mem.h_numCandidates() = 0;
     cudaCheckError(cudaMemcpy(mem.d_numCandidates(), mem.h_numCandidates(), sizeof(uint64_t), cudaMemcpyHostToDevice));
-    findCandidatesInKernel<<<FRAME_SEARCH_GRID_SIZE, FRAME_SEARCH_THREADS_PER_BLOCK>>>(kernel, mem.d_candidates(),
-                                                                                       mem.d_numCandidates());
+
+    // Use cache-accelerated version if cache is available
+    if (mem.d_cacheTable() != nullptr) {
+      findCandidatesInKernelWithCache<<<FRAME_SEARCH_GRID_SIZE, FRAME_SEARCH_THREADS_PER_BLOCK>>>(
+          kernel, mem.d_candidates(), mem.d_numCandidates(), mem.d_cacheTable());
+    } else {
+      findCandidatesInKernel<<<FRAME_SEARCH_GRID_SIZE, FRAME_SEARCH_THREADS_PER_BLOCK>>>(
+          kernel, mem.d_candidates(), mem.d_numCandidates());
+    }
+
     cudaCheckError(cudaGetLastError());
     cudaCheckError(cudaDeviceSynchronize());
     cudaCheckError(cudaMemcpy(mem.h_numCandidates(), mem.d_numCandidates(), sizeof(uint64_t), cudaMemcpyDeviceToHost));

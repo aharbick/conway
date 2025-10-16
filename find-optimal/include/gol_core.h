@@ -284,4 +284,81 @@ __host__ __device__ static inline bool step6GenerationsAndCheck(uint64_t* g1, ui
   return false;  // Continue with current pattern
 }
 
+// Macro for early termination based on 7x7 cache lookup
+// Checks if generation is 7x7-coverable and if so, looks up in cache
+// Cache contains patterns with ≥180 generations
+// Logic: cache hit OR (cache miss + *generations > 20) → save as candidate
+//        cache miss + *generations ≤ 20 → dead end (max 20+179=199)
+#define RETURN_EARLY_IF_7X7_COVERAGE(gen, generations, pattern, candidates, numCandidates, cache) \
+  do { \
+    if (isCoverableBy7x7(gen)) { \
+      uint16_t cachedGens = cache->get(gen); \
+      if (cachedGens > 0 || *generations > 20) { \
+        uint64_t idx = getNextCandidateIndex(numCandidates); \
+        candidates[idx] = pattern; \
+        *generations = 0; \
+        return true; \
+      } \
+      *generations = 0; \
+      return true; \
+    } \
+  } while (0)
+
+// Cache-accelerated 6-generation stepping with early candidate detection
+// Checks each generation against the 7x7 subgrid cache to detect long-running patterns early
+// This version checks after computing each generation to terminate as early as possible
+__host__ __device__ static inline bool step6GenerationsAndCheckWithCache(
+    uint64_t* g1, uint64_t pattern, uint16_t* generations,
+    uint64_t* candidates, uint64_t* numCandidates,
+    const SubgridHashTable* cache) {
+
+  // Check g1 first (carried over from previous iteration)
+  (*generations)++;
+  RETURN_EARLY_IF_7X7_COVERAGE(*g1, generations, pattern, candidates, numCandidates, cache);
+
+  // Compute g2 and check cache immediately
+  uint64_t g2 = computeNextGeneration(*g1);
+  (*generations)++;
+  RETURN_EARLY_IF_7X7_COVERAGE(g2, generations, pattern, candidates, numCandidates, cache);
+
+  // Compute g3 and check cache immediately
+  uint64_t g3 = computeNextGeneration(g2);
+  (*generations)++;
+  RETURN_EARLY_IF_7X7_COVERAGE(g3, generations, pattern, candidates, numCandidates, cache);
+
+  // Compute g4 and check cache immediately
+  uint64_t g4 = computeNextGeneration(g3);
+  (*generations)++;
+  RETURN_EARLY_IF_7X7_COVERAGE(g4, generations, pattern, candidates, numCandidates, cache);
+
+  // Compute g5 and check cache immediately
+  uint64_t g5 = computeNextGeneration(g4);
+  (*generations)++;
+  RETURN_EARLY_IF_7X7_COVERAGE(g5, generations, pattern, candidates, numCandidates, cache);
+
+  // Compute g6 and check cache immediately
+  uint64_t g6 = computeNextGeneration(g5);
+  (*generations)++;
+  RETURN_EARLY_IF_7X7_COVERAGE(g6, generations, pattern, candidates, numCandidates, cache);
+
+  // Compute next g1... cache check and generation happens at the beginning
+  *g1 = computeNextGeneration(g6);
+
+  // Check for cycles
+  if ((*g1 == g2) || (*g1 == g3) || (*g1 == g4)) {
+    *generations = 0;
+    return true;
+  }
+
+  // Check if reached minimum candidate generations
+  if (*generations >= MIN_CANDIDATE_GENERATIONS) {
+    uint64_t idx = getNextCandidateIndex(numCandidates);
+    candidates[idx] = pattern;
+    *generations = 0;
+    return true;
+  }
+
+  return false;
+}
+
 #endif

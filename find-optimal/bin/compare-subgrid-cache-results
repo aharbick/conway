@@ -48,19 +48,39 @@ run_search() {
     "$FIND_OPTIMAL" --frame-mode "index:$TEST_FRAME" --dont-save-results $extra_args 2>&1
 }
 
-# Function to parse results into associative array
+# Function to parse results into associative array (generations only)
 parse_results() {
     local output="$1"
     local -n result_map=$2
 
     while IFS= read -r line; do
-        if [[ $line =~ frameIdx=$TEST_FRAME.*kernelIdx=([0-9]+).*bestGenerations=([0-9]+).*bestPattern=([0-9]+) ]]; then
+        if [[ $line =~ frameIdx=$TEST_FRAME.*kernelIdx=([0-9]+).*bestGenerations=([0-9]+) ]]; then
             local kernel_idx="${BASH_REMATCH[1]}"
             local generations="${BASH_REMATCH[2]}"
-            local pattern="${BASH_REMATCH[3]}"
-            result_map["$kernel_idx"]="$generations:$pattern"
+            result_map["$kernel_idx"]="$generations"
         fi
     done <<< "$(echo "$output" | grep -E "frameIdx=$TEST_FRAME.*bestGenerations=[0-9]+")"
+}
+
+# Function to calculate average patterns per second from output
+calculate_avg_patterns_per_sec() {
+    local output="$1"
+    local total=0
+    local count=0
+
+    while IFS= read -r line; do
+        if [[ $line =~ patternsPerSec=([0-9]+) ]]; then
+            local pps="${BASH_REMATCH[1]}"
+            total=$((total + pps))
+            count=$((count + 1))
+        fi
+    done <<< "$(echo "$output" | grep -E "patternsPerSec=[0-9]+")"
+
+    if [ $count -eq 0 ]; then
+        echo "0"
+    else
+        echo $((total / count))
+    fi
 }
 
 # Function to compare two result maps
@@ -97,14 +117,14 @@ compare_results() {
             continue
         fi
 
+        # Compare only generations (not patterns, since cache may find different patterns)
         if [ "$result1" != "$result2" ]; then
             echo -e "${RED}MISMATCH: Kernel $kernel_idx${NC}"
-            echo "  Without cache: $result1"
-            echo "  With cache:    $result2"
+            echo "  Without cache: $result1 generations"
+            echo "  With cache:    $result2 generations"
             ((mismatches++))
         else
-            local gens="${result1%%:*}"
-            echo -e "${GREEN}MATCH: Kernel $kernel_idx - ${gens} generations${NC}"
+            echo -e "${GREEN}MATCH: Kernel $kernel_idx - $result1 generations${NC}"
             ((matches++))
         fi
     done
@@ -175,6 +195,10 @@ if [ ${#NO_CACHE_MAP[@]} -eq 0 ]; then
 fi
 
 echo "Parsed ${#NO_CACHE_MAP[@]} kernel results from non-cached run"
+
+# Calculate performance metrics for non-cached run
+NO_CACHE_AVG_PPS=$(calculate_avg_patterns_per_sec "$NO_CACHE_OUTPUT")
+echo "Average patterns/sec: $(printf "%'d" $NO_CACHE_AVG_PPS)"
 echo ""
 
 # Only run cache test if cache file exists
@@ -207,6 +231,16 @@ if [ "$CACHE_EXISTS" = true ]; then
     fi
 
     echo "Parsed ${#CACHE_MAP[@]} kernel results from cached run"
+
+    # Calculate performance metrics for cached run
+    CACHE_AVG_PPS=$(calculate_avg_patterns_per_sec "$CACHE_OUTPUT")
+    echo "Average patterns/sec: $(printf "%'d" $CACHE_AVG_PPS)"
+
+    # Calculate speedup
+    if [ $NO_CACHE_AVG_PPS -gt 0 ]; then
+        SPEEDUP=$(awk "BEGIN {printf \"%.2f\", ($CACHE_AVG_PPS - $NO_CACHE_AVG_PPS) * 100.0 / $NO_CACHE_AVG_PPS}")
+        echo -e "${GREEN}Performance improvement: ${SPEEDUP}%${NC}"
+    fi
     echo ""
 
     # Compare results

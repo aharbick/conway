@@ -99,6 +99,9 @@ class SearchMemory {
   HostPtr<uint64_t> h_bestPattern_;
   HostPtr<uint64_t> h_bestGenerations_;
 
+  // Cache hash table (borrowed reference, owned by SubgridCache singleton)
+  SubgridHashTable* d_cacheTable_;
+
  public:
   SearchMemory(size_t candidateSize)
       : d_candidates_(sizeof(uint64_t) * candidateSize),
@@ -108,9 +111,10 @@ class SearchMemory {
         h_candidates_(make_host_ptr_zeroed<uint64_t>(candidateSize)),
         h_numCandidates_(make_host_ptr<uint64_t>()),
         h_bestPattern_(make_host_ptr<uint64_t>()),
-        h_bestGenerations_(make_host_ptr<uint64_t>()) {
+        h_bestGenerations_(make_host_ptr<uint64_t>()),
+        d_cacheTable_(nullptr) {
     // Constructor automatically handles all allocations
-    // Destructor will automatically handle cleanup
+    // Note: d_cacheTable_ is a borrowed reference and not freed here
   }
 
   // Move semantics only (expensive to copy large memory buffers)
@@ -146,6 +150,16 @@ class SearchMemory {
   }
   uint64_t* h_bestGenerations() const {
     return h_bestGenerations_.get();
+  }
+
+  // Cache table accessor with lazy loading
+  // Automatically builds GPU hash table from SubgridCache if loaded
+  // Returns borrowed reference (owned by SubgridCache singleton)
+  SubgridHashTable* d_cacheTable() {
+    if (d_cacheTable_ == nullptr && SubgridCache::getInstance().isLoaded()) {
+      d_cacheTable_ = SubgridCache::getInstance().getGpuHashTable();
+    }
+    return d_cacheTable_;
   }
 };
 

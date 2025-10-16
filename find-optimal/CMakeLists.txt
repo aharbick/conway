@@ -173,6 +173,10 @@ set_target_properties(find-optimal PROPERTIES
 add_executable(explore-subgrid src/explore-subgrid.cpp)
 add_executable(validate-frame-search-completeness src/validate_frame_search_completeness.cpp)
 
+# Hash function comparison tool
+add_executable(compare-hash-functions src/compare_hash_functions.cpp)
+target_link_libraries(compare-hash-functions nlohmann_json::nlohmann_json)
+
 # Code formatting targets
 find_program(CLANG_FORMAT_EXE NAMES "clang-format")
 if(CLANG_FORMAT_EXE)
