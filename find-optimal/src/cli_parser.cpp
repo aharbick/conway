@@ -36,14 +36,18 @@ static struct argp_option argp_options[] = {
     {"worker", 'w', "N:M", 0,
      "Worker configuration N:M where N is worker number (1-based) and M is total workers (default: 1:1)."},
     {"queue-directory", 'q', "PATH", 0, "Directory for persistent request queue (default: ./request-queue)."},
+    {"drain-request-queue", 'Q', 0, 0, "Process all pending requests in queue and exit."},
     {0}};
 
 
 static bool parseFrameMode(const char* arg, ProgramArgs* args) {
   std::string str(arg);
 
-  if (str == "random" || str == "sequential") {
-    args->frameMode = str;
+  if (str == "random") {
+    args->frameMode = FRAME_MODE_RANDOM;
+    return true;
+  } else if (str == "sequential") {
+    args->frameMode = FRAME_MODE_SEQUENTIAL;
     return true;
   }
 
@@ -63,7 +67,8 @@ static bool parseFrameMode(const char* arg, ProgramArgs* args) {
                   << FRAME_SEARCH_TOTAL_MINIMAL_FRAMES << ")\n";
         return false;
       }
-      args->frameMode = str;
+      args->frameMode = FRAME_MODE_INDEX;
+      args->frameModeIndex = frameIdx;
       return true;
     } catch (const std::exception&) {
       std::cerr << "[ERROR] Invalid frame index '" << frameIdxStr << "', expected a valid integer\n";
@@ -95,10 +100,10 @@ static bool parseSimulateType(const char* arg, ProgramArgs* args) {
   std::string str(arg);
 
   if (str == "pattern") {
-    args->simulateType = str;
+    args->simulateType = SIMULATE_PATTERN;
     return true;
   } else if (str == "symmetry") {
-    args->simulateType = str;
+    args->simulateType = SIMULATE_SYMMETRY;
     return true;
   }
 
@@ -139,8 +144,14 @@ static bool parseWorkerConfig(const char* arg, ProgramArgs* a) {
 static bool parseTestApi(const char* arg, ProgramArgs* args) {
   std::string str(arg);
 
-  if (str == "progress" || str == "summary" || str == "framecache") {
-    args->testApi = str;
+  if (str == "progress") {
+    args->testApi = TEST_API_PROGRESS;
+    return true;
+  } else if (str == "summary") {
+    args->testApi = TEST_API_SUMMARY;
+    return true;
+  } else if (str == "framecache") {
+    args->testApi = TEST_API_FRAMECACHE;
     return true;
   }
 
@@ -223,6 +234,9 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
     }
     a->queueDirectory = std::string(arg);
     break;
+  case 'Q':
+    a->drainRequestQueue = true;
+    break;
   default:
     return ARGP_ERR_UNKNOWN;
   }
@@ -238,9 +252,11 @@ void initializeDefaultArgs(ProgramArgs* args) {
   args->dontSaveResults = false;
   args->simulateMode = false;
   args->computeSubgridCache = false;
-  args->testApi = "";
-  args->simulateType = "";
-  args->frameMode = "";
+  args->drainRequestQueue = false;
+  args->testApi = TEST_API_NONE;
+  args->simulateType = SIMULATE_NONE;
+  args->frameMode = FRAME_MODE_NONE;
+  args->frameModeIndex = 0;
   args->logFilePath = "";
   args->queueDirectory = "./request-queue";
   args->subgridCachePath = "";

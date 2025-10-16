@@ -11,6 +11,7 @@
 #include "google_client.h"
 #include "google_request_queue.h"
 #include "logging.h"
+#include "queue_handlers.h"
 #include "simulation_handlers.h"
 #include "subgrid_cache.h"
 
@@ -73,15 +74,17 @@ int main(int argc, char** argv) {
 
   // Determine which action to take and execute it
   int result;
-  if (cli->computeSubgridCache) {
+  if (cli->drainRequestQueue) {
+    result = handleDrainRequestQueue(cli);
+  } else if (cli->computeSubgridCache) {
     result = computeSubgridCache(cli);
-  } else if (!cli->testApi.empty()) {
-    if (cli->testApi == "framecache") {
+  } else if (cli->testApi != TEST_API_NONE) {
+    if (cli->testApi == TEST_API_FRAMECACHE) {
       result = handleTestFrameCache(cli);
-    } else if (cli->testApi == "progress") {
+    } else if (cli->testApi == TEST_API_PROGRESS) {
       handleTestProgressApi(cli);
       result = 0;  // API tests always return success
-    } else {  // testApi == "summary"
+    } else {  // testApi == TEST_API_SUMMARY
       handleTestSummaryApi(cli);
       result = 0;  // API tests always return success
     }

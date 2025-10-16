@@ -35,7 +35,7 @@ __host__ void *search(void *args) {
   // Build worker-specific frame list
   std::vector<uint64_t> workerFrames;
 
-  if (cli->frameMode == "random" || cli->frameMode == "sequential") {
+  if (cli->frameMode == FRAME_MODE_RANDOM || cli->frameMode == FRAME_MODE_SEQUENTIAL) {
     // Generate all incomplete frames for this worker
     for (uint64_t frameIdx = 0; frameIdx < FRAME_SEARCH_TOTAL_MINIMAL_FRAMES; ++frameIdx) {
       // Check if this frame belongs to this worker using modulo partitioning
@@ -48,14 +48,13 @@ __host__ void *search(void *args) {
     }
 
     // Shuffle for random mode, keep in order for sequential mode
-    if (cli->frameMode == "random" && !workerFrames.empty()) {
+    if (cli->frameMode == FRAME_MODE_RANDOM && !workerFrames.empty()) {
       std::mt19937_64 rng(static_cast<uint64_t>(time(nullptr)) + cli->workerNum);
       std::shuffle(workerFrames.begin(), workerFrames.end(), rng);
     }
-  } else if (cli->frameMode.substr(0, 6) == "index:") {
-    // Parse single frame index from "index:XXXXX" (already validated in CLI parser)
-    uint64_t frameIdx = std::stoull(cli->frameMode.substr(6));
-    workerFrames.push_back(frameIdx);
+  } else if (cli->frameMode == FRAME_MODE_INDEX) {
+    // Use the pre-parsed frame index
+    workerFrames.push_back(cli->frameModeIndex);
   }
 
   // Report how many frames will be processed
@@ -82,13 +81,12 @@ __host__ void *search(void *args) {
 __host__ std::string getSearchDescription(ProgramArgs *cli) {
   std::ostringstream oss;
 
-  if (cli->frameMode == "random") {
+  if (cli->frameMode == FRAME_MODE_RANDOM) {
     oss << "RANDOMLY among incomplete frames";
-  } else if (cli->frameMode == "sequential") {
+  } else if (cli->frameMode == FRAME_MODE_SEQUENTIAL) {
     oss << "SEQUENTIALLY through incomplete frames";
-  } else if (cli->frameMode.substr(0, 6) == "index:") {
-    uint64_t frameIdx = std::stoull(cli->frameMode.substr(6));
-    oss << "SINGLE frame at index " << frameIdx;
+  } else if (cli->frameMode == FRAME_MODE_INDEX) {
+    oss << "SINGLE frame at index " << cli->frameModeIndex;
   } else {
     oss << "ERROR: Invalid frame mode";
   }

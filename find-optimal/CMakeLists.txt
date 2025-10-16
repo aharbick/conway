@@ -114,6 +114,7 @@ include_directories(${CUDAToolkit_INCLUDE_DIRS})
 set(CPU_SOURCES
     src/api_test_handlers.cpp
     src/cli_parser.cpp
+    src/queue_handlers.cpp
     src/utils.cpp
     src/logging.cpp
 )

@@ -193,13 +193,12 @@ int handleSymmetrySimulation(ProgramArgs* cli) {
 }
 
 int handleSimulationMode(ProgramArgs* cli) {
-  if (cli->simulateType == "pattern") {
+  if (cli->simulateType == SIMULATE_PATTERN) {
     return handlePatternSimulation(cli);
-  } else if (cli->simulateType == "symmetry") {
+  } else if (cli->simulateType == SIMULATE_SYMMETRY) {
     return handleSymmetrySimulation(cli);
   } else {
-    std::cerr << "[ERROR] Invalid simulate type '" << cli->simulateType
-              << "', expected 'pattern' or 'symmetry'\n";
+    std::cerr << "[ERROR] Invalid simulate type, expected 'pattern' or 'symmetry'\n";
     return 1;
   }
 }

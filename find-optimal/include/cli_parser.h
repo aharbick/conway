@@ -4,8 +4,27 @@
 #include <cstdint>
 #include <string>
 
-typedef enum { CYCLE_DETECTION_FLOYD, CYCLE_DETECTION_NIVASCH } CycleDetectionAlgorithm;
+enum CycleDetectionAlgorithm { CYCLE_DETECTION_FLOYD, CYCLE_DETECTION_NIVASCH };
 
+enum FrameMode {
+  FRAME_MODE_RANDOM,
+  FRAME_MODE_SEQUENTIAL,
+  FRAME_MODE_INDEX,
+  FRAME_MODE_NONE
+};
+
+enum TestApiType {
+  TEST_API_PROGRESS,
+  TEST_API_SUMMARY,
+  TEST_API_FRAMECACHE,
+  TEST_API_NONE
+};
+
+enum SimulateType {
+  SIMULATE_PATTERN,
+  SIMULATE_SYMMETRY,
+  SIMULATE_NONE
+};
 
 typedef struct ProgramArgs {
   bool resumeFromDatabase;
@@ -13,9 +32,11 @@ typedef struct ProgramArgs {
   bool dontSaveResults;
   bool simulateMode;
   bool computeSubgridCache;
-  std::string testApi;
-  std::string simulateType;
-  std::string frameMode;
+  bool drainRequestQueue;
+  TestApiType testApi;
+  SimulateType simulateType;
+  FrameMode frameMode;
+  uint64_t frameModeIndex;  // Only used when frameMode == FRAME_MODE_INDEX
   std::string logFilePath;
   std::string queueDirectory;
   std::string subgridCachePath;

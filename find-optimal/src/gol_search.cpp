@@ -16,8 +16,8 @@ int executeMainSearch(ProgramArgs* cli) {
     Logger::out() << "Best generations so far: " << gBestGenerations << "\n";
   }
 
-  // Initialize frame completion cache
-  if (loadGoogleFrameCache()) {
+  // Initialize frame completion cache (only useful for random/sequential modes, not index mode)
+  if (cli->frameMode != FRAME_MODE_INDEX && loadGoogleFrameCache()) {
     uint64_t completedFrames = getGoogleFrameCacheCompletedCount();
     Logger::out() << "Frame completion cache initialized with " << completedFrames << " completed frames\n";
   }

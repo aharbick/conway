@@ -116,7 +116,6 @@ static GoogleResult sendGoogleHttpRequest(const std::string& baseUrl, const std:
   GoogleResult result = GOOGLE_SUCCESS;
 
   if (res != CURLE_OK) {
-    std::cerr << "[ERROR] curl_easy_perform() failed: " << curl_easy_strerror(res) << "\n";
     result = GOOGLE_ERROR_CURL_PERFORM;
   } else {
     long responseCode;
