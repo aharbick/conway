@@ -312,6 +312,12 @@ __host__ __device__ static inline bool step6GenerationsAndCheckWithCache(
     uint64_t* candidates, uint64_t* numCandidates,
     const SubgridHashTable* cache) {
 
+  // TODO in the non-cache step6 function we do:
+  //   *generations += 6;
+  //
+  // But for some reason here...  If we do that instead of individual (*generations)++ it crashes with
+  //    CUDA Error: an illegal memory access was encountered /home/aharbick/conway/find-optimal/src/gol_cuda.cu 149
+
   // Check g1 first (carried over from previous iteration)
   (*generations)++;
   RETURN_EARLY_IF_7X7_COVERAGE(*g1, generations, pattern, candidates, numCandidates, cache);
