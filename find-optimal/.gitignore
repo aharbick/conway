@@ -8,3 +8,6 @@
 
 # Temp directory for a disk-based request queue (for persistent retry)
 request-queue/
+
+# Don't allow pushing the uncompressed data
+data/7x7subgrid-cache.json
