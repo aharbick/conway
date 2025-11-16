@@ -82,10 +82,10 @@ __global__ void findCandidatesInKernel(uint64_t kernel, uint64_t *candidates, ui
   startingPattern += ((uint64_t)(blockIdx.x >> 6)) << 50;   // set the upper row of 4 'B' bits
 
   uint64_t endAt = startingPattern +
-                   ((1ULL << FRAME_SEARCH_NUM_P_BITS) << 23);  // 2^16 = 65536 increments for the P bits (bits 23-38)
+                   ((1ULL << FRAME_SEARCH_NUM_P_BITS) << 24);  // 2^16 = 65536 increments for the P bits (bits 24-39)
   uint64_t beginAt = startingPattern;
 
-  for (uint64_t pattern = beginAt; pattern < endAt; pattern += (1ULL << 23)) {
+  for (uint64_t pattern = beginAt; pattern != endAt; pattern += (1ULL << 24)) {
     uint64_t g1 = pattern;
     uint16_t generations = 0;
 
@@ -108,10 +108,10 @@ __global__ void findCandidatesInKernelWithCache(uint64_t kernel, uint64_t *candi
   startingPattern += ((uint64_t)(blockIdx.x >> 6)) << 50;   // set the upper row of 4 'B' bits
 
   uint64_t endAt = startingPattern +
-                   ((1ULL << FRAME_SEARCH_NUM_P_BITS) << 23);  // 2^16 = 65536 increments for the P bits (bits 23-38)
+                   ((1ULL << FRAME_SEARCH_NUM_P_BITS) << 24);  // 2^16 = 65536 increments for the P bits (bits 24-39)
   uint64_t beginAt = startingPattern;
 
-  for (uint64_t pattern = beginAt; pattern < endAt; pattern += (1ULL << 23)) {
+  for (uint64_t pattern = beginAt; pattern != endAt; pattern += (1ULL << 24)) {
     uint64_t g1 = pattern;
     uint16_t generations = 0;
 

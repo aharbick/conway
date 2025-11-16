@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <vector>
+#include <cstdlib>
 
 // Define CUDA decorators as empty for CPU compilation
 #ifndef __NVCC__
@@ -8,6 +10,8 @@
 #endif
 
 #include "frame_utils.h"
+#include "gol_core.h"
+#include "constants.h"
 #include "test_utils.h"
 
 // Test frame utility functions (these don't have problematic dependencies)
@@ -420,4 +424,69 @@ TEST_F(FrameUtilsTest, ValidateTotalMinimalFrames) {
 
   EXPECT_EQ(minimalFrameCount, FRAME_SEARCH_TOTAL_MINIMAL_FRAMES)
     << "Actual minimal frame count should match FRAME_SEARCH_TOTAL_MINIMAL_FRAMES constant";
+}
+
+TEST_F(FrameUtilsTest, VerifyPBitIterationCompleteness) {
+  // Probabilistic test to verify that the P-bit iteration loop covers all 65,536 combinations
+  // This test picks a random thread/block combination and verifies that its P-bit loop
+  // correctly iterates through all 65,536 P-bit values without gaps or duplicates
+
+  // 1. Pick a random frame index
+  uint64_t randomFrameIdx = std::rand() % FRAME_SEARCH_TOTAL_MINIMAL_FRAMES;
+  uint64_t frame = getFrameByIndex(randomFrameIdx);
+
+  // 2. Pick a random kernel (0-15)
+  int randomKernel = std::rand() % 16;
+  uint64_t startingPattern = constructKernel(frame, randomKernel);
+
+  // 3. Pick a random thread and block index
+  uint32_t randomThreadIdx = std::rand() % FRAME_SEARCH_THREADS_PER_BLOCK;
+  uint32_t randomBlockIdx = std::rand() % FRAME_SEARCH_GRID_SIZE;
+
+  // 4. Calculate the starting pattern for this specific thread exactly as the CUDA kernel does
+  uint64_t threadStartingPattern = startingPattern;
+  threadStartingPattern += ((uint64_t)(randomThreadIdx & 15)) << 10;   // set the lower row of 4 'T' bits
+  threadStartingPattern += ((uint64_t)(randomThreadIdx >> 4)) << 17;   // set the upper row of 6 'T' bits
+  threadStartingPattern += ((uint64_t)(randomBlockIdx & 63)) << 41;    // set the lower row of 6 'B' bits
+  threadStartingPattern += ((uint64_t)(randomBlockIdx >> 6)) << 50;    // set the upper row of 4 'B' bits
+
+  // 5. Track which P-bit patterns we've seen for this specific thread
+  // We need to track all 2^16 = 65,536 possible P-bit combinations
+  const uint32_t totalPBitCombinations = 1 << FRAME_SEARCH_NUM_P_BITS;  // 65,536
+  std::vector<bool> seenPBits(totalPBitCombinations, false);
+
+  // Calculate beginAt and endAt exactly as the CUDA kernel does
+  uint64_t beginAt = threadStartingPattern;
+  uint64_t endAt = threadStartingPattern + ((1ULL << FRAME_SEARCH_NUM_P_BITS) << 24);
+
+  // 6. Execute the P-bit iteration loop for this thread
+  for (uint64_t pattern = beginAt; pattern != endAt; pattern += (1ULL << 24)) {
+    // Extract the P bits (bits 24-39) from the pattern
+    uint32_t pBits = (pattern >> 24) & 0xFFFF;
+
+    // Mark this P-bit combination as seen
+    ASSERT_LT(pBits, totalPBitCombinations) << "P-bit value out of range: " << pBits;
+
+    // Check for duplicates - each P-bit combination should only be seen once
+    ASSERT_FALSE(seenPBits[pBits])
+        << "P-bit combination " << pBits << " encountered twice in thread "
+        << randomThreadIdx << " block " << randomBlockIdx;
+    seenPBits[pBits] = true;
+  }
+
+  // 7. Verify that ALL P-bit combinations were seen exactly once
+  uint32_t missedCount = 0;
+  for (uint32_t i = 0; i < totalPBitCombinations; i++) {
+    if (!seenPBits[i]) {
+      missedCount++;
+      if (missedCount <= 10) {  // Only log first 10 misses to avoid spam
+        ADD_FAILURE() << "P-bit combination " << i << " was never generated in thread "
+                      << randomThreadIdx << " block " << randomBlockIdx;
+      }
+    }
+  }
+
+  EXPECT_EQ(missedCount, 0) << "Failed to generate " << missedCount << " out of "
+                            << totalPBitCombinations << " P-bit combinations in thread "
+                            << randomThreadIdx << " block " << randomBlockIdx;
 }
