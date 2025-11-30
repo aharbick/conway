@@ -13,11 +13,15 @@
 
 // Subgrid cache constants
 #define SUBGRID_TOTAL_PATTERNS (1ULL << 49)  // 7x7 grid = 2^49 patterns
-#define SUBGRID_MIN_GENERATIONS 180           // Only save patterns with >= 180 generations
+#ifdef TOPOLOGY_TORUS
+#define SUBGRID_MIN_GENERATIONS 260           // Torus topology has more long-running patterns.  This setting results in a comparably sized cache.
+#else
+#define SUBGRID_MIN_GENERATIONS 180           // Box/plane topology (empirically results in about 1GB cache)
+#endif
 #define SUBGRID_GRID_SIZE 1024
 #define SUBGRID_THREADS_PER_BLOCK 1024
 #define SUBGRID_PATTERNS_PER_THREAD (1 << 16)  // Each thread processes 2^16 base 7x7 patterns (×4 translations)
-#define SUBGRID_CACHE_MAX_CANDIDATES (1 << 20)  // 1M candidates per batch (~14MB)
+#define SUBGRID_CACHE_MAX_CANDIDATES (1 << 26)  // 64M candidates per batch (~896MB buffer for generation)
 
 
 // Common buffer sizes

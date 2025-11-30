@@ -170,6 +170,31 @@ set_target_properties(find-optimal PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
 )
 
+# Torus topology variant (wrapping boundaries)
+add_executable(find-optimal-torus ${CPU_SOURCES} ${CUDA_SOURCES})
+set_source_files_properties(${CUDA_SOURCES} PROPERTIES LANGUAGE CUDA)
+target_compile_definitions(find-optimal-torus PRIVATE TOPOLOGY_TORUS)
+target_link_libraries(find-optimal-torus
+    CUDA::cudart
+    CUDA::cuda_driver
+    ${ARGP_LIBRARIES}
+    ${CURL_LIBRARIES}
+    ${OPENSSL_LIBRARIES}
+    nlohmann_json::nlohmann_json
+)
+if(WIN32)
+    target_link_libraries(find-optimal-torus ws2_32 crypt32)
+else()
+    if(IS_WSL EQUAL 0)
+        target_link_directories(find-optimal-torus PRIVATE /usr/lib/wsl/lib)
+    endif()
+    target_link_libraries(find-optimal-torus pthread)
+endif()
+set_target_properties(find-optimal-torus PROPERTIES
+    CUDA_RUNTIME_LIBRARY Static
+    CUDA_SEPARABLE_COMPILATION ON
+)
+
 # Additional executables
 add_executable(explore-subgrid src/explore-subgrid.cpp)
 add_executable(validate-frame-search-completeness src/validate_frame_search_completeness.cpp)

@@ -46,6 +46,13 @@ int main(int argc, char** argv) {
   // Print CUDA device info early
   printCudaDeviceInfo(cli);
 
+  // Print topology information
+#ifdef TOPOLOGY_TORUS
+  Logger::out() << "Topology: Torus (wrapping boundaries)\n";
+#else
+  Logger::out() << "Topology: Box/Plane (non-wrapping boundaries)\n";
+#endif
+
   // Handle Google Sheets configuration
   if (cli->dontSaveResults) {
     Logger::out() << "Not saving results to Google Sheets (--dont-save-results specified)\n";

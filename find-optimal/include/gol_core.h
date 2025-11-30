@@ -37,6 +37,51 @@ __host__ __device__ static inline void add3(uint64_t a, uint64_t b, uint64_t c, 
 }
 
 // Tom Rokicki's optimized 19-operation Conway's Game of Life computation
+// Topology selection: define TOPOLOGY_TORUS at compile time for wrapping boundaries
+// Default (no flag): box/plane topology with non-wrapping boundaries
+
+#ifdef TOPOLOGY_TORUS
+
+// Circular shift helpers for torus topology (wrapping boundaries)
+__host__ __device__ static inline uint64_t circularShiftLeft(uint64_t a) {
+  uint64_t shifted = (a & 0x7F7F7F7F7F7F7F7FULL) << 1;
+  uint64_t wrapped = (a & 0x8080808080808080ULL) >> 7;
+  return shifted | wrapped;
+}
+
+__host__ __device__ static inline uint64_t circularShiftRight(uint64_t a) {
+  uint64_t shifted = (a & 0xFEFEFEFEFEFEFEFEULL) >> 1;
+  uint64_t wrapped = (a & 0x0101010101010101ULL) << 7;
+  return shifted | wrapped;
+}
+
+__host__ __device__ static inline uint64_t circularShiftUp(uint64_t a) {
+  uint64_t shifted = a << 8;
+  uint64_t wrapped = (a >> 56) & 0xFF;
+  return shifted | wrapped;
+}
+
+__host__ __device__ static inline uint64_t circularShiftDown(uint64_t a) {
+  uint64_t shifted = a >> 8;
+  uint64_t wrapped = (a & 0xFF) << 56;
+  return shifted | wrapped;
+}
+
+// Torus implementation with circular shifts for wrapping
+__host__ __device__ static inline uint64_t computeNextGeneration(uint64_t a) {
+  uint64_t s0, sh2, a0, a1, sll, slh;
+  add2(circularShiftLeft(a), circularShiftRight(a), s0, sh2);
+  add2(s0, a, a0, a1);
+  a1 |= sh2;
+  add3(circularShiftDown(a0), circularShiftUp(a0), s0, sll, slh);
+  uint64_t y = circularShiftDown(a1);
+  uint64_t x = circularShiftUp(a1);
+  return (x ^ y ^ sh2 ^ slh) & ((x | y) ^ (sh2 | slh)) & (sll | a);
+}
+
+#else
+
+// Box/plane implementation with masked shifts for non-wrapping boundaries
 __host__ __device__ static inline uint64_t computeNextGeneration(uint64_t a) {
   uint64_t s0, sh2, a0, a1, sll, slh;
   add2((a & GOL_HORIZONTAL_SHIFT_MASK) << 1, (a & GOL_VERTICAL_SHIFT_MASK) >> 1, s0, sh2);
@@ -47,6 +92,8 @@ __host__ __device__ static inline uint64_t computeNextGeneration(uint64_t a) {
   uint64_t x = a1 << 8;
   return (x ^ y ^ sh2 ^ slh) & ((x | y) ^ (sh2 | slh)) & (sll | a);
 }
+
+#endif
 
 __host__ __device__ static inline int adjustGenerationsForDeadout(int generations, uint64_t g2, uint64_t g3,
                                                                   uint64_t g4, uint64_t g5, uint64_t g6) {
