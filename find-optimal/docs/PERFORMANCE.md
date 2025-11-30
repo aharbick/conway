@@ -77,7 +77,7 @@ Nivasch's algorithm completed in 229.939 seconds
 Floyd's algorithm:   212.124 seconds
 Nivasch's algorithm: 229.939 seconds
 Floyd's was faster by 7.7% (17.815 seconds)
-``
+```
 
 ### Testing on V100 (n1-highmem-2: 2vCPU, 1 core, 13GB memory)
 ```
