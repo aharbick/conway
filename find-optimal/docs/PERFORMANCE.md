@@ -118,7 +118,7 @@ timestamp=1763276769, frameIdx=35, kernelIdx=15, bestGenerations=195, bestPatter
 
 So the best was about 8,338,349,796
 
-### Testing on LambaLapbs H100 80GB
+### Testing on LambaLabs H100 80GB
 
 ubuntu@209-20-158-61:~/conway/conway/find-optimal$ ./build/find-optimal -r -C data/7x7subgrid-cache.json -f random -l $PWD/logs/find-optimal.log -q $PWD/request-queue
 CUDA devices available: 1
