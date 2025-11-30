@@ -387,7 +387,7 @@ void findSubgridCandidatesCPU(uint64_t rangeStart, uint64_t rangeEnd,
       uint64_t pattern8x8 = expand7x7To8x8(pattern7x7, rowOffset, colOffset);
 
       // Count generations for this 8x8 pattern
-      int gens = countGenerations(pattern8x8, algorithm);
+      int gens = countGenerations(pattern8x8, computeNextGeneration8x8, algorithm);
 
       // Save each 8x8 pattern that meets the threshold
       if (gens >= minGenerations) {
@@ -553,7 +553,7 @@ TEST_F(SubgridCacheTest, FindSubgridCandidates_ExactPatternVerification) {
         if (entry.pattern == expected) {
           foundMatch = true;
           // Verify generation count matches
-          int expectedGens = countGenerations(expected, CYCLE_DETECTION_FLOYD);
+          int expectedGens = countGenerations(expected, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD);
           EXPECT_EQ(entry.generations, expectedGens)
               << "Generation count mismatch for pattern " << pattern7x7
               << " at position " << pos;

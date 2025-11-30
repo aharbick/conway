@@ -49,7 +49,7 @@ __global__ void findSubgridCandidates(uint64_t rangeStart, uint64_t rangeEnd,
       uint64_t pattern8x8 = expand7x7To8x8(pattern7x7, rowOffset, colOffset);
 
       // Count generations for this 8x8 pattern
-      int gens = countGenerations(pattern8x8, algorithm);
+      int gens = countGenerations(pattern8x8, computeNextGeneration8x8, algorithm);
 
       // Save each 8x8 pattern that meets the threshold
       if (gens >= minGenerations) {
@@ -63,7 +63,7 @@ __global__ void findSubgridCandidates(uint64_t rangeStart, uint64_t rangeEnd,
 __global__ void processCandidates(uint64_t *candidates, uint64_t *numCandidates, uint64_t *bestPattern,
                                   uint64_t *bestGenerations, CycleDetectionAlgorithm algorithm) {
   for (uint64_t i = blockIdx.x * blockDim.x + threadIdx.x; i < *numCandidates; i += blockDim.x * gridDim.x) {
-    uint64_t generations = countGenerations(candidates[i], algorithm);
+    uint64_t generations = countGenerations(candidates[i], computeNextGeneration8x8, algorithm);
     if (generations > 0) {  // Only process if it actually ended
       // Check to see if it's higher and emit it in best(Pattern|Generations)
       uint64_t old = atomicMax((unsigned long long *)bestGenerations, (unsigned long long)generations);

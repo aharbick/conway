@@ -302,12 +302,12 @@ void analyzePattern(uint64_t pattern, SubgridStats& stats) {
   while (fastSearchGenerations < FAST_SEARCH_MAX_GENERATIONS) {
     // Step through 6 generations and check for termination/cycles
     fastSearchGenerations += 6;
-    uint64_t g2 = computeNextGeneration(g1);
-    uint64_t g3 = computeNextGeneration(g2);
-    uint64_t g4 = computeNextGeneration(g3);
-    uint64_t g5 = computeNextGeneration(g4);
-    uint64_t g6 = computeNextGeneration(g5);
-    g1 = computeNextGeneration(g6);
+    uint64_t g2 = computeNextGeneration8x8(g1);
+    uint64_t g3 = computeNextGeneration8x8(g2);
+    uint64_t g4 = computeNextGeneration8x8(g3);
+    uint64_t g5 = computeNextGeneration8x8(g4);
+    uint64_t g6 = computeNextGeneration8x8(g5);
+    g1 = computeNextGeneration8x8(g6);
 
     // After computing all 6 generations, check for coverability at each step
     // (only if we haven't found it yet)
@@ -340,7 +340,7 @@ void analyzePattern(uint64_t pattern, SubgridStats& stats) {
   }
 
   // Get accurate total generations using countGenerations
-  int totalGenerations = countGenerations(pattern);
+  int totalGenerations = countGenerations(pattern, computeNextGeneration8x8);
 
   stats.recordPattern(fastSearchGenerations, coverableAtGeneration, totalGenerations);
 }

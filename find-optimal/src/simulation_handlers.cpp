@@ -75,7 +75,7 @@ int handlePatternSimulation(ProgramArgs* cli) {
 
       // ENTER (empty string) or 'n'/'N' means continue
       if (stepInputStr.empty() || stepInputStr[0] == 'n' || stepInputStr[0] == 'N') {
-        uint64_t nextPattern = computeNextGeneration(currentPattern);
+        uint64_t nextPattern = computeNextGeneration8x8(currentPattern);
 
         // Check if pattern died out
         if (nextPattern == 0) {

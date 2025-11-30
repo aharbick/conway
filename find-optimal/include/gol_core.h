@@ -14,9 +14,13 @@
 #define __host__
 #endif
 
-// Conway's Game of Life bit manipulation masks
+// Conway's Game of Life bit manipulation masks - 8x8 grid
 #define GOL_HORIZONTAL_SHIFT_MASK 0x7f7f7f7f7f7f7f7f
 #define GOL_VERTICAL_SHIFT_MASK 0xFEFEFEFEFEFEFEFE
+
+// 7x7 grid masks (byte-aligned format: 7 bits per byte, 7 rows)
+#define GOL_7X7_HORIZONTAL_SHIFT_MASK 0x3F3F3F3F3F3F3F3FULL  // Bits 0-5 in each byte
+#define GOL_7X7_VERTICAL_SHIFT_MASK   0x7E7E7E7E7E7E7E7EULL  // Bits 1-6 in each byte
 
 // Generation counting constants
 #define MIN_CANDIDATE_GENERATIONS 180
@@ -67,8 +71,8 @@ __host__ __device__ static inline uint64_t circularShiftDown(uint64_t a) {
   return shifted | wrapped;
 }
 
-// Torus implementation with circular shifts for wrapping
-__host__ __device__ static inline uint64_t computeNextGeneration(uint64_t a) {
+// Torus implementation with circular shifts for wrapping (8x8 grid)
+__host__ __device__ static inline uint64_t computeNextGeneration8x8(uint64_t a) {
   uint64_t s0, sh2, a0, a1, sll, slh;
   add2(circularShiftLeft(a), circularShiftRight(a), s0, sh2);
   add2(s0, a, a0, a1);
@@ -81,8 +85,8 @@ __host__ __device__ static inline uint64_t computeNextGeneration(uint64_t a) {
 
 #else
 
-// Box/plane implementation with masked shifts for non-wrapping boundaries
-__host__ __device__ static inline uint64_t computeNextGeneration(uint64_t a) {
+// Box/plane implementation with masked shifts for non-wrapping boundaries (8x8 grid)
+__host__ __device__ static inline uint64_t computeNextGeneration8x8(uint64_t a) {
   uint64_t s0, sh2, a0, a1, sll, slh;
   add2((a & GOL_HORIZONTAL_SHIFT_MASK) << 1, (a & GOL_VERTICAL_SHIFT_MASK) >> 1, s0, sh2);
   add2(s0, a, a0, a1);
@@ -110,8 +114,10 @@ __host__ __device__ static inline int adjustGenerationsForDeadout(int generation
   return generations;
 }
 
-// Floyd's cycle detection algorithm
-__host__ __device__ static inline int floydCycleDetection(uint64_t startState, int startGenerations) {
+// Floyd's cycle detection algorithm - generic version using template
+template<typename ComputeNextGenerationFunc>
+__host__ __device__ static inline int floydCycleDetection(uint64_t startState, int startGenerations,
+                                                          ComputeNextGenerationFunc computeNextGeneration) {
   bool ended = false;
   int generations = startGenerations;
 
@@ -134,13 +140,15 @@ __host__ __device__ static inline int floydCycleDetection(uint64_t startState, i
   return ended ? generations : 0;
 }
 
-// Nivasch's cycle detection algorithm - stack-based approach
+// Nivasch's cycle detection algorithm - stack-based approach with template
 struct NivaschStackEntry {
   uint64_t value;
   int time;
 };
 
-__host__ __device__ static inline int nivaschCycleDetection(uint64_t startState, int startGenerations) {
+template<typename ComputeNextGenerationFunc>
+__host__ __device__ static inline int nivaschCycleDetection(uint64_t startState, int startGenerations,
+                                                            ComputeNextGenerationFunc computeNextGeneration) {
   bool ended = false;
 
   // Multi-stack Nivasch algorithm
@@ -198,8 +206,10 @@ __host__ __device__ static inline int nivaschCycleDetection(uint64_t startState,
   return ended ? time : 0;
 }
 
-// Core generation counting logic - determines how long patterns run
+// Core generation counting logic - template version that works with any computeNextGeneration function
+template<typename ComputeNextGenerationFunc>
 __host__ __device__ static inline int countGenerations(uint64_t pattern,
+                                                       ComputeNextGenerationFunc computeNextGeneration,
                                                        CycleDetectionAlgorithm algorithm = CYCLE_DETECTION_FLOYD) {
   // Empty pattern (all zeros) has 0 generations
   if (pattern == 0) {
@@ -239,9 +249,9 @@ __host__ __device__ static inline int countGenerations(uint64_t pattern,
   // exited the previous loop because of die out or cycle.
   if (!ended && generations >= FAST_SEARCH_MAX_GENERATIONS) {
     if (algorithm == CYCLE_DETECTION_NIVASCH) {
-      return nivaschCycleDetection(g1, generations);
+      return nivaschCycleDetection(g1, generations, computeNextGeneration);
     } else {
-      return floydCycleDetection(g1, generations);
+      return floydCycleDetection(g1, generations, computeNextGeneration);
     }
   }
 
@@ -265,6 +275,115 @@ __host__ __device__ static inline uint64_t getNextCandidateIndex(uint64_t* numCa
 #endif
 }
 
+// ============================================================================
+// 7x7 Grid Simulation - Direct simulation on compact 7x7 format
+// ============================================================================
+// 7x7 patterns use compact storage: 7 consecutive bits per row (49 bits total)
+// Layout: row0[bits 0-6] | row1[bits 7-13] | ... | row6[bits 42-48]
+//
+// This is different from simulating 7x7 placed on 8x8, because boundary
+// conditions differ - a true 7x7 grid has 7-column wrap/boundary behavior
+
+// Helper: Unpack compact 7x7 to byte-aligned format for easier bit manipulation
+// Converts: row at (7*n) bit offset → row at (8*n) bit offset (byte-aligned)
+__host__ __device__ static inline uint64_t unpack7x7(uint64_t compact) {
+  uint64_t result = 0;
+  result |= ((compact >>  0) & 0x7F) <<  0;  // Row 0: bits 0-6 → bits 0-6
+  result |= ((compact >>  7) & 0x7F) <<  8;  // Row 1: bits 7-13 → bits 8-14
+  result |= ((compact >> 14) & 0x7F) << 16;  // Row 2: bits 14-20 → bits 16-22
+  result |= ((compact >> 21) & 0x7F) << 24;  // Row 3: bits 21-27 → bits 24-30
+  result |= ((compact >> 28) & 0x7F) << 32;  // Row 4: bits 28-34 → bits 32-38
+  result |= ((compact >> 35) & 0x7F) << 40;  // Row 5: bits 35-41 → bits 40-46
+  result |= ((compact >> 42) & 0x7F) << 48;  // Row 6: bits 42-48 → bits 48-54
+  return result;
+}
+
+// Helper: Pack byte-aligned format back to compact 7x7
+__host__ __device__ static inline uint64_t pack7x7(uint64_t unpacked) {
+  uint64_t result = 0;
+  result |= ((unpacked >>  0) & 0x7F) <<  0;  // Row 0: bits 0-6 → bits 0-6
+  result |= ((unpacked >>  8) & 0x7F) <<  7;  // Row 1: bits 8-14 → bits 7-13
+  result |= ((unpacked >> 16) & 0x7F) << 14;  // Row 2: bits 16-22 → bits 14-20
+  result |= ((unpacked >> 24) & 0x7F) << 21;  // Row 3: bits 24-30 → bits 21-27
+  result |= ((unpacked >> 32) & 0x7F) << 28;  // Row 4: bits 32-38 → bits 28-34
+  result |= ((unpacked >> 40) & 0x7F) << 35;  // Row 5: bits 40-46 → bits 35-41
+  result |= ((unpacked >> 48) & 0x7F) << 42;  // Row 6: bits 48-54 → bits 42-48
+  return result;
+}
+
+#ifdef TOPOLOGY_TORUS
+
+// 7x7 torus topology: circular shifts with 7-column wrapping
+__host__ __device__ static inline uint64_t shiftLeft7x7(uint64_t a) {
+  // Shift each byte left by 1, wrapping bit 6 to bit 0
+  uint64_t shifted = (a & GOL_7X7_HORIZONTAL_SHIFT_MASK) << 1;  // Bits 0-5 shift left
+  uint64_t wrapped = (a & 0x4040404040404040ULL) >> 6;          // Bit 6 wraps to bit 0
+  return shifted | wrapped;
+}
+
+__host__ __device__ static inline uint64_t shiftRight7x7(uint64_t a) {
+  // Shift each byte right by 1, wrapping bit 0 to bit 6
+  uint64_t shifted = (a & GOL_7X7_VERTICAL_SHIFT_MASK) >> 1;  // Bits 1-6 shift right
+  uint64_t wrapped = (a & 0x0101010101010101ULL) << 6;        // Bit 0 wraps to bit 6
+  return shifted | wrapped;
+}
+
+__host__ __device__ static inline uint64_t shiftUp7x7(uint64_t a) {
+  // Shift up by one row (shift bits up by 8), wrap row 6 to row 0
+  uint64_t shifted = a << 8;
+  uint64_t wrapped = (a >> 48) & 0x7F;  // Row 6 wraps to row 0
+  return shifted | wrapped;
+}
+
+__host__ __device__ static inline uint64_t shiftDown7x7(uint64_t a) {
+  // Shift down by one row (shift bits down by 8), wrap row 0 to row 6
+  uint64_t shifted = a >> 8;
+  uint64_t wrapped = (a & 0x7F) << 48;  // Row 0 wraps to row 6
+  return shifted | wrapped;
+}
+
+#else
+
+// 7x7 plane/box topology: masked shifts with 7-column boundaries (no wrapping)
+__host__ __device__ static inline uint64_t shiftLeft7x7(uint64_t a) {
+  return (a & GOL_7X7_HORIZONTAL_SHIFT_MASK) << 1;
+}
+
+__host__ __device__ static inline uint64_t shiftRight7x7(uint64_t a) {
+  return (a & GOL_7X7_VERTICAL_SHIFT_MASK) >> 1;
+}
+
+__host__ __device__ static inline uint64_t shiftUp7x7(uint64_t a) {
+  return a << 8;  // No wrapping, cells in row 7+ are always dead
+}
+
+__host__ __device__ static inline uint64_t shiftDown7x7(uint64_t a) {
+  return a >> 8;  // No wrapping, cells in row -1 are always dead
+}
+
+#endif
+
+// 7x7 next generation computation using Rokicki's algorithm adapted for 7x7
+// Works for both torus and plane topologies (determined by shift functions above)
+__host__ __device__ static inline uint64_t computeNextGeneration7x7(uint64_t compact7x7) {
+  uint64_t a = unpack7x7(compact7x7);
+
+  uint64_t s0, sh2, a0, a1, sll, slh;
+  add2(shiftLeft7x7(a), shiftRight7x7(a), s0, sh2);
+  add2(s0, a, a0, a1);
+  a1 |= sh2;
+  add3(shiftDown7x7(a0), shiftUp7x7(a0), s0, sll, slh);
+  uint64_t y = shiftDown7x7(a1);
+  uint64_t x = shiftUp7x7(a1);
+  uint64_t result = (x ^ y ^ sh2 ^ slh) & ((x | y) ^ (sh2 | slh)) & (sll | a);
+
+  return pack7x7(result);
+}
+
+// ============================================================================
+// 8x8 Grid Helper - Expand 7x7 pattern to specific position on 8x8 grid
+// ============================================================================
+// This is for the OLD approach of testing 4 positions on 8x8
 // Expand a compact 7x7 pattern (7 bits/row) to 8x8 grid format (8 bits/row) at given position
 // pattern7x7: compact format with 7 consecutive bits per row (49 bits total)
 // rowOffset: 0 for rows 0-6, 1 for rows 1-7
@@ -307,12 +426,12 @@ __host__ __device__ static inline bool isCoverableBy7x7(uint64_t pattern) {
 __host__ __device__ static inline bool step6GenerationsAndCheck(uint64_t* g1, uint64_t pattern, uint16_t* generations,
                                                                 uint64_t* candidates, uint64_t* numCandidates) {
   *generations += 6;
-  uint64_t g2 = computeNextGeneration(*g1);
-  uint64_t g3 = computeNextGeneration(g2);
-  uint64_t g4 = computeNextGeneration(g3);
-  uint64_t g5 = computeNextGeneration(g4);
-  uint64_t g6 = computeNextGeneration(g5);
-  *g1 = computeNextGeneration(g6);
+  uint64_t g2 = computeNextGeneration8x8(*g1);
+  uint64_t g3 = computeNextGeneration8x8(g2);
+  uint64_t g4 = computeNextGeneration8x8(g3);
+  uint64_t g5 = computeNextGeneration8x8(g4);
+  uint64_t g6 = computeNextGeneration8x8(g5);
+  *g1 = computeNextGeneration8x8(g6);
 
   // Check for cycles
   if ((*g1 == g2) || (*g1 == g3) || (*g1 == g4)) {
@@ -370,32 +489,32 @@ __host__ __device__ static inline bool step6GenerationsAndCheckWithCache(
   RETURN_EARLY_IF_7X7_COVERAGE(*g1, generations, pattern, candidates, numCandidates, cache);
 
   // Compute g2 and check cache immediately
-  uint64_t g2 = computeNextGeneration(*g1);
+  uint64_t g2 = computeNextGeneration8x8(*g1);
   (*generations)++;
   RETURN_EARLY_IF_7X7_COVERAGE(g2, generations, pattern, candidates, numCandidates, cache);
 
   // Compute g3 and check cache immediately
-  uint64_t g3 = computeNextGeneration(g2);
+  uint64_t g3 = computeNextGeneration8x8(g2);
   (*generations)++;
   RETURN_EARLY_IF_7X7_COVERAGE(g3, generations, pattern, candidates, numCandidates, cache);
 
   // Compute g4 and check cache immediately
-  uint64_t g4 = computeNextGeneration(g3);
+  uint64_t g4 = computeNextGeneration8x8(g3);
   (*generations)++;
   RETURN_EARLY_IF_7X7_COVERAGE(g4, generations, pattern, candidates, numCandidates, cache);
 
   // Compute g5 and check cache immediately
-  uint64_t g5 = computeNextGeneration(g4);
+  uint64_t g5 = computeNextGeneration8x8(g4);
   (*generations)++;
   RETURN_EARLY_IF_7X7_COVERAGE(g5, generations, pattern, candidates, numCandidates, cache);
 
   // Compute g6 and check cache immediately
-  uint64_t g6 = computeNextGeneration(g5);
+  uint64_t g6 = computeNextGeneration8x8(g5);
   (*generations)++;
   RETURN_EARLY_IF_7X7_COVERAGE(g6, generations, pattern, candidates, numCandidates, cache);
 
   // Compute next g1... cache check and generation happens at the beginning
-  *g1 = computeNextGeneration(g6);
+  *g1 = computeNextGeneration8x8(g6);
 
   // Check for cycles
   if ((*g1 == g2) || (*g1 == g3) || (*g1 == g4)) {
