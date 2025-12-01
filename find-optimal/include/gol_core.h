@@ -15,12 +15,22 @@
 #endif
 
 // Conway's Game of Life bit manipulation masks - 8x8 grid
-#define GOL_HORIZONTAL_SHIFT_MASK 0x7f7f7f7f7f7f7f7f
-#define GOL_VERTICAL_SHIFT_MASK 0xFEFEFEFEFEFEFEFE
+#define GOL_8X8_HORIZONTAL_SHIFT_MASK 0x7F7F7F7F7F7F7F7FULL  // Bits 0-6 in each byte
+#define GOL_8X8_VERTICAL_SHIFT_MASK   0xFEFEFEFEFEFEFEFEULL  // Bits 1-7 in each byte
+#define GOL_8X8_LEFT_EDGE_MASK        0x8080808080808080ULL  // Bit 7 in each byte (left edge)
+#define GOL_8X8_RIGHT_EDGE_MASK       0x0101010101010101ULL  // Bit 0 in each byte (right edge)
 
 // 7x7 grid masks (byte-aligned format: 7 bits per byte, 7 rows)
 #define GOL_7X7_HORIZONTAL_SHIFT_MASK 0x3F3F3F3F3F3F3F3FULL  // Bits 0-5 in each byte
 #define GOL_7X7_VERTICAL_SHIFT_MASK   0x7E7E7E7E7E7E7E7EULL  // Bits 1-6 in each byte
+#define GOL_7X7_LEFT_EDGE_MASK        0x4040404040404040ULL  // Bit 6 in each byte (left edge)
+#define GOL_7X7_RIGHT_EDGE_MASK       0x0101010101010101ULL  // Bit 0 in each byte (right edge)
+
+// 7x7 subgrid position masks for coverage testing on 8x8 grid
+#define GOL_7X7_POSITION_0_MASK       0x7F7F7F7F7F7F7FULL    // Rows 0-6, cols 0-6
+#define GOL_7X7_POSITION_1_MASK       0xFEFEFEFEFEFEFEULL    // Rows 0-6, cols 1-7
+#define GOL_7X7_POSITION_2_MASK       0x7F7F7F7F7F7F7F00ULL  // Rows 1-7, cols 0-6
+#define GOL_7X7_POSITION_3_MASK       0xFEFEFEFEFEFEFE00ULL  // Rows 1-7, cols 1-7
 
 // Generation counting constants
 #define MIN_CANDIDATE_GENERATIONS 180
@@ -40,64 +50,161 @@ __host__ __device__ static inline void add3(uint64_t a, uint64_t b, uint64_t c, 
   s1 = t1 ^ t2;
 }
 
+// ============================================================================
+// Grid Shift Operations - 8x8 and 7x7
+// ============================================================================
 // Tom Rokicki's optimized 19-operation Conway's Game of Life computation
 // Topology selection: define TOPOLOGY_TORUS at compile time for wrapping boundaries
 // Default (no flag): box/plane topology with non-wrapping boundaries
 
+// Helper: Unpack compact 7x7 to byte-aligned format for easier bit manipulation
+// Converts: row at (7*n) bit offset → row at (8*n) bit offset (byte-aligned)
+__host__ __device__ static inline uint64_t unpack7x7(uint64_t compact) {
+  uint64_t result = 0;
+  result |= ((compact >>  0) & 0x7F) <<  0;  // Row 0: bits 0-6 → bits 0-6
+  result |= ((compact >>  7) & 0x7F) <<  8;  // Row 1: bits 7-13 → bits 8-14
+  result |= ((compact >> 14) & 0x7F) << 16;  // Row 2: bits 14-20 → bits 16-22
+  result |= ((compact >> 21) & 0x7F) << 24;  // Row 3: bits 21-27 → bits 24-30
+  result |= ((compact >> 28) & 0x7F) << 32;  // Row 4: bits 28-34 → bits 32-38
+  result |= ((compact >> 35) & 0x7F) << 40;  // Row 5: bits 35-41 → bits 40-46
+  result |= ((compact >> 42) & 0x7F) << 48;  // Row 6: bits 42-48 → bits 48-54
+  return result;
+}
+
+// Helper: Pack byte-aligned format back to compact 7x7
+__host__ __device__ static inline uint64_t pack7x7(uint64_t unpacked) {
+  uint64_t result = 0;
+  result |= ((unpacked >>  0) & 0x7F) <<  0;  // Row 0: bits 0-6 → bits 0-6
+  result |= ((unpacked >>  8) & 0x7F) <<  7;  // Row 1: bits 8-14 → bits 7-13
+  result |= ((unpacked >> 16) & 0x7F) << 14;  // Row 2: bits 16-22 → bits 14-20
+  result |= ((unpacked >> 24) & 0x7F) << 21;  // Row 3: bits 24-30 → bits 21-27
+  result |= ((unpacked >> 32) & 0x7F) << 28;  // Row 4: bits 32-38 → bits 28-34
+  result |= ((unpacked >> 40) & 0x7F) << 35;  // Row 5: bits 40-46 → bits 35-41
+  result |= ((unpacked >> 48) & 0x7F) << 42;  // Row 6: bits 48-54 → bits 42-48
+  return result;
+}
+
 #ifdef TOPOLOGY_TORUS
 
-// Circular shift helpers for torus topology (wrapping boundaries)
-__host__ __device__ static inline uint64_t circularShiftLeft(uint64_t a) {
-  uint64_t shifted = (a & 0x7F7F7F7F7F7F7F7FULL) << 1;
-  uint64_t wrapped = (a & 0x8080808080808080ULL) >> 7;
+// Circular shift helpers for torus topology (wrapping boundaries) - 8x8 grid
+__host__ __device__ static inline uint64_t shiftLeft8x8(uint64_t a) {
+  uint64_t shifted = (a & GOL_8X8_HORIZONTAL_SHIFT_MASK) << 1;
+  uint64_t wrapped = (a & GOL_8X8_LEFT_EDGE_MASK) >> 7;
   return shifted | wrapped;
 }
 
-__host__ __device__ static inline uint64_t circularShiftRight(uint64_t a) {
-  uint64_t shifted = (a & 0xFEFEFEFEFEFEFEFEULL) >> 1;
-  uint64_t wrapped = (a & 0x0101010101010101ULL) << 7;
+__host__ __device__ static inline uint64_t shiftRight8x8(uint64_t a) {
+  uint64_t shifted = (a & GOL_8X8_VERTICAL_SHIFT_MASK) >> 1;
+  uint64_t wrapped = (a & GOL_8X8_RIGHT_EDGE_MASK) << 7;
   return shifted | wrapped;
 }
 
-__host__ __device__ static inline uint64_t circularShiftUp(uint64_t a) {
+__host__ __device__ static inline uint64_t shiftUp8x8(uint64_t a) {
   uint64_t shifted = a << 8;
-  uint64_t wrapped = (a >> 56) & 0xFF;
+  uint64_t wrapped = (a >> 56) & 0xFFULL;
   return shifted | wrapped;
 }
 
-__host__ __device__ static inline uint64_t circularShiftDown(uint64_t a) {
+__host__ __device__ static inline uint64_t shiftDown8x8(uint64_t a) {
   uint64_t shifted = a >> 8;
-  uint64_t wrapped = (a & 0xFF) << 56;
+  uint64_t wrapped = (a & 0xFFULL) << 56;
   return shifted | wrapped;
 }
 
-// Torus implementation with circular shifts for wrapping (8x8 grid)
-__host__ __device__ static inline uint64_t computeNextGeneration8x8(uint64_t a) {
-  uint64_t s0, sh2, a0, a1, sll, slh;
-  add2(circularShiftLeft(a), circularShiftRight(a), s0, sh2);
-  add2(s0, a, a0, a1);
-  a1 |= sh2;
-  add3(circularShiftDown(a0), circularShiftUp(a0), s0, sll, slh);
-  uint64_t y = circularShiftDown(a1);
-  uint64_t x = circularShiftUp(a1);
-  return (x ^ y ^ sh2 ^ slh) & ((x | y) ^ (sh2 | slh)) & (sll | a);
+// Circular shift helpers for torus topology (wrapping boundaries) - 7x7 grid
+__host__ __device__ static inline uint64_t shiftLeft7x7(uint64_t a) {
+  uint64_t shifted = (a & GOL_7X7_HORIZONTAL_SHIFT_MASK) << 1;
+  uint64_t wrapped = (a & GOL_7X7_LEFT_EDGE_MASK) >> 6;
+  return shifted | wrapped;
+}
+
+__host__ __device__ static inline uint64_t shiftRight7x7(uint64_t a) {
+  uint64_t shifted = (a & GOL_7X7_VERTICAL_SHIFT_MASK) >> 1;
+  uint64_t wrapped = (a & GOL_7X7_RIGHT_EDGE_MASK) << 6;
+  return shifted | wrapped;
+}
+
+__host__ __device__ static inline uint64_t shiftUp7x7(uint64_t a) {
+  uint64_t shifted = a << 8;
+  uint64_t wrapped = (a >> 48) & 0x7FULL;
+  return shifted | wrapped;
+}
+
+__host__ __device__ static inline uint64_t shiftDown7x7(uint64_t a) {
+  uint64_t shifted = a >> 8;
+  uint64_t wrapped = (a & 0x7FULL) << 48;
+  return shifted | wrapped;
 }
 
 #else
 
-// Box/plane implementation with masked shifts for non-wrapping boundaries (8x8 grid)
-__host__ __device__ static inline uint64_t computeNextGeneration8x8(uint64_t a) {
-  uint64_t s0, sh2, a0, a1, sll, slh;
-  add2((a & GOL_HORIZONTAL_SHIFT_MASK) << 1, (a & GOL_VERTICAL_SHIFT_MASK) >> 1, s0, sh2);
-  add2(s0, a, a0, a1);
-  a1 |= sh2;
-  add3(a0 >> 8, a0 << 8, s0, sll, slh);
-  uint64_t y = a1 >> 8;
-  uint64_t x = a1 << 8;
-  return (x ^ y ^ sh2 ^ slh) & ((x | y) ^ (sh2 | slh)) & (sll | a);
+// Box/plane shift helpers for non-wrapping boundaries - 8x8 grid
+__host__ __device__ static inline uint64_t shiftLeft8x8(uint64_t a) {
+  return (a & GOL_8X8_HORIZONTAL_SHIFT_MASK) << 1;
+}
+
+__host__ __device__ static inline uint64_t shiftRight8x8(uint64_t a) {
+  return (a & GOL_8X8_VERTICAL_SHIFT_MASK) >> 1;
+}
+
+__host__ __device__ static inline uint64_t shiftUp8x8(uint64_t a) {
+  return a << 8;
+}
+
+__host__ __device__ static inline uint64_t shiftDown8x8(uint64_t a) {
+  return a >> 8;
+}
+
+// Box/plane shift helpers for non-wrapping boundaries - 7x7 grid
+__host__ __device__ static inline uint64_t shiftLeft7x7(uint64_t a) {
+  return (a & GOL_7X7_HORIZONTAL_SHIFT_MASK) << 1;
+}
+
+__host__ __device__ static inline uint64_t shiftRight7x7(uint64_t a) {
+  return (a & GOL_7X7_VERTICAL_SHIFT_MASK) >> 1;
+}
+
+__host__ __device__ static inline uint64_t shiftUp7x7(uint64_t a) {
+  return a << 8;
+}
+
+__host__ __device__ static inline uint64_t shiftDown7x7(uint64_t a) {
+  return a >> 8;
 }
 
 #endif
+
+// Generic template for computing next generation using Rokicki's algorithm
+// Works with any set of shift functions (8x8 or 7x7, torus or plane)
+template<typename ShiftLeft, typename ShiftRight, typename ShiftUp, typename ShiftDown>
+__host__ __device__ static inline uint64_t computeNextGeneration(
+    uint64_t a,
+    ShiftLeft shiftLeft,
+    ShiftRight shiftRight,
+    ShiftUp shiftUp,
+    ShiftDown shiftDown) {
+  uint64_t s0, sh2, a0, a1, sll, slh;
+  add2(shiftLeft(a), shiftRight(a), s0, sh2);
+  add2(s0, a, a0, a1);
+  a1 |= sh2;
+  add3(shiftDown(a0), shiftUp(a0), s0, sll, slh);
+  uint64_t y = shiftDown(a1);
+  uint64_t x = shiftUp(a1);
+  return (x ^ y ^ sh2 ^ slh) & ((x | y) ^ (sh2 | slh)) & (sll | a);
+}
+
+// 8x8 next generation computation
+__host__ __device__ static inline uint64_t computeNextGeneration8x8(uint64_t a) {
+  return computeNextGeneration(a, shiftLeft8x8, shiftRight8x8, shiftUp8x8, shiftDown8x8);
+}
+
+// 7x7 next generation computation using Rokicki's algorithm adapted for 7x7
+// Works for both torus and plane topologies (determined by shift functions above)
+__host__ __device__ static inline uint64_t computeNextGeneration7x7(uint64_t compact7x7) {
+  uint64_t a = unpack7x7(compact7x7);
+  uint64_t result = computeNextGeneration(a, shiftLeft7x7, shiftRight7x7, shiftUp7x7, shiftDown7x7);
+  return pack7x7(result);
+}
 
 __host__ __device__ static inline int adjustGenerationsForDeadout(int generations, uint64_t g2, uint64_t g3,
                                                                   uint64_t g4, uint64_t g5, uint64_t g6) {
@@ -276,111 +383,6 @@ __host__ __device__ static inline uint64_t getNextCandidateIndex(uint64_t* numCa
 }
 
 // ============================================================================
-// 7x7 Grid Simulation - Direct simulation on compact 7x7 format
-// ============================================================================
-// 7x7 patterns use compact storage: 7 consecutive bits per row (49 bits total)
-// Layout: row0[bits 0-6] | row1[bits 7-13] | ... | row6[bits 42-48]
-//
-// This is different from simulating 7x7 placed on 8x8, because boundary
-// conditions differ - a true 7x7 grid has 7-column wrap/boundary behavior
-
-// Helper: Unpack compact 7x7 to byte-aligned format for easier bit manipulation
-// Converts: row at (7*n) bit offset → row at (8*n) bit offset (byte-aligned)
-__host__ __device__ static inline uint64_t unpack7x7(uint64_t compact) {
-  uint64_t result = 0;
-  result |= ((compact >>  0) & 0x7F) <<  0;  // Row 0: bits 0-6 → bits 0-6
-  result |= ((compact >>  7) & 0x7F) <<  8;  // Row 1: bits 7-13 → bits 8-14
-  result |= ((compact >> 14) & 0x7F) << 16;  // Row 2: bits 14-20 → bits 16-22
-  result |= ((compact >> 21) & 0x7F) << 24;  // Row 3: bits 21-27 → bits 24-30
-  result |= ((compact >> 28) & 0x7F) << 32;  // Row 4: bits 28-34 → bits 32-38
-  result |= ((compact >> 35) & 0x7F) << 40;  // Row 5: bits 35-41 → bits 40-46
-  result |= ((compact >> 42) & 0x7F) << 48;  // Row 6: bits 42-48 → bits 48-54
-  return result;
-}
-
-// Helper: Pack byte-aligned format back to compact 7x7
-__host__ __device__ static inline uint64_t pack7x7(uint64_t unpacked) {
-  uint64_t result = 0;
-  result |= ((unpacked >>  0) & 0x7F) <<  0;  // Row 0: bits 0-6 → bits 0-6
-  result |= ((unpacked >>  8) & 0x7F) <<  7;  // Row 1: bits 8-14 → bits 7-13
-  result |= ((unpacked >> 16) & 0x7F) << 14;  // Row 2: bits 16-22 → bits 14-20
-  result |= ((unpacked >> 24) & 0x7F) << 21;  // Row 3: bits 24-30 → bits 21-27
-  result |= ((unpacked >> 32) & 0x7F) << 28;  // Row 4: bits 32-38 → bits 28-34
-  result |= ((unpacked >> 40) & 0x7F) << 35;  // Row 5: bits 40-46 → bits 35-41
-  result |= ((unpacked >> 48) & 0x7F) << 42;  // Row 6: bits 48-54 → bits 42-48
-  return result;
-}
-
-#ifdef TOPOLOGY_TORUS
-
-// 7x7 torus topology: circular shifts with 7-column wrapping
-__host__ __device__ static inline uint64_t shiftLeft7x7(uint64_t a) {
-  // Shift each byte left by 1, wrapping bit 6 to bit 0
-  uint64_t shifted = (a & GOL_7X7_HORIZONTAL_SHIFT_MASK) << 1;  // Bits 0-5 shift left
-  uint64_t wrapped = (a & 0x4040404040404040ULL) >> 6;          // Bit 6 wraps to bit 0
-  return shifted | wrapped;
-}
-
-__host__ __device__ static inline uint64_t shiftRight7x7(uint64_t a) {
-  // Shift each byte right by 1, wrapping bit 0 to bit 6
-  uint64_t shifted = (a & GOL_7X7_VERTICAL_SHIFT_MASK) >> 1;  // Bits 1-6 shift right
-  uint64_t wrapped = (a & 0x0101010101010101ULL) << 6;        // Bit 0 wraps to bit 6
-  return shifted | wrapped;
-}
-
-__host__ __device__ static inline uint64_t shiftUp7x7(uint64_t a) {
-  // Shift up by one row (shift bits up by 8), wrap row 6 to row 0
-  uint64_t shifted = a << 8;
-  uint64_t wrapped = (a >> 48) & 0x7F;  // Row 6 wraps to row 0
-  return shifted | wrapped;
-}
-
-__host__ __device__ static inline uint64_t shiftDown7x7(uint64_t a) {
-  // Shift down by one row (shift bits down by 8), wrap row 0 to row 6
-  uint64_t shifted = a >> 8;
-  uint64_t wrapped = (a & 0x7F) << 48;  // Row 0 wraps to row 6
-  return shifted | wrapped;
-}
-
-#else
-
-// 7x7 plane/box topology: masked shifts with 7-column boundaries (no wrapping)
-__host__ __device__ static inline uint64_t shiftLeft7x7(uint64_t a) {
-  return (a & GOL_7X7_HORIZONTAL_SHIFT_MASK) << 1;
-}
-
-__host__ __device__ static inline uint64_t shiftRight7x7(uint64_t a) {
-  return (a & GOL_7X7_VERTICAL_SHIFT_MASK) >> 1;
-}
-
-__host__ __device__ static inline uint64_t shiftUp7x7(uint64_t a) {
-  return a << 8;  // No wrapping, cells in row 7+ are always dead
-}
-
-__host__ __device__ static inline uint64_t shiftDown7x7(uint64_t a) {
-  return a >> 8;  // No wrapping, cells in row -1 are always dead
-}
-
-#endif
-
-// 7x7 next generation computation using Rokicki's algorithm adapted for 7x7
-// Works for both torus and plane topologies (determined by shift functions above)
-__host__ __device__ static inline uint64_t computeNextGeneration7x7(uint64_t compact7x7) {
-  uint64_t a = unpack7x7(compact7x7);
-
-  uint64_t s0, sh2, a0, a1, sll, slh;
-  add2(shiftLeft7x7(a), shiftRight7x7(a), s0, sh2);
-  add2(s0, a, a0, a1);
-  a1 |= sh2;
-  add3(shiftDown7x7(a0), shiftUp7x7(a0), s0, sll, slh);
-  uint64_t y = shiftDown7x7(a1);
-  uint64_t x = shiftUp7x7(a1);
-  uint64_t result = (x ^ y ^ sh2 ^ slh) & ((x | y) ^ (sh2 | slh)) & (sll | a);
-
-  return pack7x7(result);
-}
-
-// ============================================================================
 // 8x8 Grid Helper - Expand 7x7 pattern to specific position on 8x8 grid
 // ============================================================================
 // Expand a compact 7x7 pattern (7 bits/row) to 8x8 grid format (8 bits/row) at given position
@@ -407,15 +409,11 @@ __host__ __device__ static inline uint64_t expand7x7To8x8(uint64_t pattern7x7, i
 __host__ __device__ static inline bool isCoverableBy7x7(uint64_t pattern) {
   if (pattern == 0) return false;
 
-  // Test 4 possible 7x7 positions within the 8x8 grid:
-  // Position 1: rows 0-6, cols 0-6
-  if ((pattern & ~0x7F7F7F7F7F7F7FULL) == 0) return true;
-  // Position 2: rows 0-6, cols 1-7
-  if ((pattern & ~0xFEFEFEFEFEFEFEULL) == 0) return true;
-  // Position 3: rows 1-7, cols 0-6
-  if ((pattern & ~0x7F7F7F7F7F7F7F00ULL) == 0) return true;
-  // Position 4: rows 1-7, cols 1-7
-  if ((pattern & ~0xFEFEFEFEFEFEFE00ULL) == 0) return true;
+  // Test 4 possible 7x7 positions within the 8x8 grid
+  if ((pattern & ~GOL_7X7_POSITION_0_MASK) == 0) return true;
+  if ((pattern & ~GOL_7X7_POSITION_1_MASK) == 0) return true;
+  if ((pattern & ~GOL_7X7_POSITION_2_MASK) == 0) return true;
+  if ((pattern & ~GOL_7X7_POSITION_3_MASK) == 0) return true;
 
   return false;
 }
