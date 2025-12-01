@@ -16,7 +16,10 @@
 #include "constants.h"
 
 int handlePatternSimulation(ProgramArgs* cli) {
-  std::cout << "Interactive pattern simulation mode\n\n";
+  bool is7x7 = (cli->gridSize == GRID_SIZE_7X7);
+  uint64_t maxPattern = is7x7 ? ((1ULL << 49) - 1) : UINT64_MAX;
+
+  std::cout << "Interactive pattern simulation mode (" << (is7x7 ? "7x7" : "8x8") << " grid)\n\n";
 
   while (true) {
     // Get pattern from user
@@ -32,7 +35,7 @@ int handlePatternSimulation(ProgramArgs* cli) {
     // Handle random pattern request
     uint64_t currentPattern;
     if (input == "r" || input == "R") {
-      // Generate a random 64-bit pattern
+      // Generate a random pattern
       static bool seeded = false;
       if (!seeded) {
         std::srand(std::time(nullptr));
@@ -41,25 +44,40 @@ int handlePatternSimulation(ProgramArgs* cli) {
 
       // Generate random 64-bit number using two 32-bit randoms
       currentPattern = ((uint64_t)std::rand() << 32) | std::rand();
+
+      // Mask to appropriate size for 7x7
+      if (is7x7) {
+        currentPattern &= maxPattern;
+      }
+
       std::cout << "Generated random pattern: " << currentPattern << "\n";
     } else {
       // Parse the pattern
       try {
         currentPattern = std::stoull(input);
+        if (is7x7 && currentPattern > maxPattern) {
+          std::cout << "Pattern exceeds 7x7 grid size (max: " << maxPattern << "). Please try again.\n\n";
+          continue;
+        }
       } catch (const std::exception&) {
-        std::cout << "Invalid pattern. Please enter a valid 64-bit integer, 'r' for random, or 'q' to quit.\n\n";
+        std::cout << "Invalid pattern. Please enter a valid integer, 'r' for random, or 'q' to quit.\n\n";
         continue;
       }
     }
 
     std::cout << "Starting pattern: " << currentPattern << "\n\n";
 
+    // For 7x7: keep in compact format (computeNextGeneration7x7 handles pack/unpack internally)
+    // For 8x8: already in correct format
+    uint64_t simulationPattern = currentPattern;
+
     // Simulate the pattern
     int generation = 0;
 
     while (true) {
       std::cout << "Generation " << generation << ":\n";
-      printPattern(currentPattern);
+      // Pattern is already in display format (compact for 7x7, normal for 8x8)
+      printPattern(simulationPattern, is7x7 ? 7 : 8);
 
       std::cout << "Press ENTER/'n' to continue, 'q' to quit simulation: ";
 
@@ -75,24 +93,26 @@ int handlePatternSimulation(ProgramArgs* cli) {
 
       // ENTER (empty string) or 'n'/'N' means continue
       if (stepInputStr.empty() || stepInputStr[0] == 'n' || stepInputStr[0] == 'N') {
-        uint64_t nextPattern = computeNextGeneration8x8(currentPattern);
+        // Use appropriate computation based on grid size
+        // computeNextGeneration7x7 handles pack/unpack internally (input/output both compact)
+        uint64_t nextPattern = is7x7 ? computeNextGeneration7x7(simulationPattern) : computeNextGeneration8x8(simulationPattern);
 
         // Check if pattern died out
         if (nextPattern == 0) {
           generation++;
           std::cout << "\nGeneration " << generation << ":\n";
-          printPattern(nextPattern);
+          printPattern(0, is7x7 ? 7 : 8);
           std::cout << "Pattern died out after " << generation << " generations.\n\n";
           break;
         }
 
         // Check if pattern stabilized
-        if (nextPattern == currentPattern) {
+        if (nextPattern == simulationPattern) {
           std::cout << "Pattern stabilized after " << generation << " generations.\n\n";
           break;
         }
 
-        currentPattern = nextPattern;
+        simulationPattern = nextPattern;
         generation++;
         std::cout << "\n";
       }

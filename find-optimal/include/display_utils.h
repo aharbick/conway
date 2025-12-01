@@ -7,25 +7,37 @@
 #include <string>
 #include <iomanip>
 
-// Convert a 64-bit number to its binary string representation
+// Convert a number to its binary string representation
+// numBits: number of bits to output (e.g., 64 for 8x8, 49 for 7x7)
+// Note: Buffer must be at least (numBits + 1) bytes to hold result + null terminator
 constexpr int BINARY_STRING_SIZE = 65;
+constexpr int BINARY_STRING_MAX_BITS = 64;
 
-static inline void asBinary(uint64_t number, char *buf) {
-  for (int i = 0; i < 64; ++i) {
-    buf[i] = (number >> (63 - i)) & 1 ? '1' : '0';
+static inline void asBinary(uint64_t number, char *buf, int numBits = 64) {
+  // Validate arguments to prevent buffer overflow
+  if (numBits < 0 || numBits > BINARY_STRING_MAX_BITS) {
+    // Invalid numBits - write error marker and return
+    buf[0] = '?';
+    buf[1] = '\0';
+    return;
   }
-  buf[64] = '\0';  // Ensure null termination
+
+  for (int i = 0; i < numBits; ++i) {
+    buf[i] = (number >> (numBits - 1 - i)) & 1 ? '1' : '0';
+  }
+  buf[numBits] = '\0';  // Ensure null termination
 }
 
 
-// Print a 64-bit pattern as an 8x8 grid with compact formatting (. for 0, single space)
-static inline void printPattern(uint64_t number) {
-  for (int row = 0; row < 8; row++) {
-    for (int col = 0; col < 8; col++) {
-      int bitPos = row * 8 + col;
+// Print a pattern with configurable grid size (compact format: gridSize consecutive bits per row)
+// gridSize: 7 for 7x7 grid, 8 for 8x8 grid (default)
+static inline void printPattern(uint64_t number, int gridSize = 8) {
+  for (int row = 0; row < gridSize; row++) {
+    for (int col = 0; col < gridSize; col++) {
+      int bitPos = row * gridSize + col;
       char bit = (number & (1ULL << bitPos)) ? '1' : '.';
       std::cout << bit;
-      if (col < 7) std::cout << " ";
+      if (col < gridSize - 1) std::cout << " ";
     }
     std::cout << "\n";
   }

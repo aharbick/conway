@@ -383,7 +383,6 @@ __host__ __device__ static inline uint64_t computeNextGeneration7x7(uint64_t com
 // ============================================================================
 // 8x8 Grid Helper - Expand 7x7 pattern to specific position on 8x8 grid
 // ============================================================================
-// This is for the OLD approach of testing 4 positions on 8x8
 // Expand a compact 7x7 pattern (7 bits/row) to 8x8 grid format (8 bits/row) at given position
 // pattern7x7: compact format with 7 consecutive bits per row (49 bits total)
 // rowOffset: 0 for rows 0-6, 1 for rows 1-7

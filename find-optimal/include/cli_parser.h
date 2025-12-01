@@ -26,6 +26,11 @@ enum SimulateType {
   SIMULATE_NONE
 };
 
+enum GridSize {
+  GRID_SIZE_8X8,
+  GRID_SIZE_7X7
+};
+
 typedef struct ProgramArgs {
   bool resumeFromDatabase;
   bool compareCycleAlgorithms;
@@ -36,7 +41,10 @@ typedef struct ProgramArgs {
   TestApiType testApi;
   SimulateType simulateType;
   FrameMode frameMode;
+  GridSize gridSize;
   uint64_t frameModeIndex;  // Only used when frameMode == FRAME_MODE_INDEX
+  uint64_t grid7x7StartPattern;  // Starting pattern for 7x7 search (default: 0)
+  uint64_t grid7x7EndPattern;    // Ending pattern for 7x7 search (default: 2^49 - 1)
   std::string logFilePath;
   std::string queueDirectory;
   std::string subgridCachePath;

@@ -327,7 +327,7 @@ class GOLLifecycleTest : public GOLComputationTest {
 TEST_F(GOLLifecycleTest, CountGenerationsSingleCell) {
   // Single cell dies from underpopulation - dies at generation 2, so countGenerations returns 1
   uint64_t single = 1ULL << (4 * 8 + 4);  // Center cell
-  EXPECT_EQ(countGenerations(single, computeNextGeneration8x8), 1);
+  EXPECT_EQ(countGenerations(single, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD), 1);
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsBlock) {
@@ -345,7 +345,7 @@ TEST_F(GOLLifecycleTest, CountGenerationsBlock) {
   };
   // clang-format on
   uint64_t pattern = createPattern(block);
-  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8), 0);  // Still life = infinite
+  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD), 0);  // Still life = infinite
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsBlinker) {
@@ -363,7 +363,7 @@ TEST_F(GOLLifecycleTest, CountGenerationsBlinker) {
   };
   // clang-format on
   uint64_t pattern = createPattern(blinker);
-  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8), 0);  // Oscillator = infinite
+  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD), 0);  // Oscillator = infinite
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsRPentomino) {
@@ -382,7 +382,7 @@ TEST_F(GOLLifecycleTest, CountGenerationsRPentomino) {
   };
   // clang-format on
   uint64_t pattern = createPattern(rpentomino);
-  int generations = countGenerations(pattern, computeNextGeneration8x8);
+  int generations = countGenerations(pattern, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD);
   // R-pentomino typically stabilizes or becomes periodic
   // Should either return 0 (stable/periodic) or a positive number if it dies
   EXPECT_TRUE(generations >= 0);
@@ -404,7 +404,7 @@ TEST_F(GOLLifecycleTest, CountGenerationsSimpleDieout) {
   };
   // clang-format on
   uint64_t pattern = createPattern(line);
-  int generations = countGenerations(pattern, computeNextGeneration8x8);
+  int generations = countGenerations(pattern, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD);
   EXPECT_GT(generations, 0);   // Should die out
   EXPECT_LT(generations, 10);  // But quickly
 }
@@ -424,7 +424,7 @@ TEST_F(GOLLifecycleTest, CountGenerationsBeehive) {
   };
   // clang-format on
   uint64_t pattern = createPattern(beehive);
-  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8), 0);  // Still life = infinite
+  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD), 0);  // Still life = infinite
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsGlider) {
@@ -443,7 +443,7 @@ TEST_F(GOLLifecycleTest, CountGenerationsGlider) {
   };
   // clang-format on
   uint64_t pattern = createPattern(glider);
-  int generations = countGenerations(pattern, computeNextGeneration8x8);
+  int generations = countGenerations(pattern, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD);
   // In bounded grid, glider will either stabilize, become periodic, or die
   EXPECT_TRUE(generations >= 0);
 }
@@ -453,49 +453,49 @@ TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern212) {
   // Pattern that runs for exactly 212 generations
   // 1000001111101001000000000111101011000000110001001111000110110011
   uint64_t pattern = 9505129015762284979ULL;
-  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8), 212);
+  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD), 212);
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern209a) {
   // Pattern that runs for exactly 209 generations
   // 0111000001011100100001100001010011111010110101100010000101110100
   uint64_t pattern = 8096493654771114356ULL;
-  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8), 209);
+  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD), 209);
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern209b) {
   // Another pattern that runs for exactly 209 generations
   // 1000000010010011100101000010001110000010011011011000111111001010
   uint64_t pattern = 9264911738664226762ULL;
-  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8), 209);
+  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD), 209);
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern205) {
   // Pattern that runs for exactly 205 generations
   // 0101111010010001101011001010010110011101110001000011100100010101
   uint64_t pattern = 6814417538504734997ULL;
-  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8), 205);
+  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD), 205);
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern199) {
   // Pattern that runs for exactly 199 generations
   // 0011100100111010001001000101011011000001000110100001100110001010
   uint64_t pattern = 4123648363836610954ULL;
-  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8), 199);
+  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD), 199);
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern197) {
   // Pattern that runs for exactly 197 generations
   // 0000000100100101011100011110000110110010101101001010100111010011
   uint64_t pattern = 82597382355986899ULL;
-  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8), 197);
+  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD), 197);
 }
 
 TEST_F(GOLLifecycleTest, CountGenerationsKnownPattern193) {
   // Pattern that runs for exactly 193 generations
   // 1010110110011101001110101101100100001001010101010011011001000100
   uint64_t pattern = 12510220043743999556ULL;
-  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8), 193);
+  EXPECT_EQ(countGenerations(pattern, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD), 193);
 }
 
 // Test step6GenerationsAndCheck function - critical CUDA kernel logic

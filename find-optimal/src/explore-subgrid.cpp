@@ -340,7 +340,7 @@ void analyzePattern(uint64_t pattern, SubgridStats& stats) {
   }
 
   // Get accurate total generations using countGenerations
-  int totalGenerations = countGenerations(pattern, computeNextGeneration8x8);
+  int totalGenerations = countGenerations(pattern, computeNextGeneration8x8, CYCLE_DETECTION_FLOYD);
 
   stats.recordPattern(fastSearchGenerations, coverableAtGeneration, totalGenerations);
 }
