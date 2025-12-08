@@ -77,8 +77,9 @@ __global__ void processCandidates(uint64_t *candidates, uint64_t *numCandidates,
 __global__ void processCandidates7x7(uint64_t *candidates, uint64_t *numCandidates, uint64_t *bestPattern,
                                      uint64_t *bestGenerations, CycleDetectionAlgorithm algorithm) {
   for (uint64_t i = blockIdx.x * blockDim.x + threadIdx.x; i < *numCandidates; i += blockDim.x * gridDim.x) {
-    // Use 7x7 computation in compact format (computeNextGeneration7x7 handles pack/unpack internally)
-    uint64_t generations = countGenerations(candidates[i], computeNextGeneration7x7, algorithm);
+    // Unpack once, then use unpacked format for all iterations in countGenerations
+    uint64_t unpacked = unpack7x7(candidates[i]);
+    uint64_t generations = countGenerations(unpacked, computeNextGeneration7x7, algorithm);
     if (generations > 0) {  // Only process if it actually ended
       // Check to see if it's higher and emit it in best(Pattern|Generations)
       uint64_t old = atomicMax((unsigned long long *)bestGenerations, (unsigned long long)generations);
@@ -107,8 +108,9 @@ __global__ void find7x7Candidates(uint64_t rangeStart, uint64_t rangeEnd,
 
   // Process each 7x7 pattern in this thread's range
   for (uint64_t pattern7x7 = threadStart; pattern7x7 < threadEnd; pattern7x7++) {
-    // Use 7x7 computation in compact format (computeNextGeneration7x7 handles pack/unpack internally)
-    int gens = countGenerations(pattern7x7, computeNextGeneration7x7, algorithm);
+    // Unpack once, then use unpacked format for all iterations in countGenerations
+    uint64_t unpacked = unpack7x7(pattern7x7);
+    int gens = countGenerations(unpacked, computeNextGeneration7x7, algorithm);
 
     // Save patterns that reach minimum candidate threshold
     // Store in compact 7x7 format to save memory

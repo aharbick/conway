@@ -67,17 +67,18 @@ int handlePatternSimulation(ProgramArgs* cli) {
 
     std::cout << "Starting pattern: " << currentPattern << "\n\n";
 
-    // For 7x7: keep in compact format (computeNextGeneration7x7 handles pack/unpack internally)
+    // For 7x7: unpack at start, keep in unpacked format during simulation, display uses compact
     // For 8x8: already in correct format
-    uint64_t simulationPattern = currentPattern;
+    uint64_t simulationPattern = is7x7 ? unpack7x7(currentPattern) : currentPattern;
+    uint64_t displayPattern = currentPattern;  // Keep compact version for display
 
     // Simulate the pattern
     int generation = 0;
 
     while (true) {
       std::cout << "Generation " << generation << ":\n";
-      // Pattern is already in display format (compact for 7x7, normal for 8x8)
-      printPattern(simulationPattern, is7x7 ? 7 : 8);
+      // Display compact format for 7x7, normal format for 8x8
+      printPattern(displayPattern, is7x7 ? 7 : 8);
 
       std::cout << "Press ENTER/'n' to continue, 'q' to quit simulation: ";
 
@@ -94,8 +95,13 @@ int handlePatternSimulation(ProgramArgs* cli) {
       // ENTER (empty string) or 'n'/'N' means continue
       if (stepInputStr.empty() || stepInputStr[0] == 'n' || stepInputStr[0] == 'N') {
         // Use appropriate computation based on grid size
-        // computeNextGeneration7x7 handles pack/unpack internally (input/output both compact)
+        // For 7x7: work on unpacked format, pack only for display
         uint64_t nextPattern = is7x7 ? computeNextGeneration7x7(simulationPattern) : computeNextGeneration8x8(simulationPattern);
+        if (is7x7) {
+          displayPattern = pack7x7(nextPattern);
+        } else {
+          displayPattern = nextPattern;
+        }
 
         // Check if pattern died out
         if (nextPattern == 0) {

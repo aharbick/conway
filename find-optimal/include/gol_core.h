@@ -198,12 +198,15 @@ __host__ __device__ static inline uint64_t computeNextGeneration8x8(uint64_t a) 
   return computeNextGeneration(a, shiftLeft8x8, shiftRight8x8, shiftUp8x8, shiftDown8x8);
 }
 
+// 7x7 unpacked format valid bits mask (bits 0-6 of each byte, 7 rows only - byte 8 should be 0)
+#define GOL_7X7_UNPACKED_MASK 0x007F7F7F7F7F7F7FULL
+
 // 7x7 next generation computation using Rokicki's algorithm adapted for 7x7
 // Works for both torus and plane topologies (determined by shift functions above)
-__host__ __device__ static inline uint64_t computeNextGeneration7x7(uint64_t compact7x7) {
-  uint64_t a = unpack7x7(compact7x7);
-  uint64_t result = computeNextGeneration(a, shiftLeft7x7, shiftRight7x7, shiftUp7x7, shiftDown7x7);
-  return pack7x7(result);
+// Input and output are in unpacked format (byte-aligned: 7 bits per byte, 7 rows)
+__host__ __device__ static inline uint64_t computeNextGeneration7x7(uint64_t unpacked7x7) {
+  uint64_t result = computeNextGeneration(unpacked7x7, shiftLeft7x7, shiftRight7x7, shiftUp7x7, shiftDown7x7);
+  return result & GOL_7X7_UNPACKED_MASK;  // Mask to ensure only valid 7x7 bits are set
 }
 
 __host__ __device__ static inline int adjustGenerationsForDeadout(int generations, uint64_t g2, uint64_t g3,
