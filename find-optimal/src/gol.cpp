@@ -1,6 +1,7 @@
 #include "gol.h"
 
 #include <algorithm>
+#include <iomanip>
 #include <mutex>
 #include <random>
 #include <sstream>
@@ -26,57 +27,97 @@ __host__ bool updateBestGenerations(int generations) {
 
 __host__ void *search(void *args) {
   ProgramArgs *cli = static_cast<ProgramArgs *>(args);
-
-  const std::string searchRangeMessage = getSearchDescription(cli);
-  Logger::out() << "Searching " << searchRangeMessage << "\n";
-
   gol::SearchMemory mem(FRAME_SEARCH_MAX_CANDIDATES);
 
-  // Build worker-specific frame list
-  std::vector<uint64_t> workerFrames;
+  if (cli->gridSize == GRID_SIZE_7X7) {
+    // 7x7 exhaustive search: iterate through specified pattern range
+    const uint64_t rangeStart = cli->grid7x7StartPattern;
+    const uint64_t rangeEnd = cli->grid7x7EndPattern;
+    const uint64_t totalPatterns = rangeEnd - rangeStart;
 
-  if (cli->frameMode == FRAME_MODE_RANDOM || cli->frameMode == FRAME_MODE_SEQUENTIAL) {
-    // Generate all incomplete frames for this worker
-    for (uint64_t frameIdx = 0; frameIdx < FRAME_SEARCH_TOTAL_MINIMAL_FRAMES; ++frameIdx) {
-      // Check if this frame belongs to this worker using modulo partitioning
-      if ((frameIdx % cli->totalWorkers) == (cli->workerNum - 1)) {
-        // Check if frame is incomplete
-        if (!getGoogleFrameCompleteFromCache(frameIdx)) {
-          workerFrames.push_back(frameIdx);
+    Logger::out() << "Searching " << formatWithCommas(totalPatterns) << " patterns in 7x7 grid space "
+                   << "(range " << formatWithCommas(rangeStart) << " to " << formatWithCommas(rangeEnd - 1) << ")\n";
+
+    // Worker partitioning: divide the pattern space among workers
+    uint64_t workerStart = rangeStart;
+    uint64_t workerEnd = rangeEnd;
+    uint64_t workerPatterns = totalPatterns;
+
+    if (cli->totalWorkers > 1) {
+      uint64_t patternsPerWorker = totalPatterns / cli->totalWorkers;
+      uint64_t remainder = totalPatterns % cli->totalWorkers;
+
+      workerStart = rangeStart + (cli->workerNum - 1) * patternsPerWorker;
+      workerEnd = workerStart + patternsPerWorker;
+
+      if (cli->workerNum == cli->totalWorkers) {
+        workerEnd += remainder;
+      }
+
+      workerPatterns = workerEnd - workerStart;
+      Logger::out() << "Worker " << cli->workerNum << "/" << cli->totalWorkers
+                     << " processing patterns " << formatWithCommas(workerStart) << " to " << formatWithCommas(workerEnd - 1)
+                     << " (" << formatWithCommas(workerPatterns) << " total)\n";
+    }
+
+    // Process patterns in batches
+    const uint64_t batchSize = 1ULL << 32;  // 4 billion patterns per batch
+
+    for (uint64_t batchStart = workerStart; batchStart < workerEnd; batchStart += batchSize) {
+      uint64_t batchEnd = batchStart + batchSize;
+      if (batchEnd > workerEnd) {
+        batchEnd = workerEnd;
+      }
+
+      execute7x7Search(mem, cli, batchStart, batchEnd);
+    }
+
+    Logger::out() << "7x7 search complete. Processed " << formatWithCommas(workerEnd - workerStart) << " patterns\n";
+
+  } else {
+    // 8x8 frame-based search: use symmetry reduction
+    const std::string searchRangeMessage = getSearchDescription(cli);
+    Logger::out() << "Searching " << searchRangeMessage << "\n";
+
+    // Build worker-specific frame list
+    std::vector<uint64_t> workerFrames;
+
+    if (cli->frameMode == FRAME_MODE_RANDOM || cli->frameMode == FRAME_MODE_SEQUENTIAL) {
+      // Generate all incomplete frames for this worker
+      for (uint64_t frameIdx = 0; frameIdx < FRAME_SEARCH_TOTAL_MINIMAL_FRAMES; ++frameIdx) {
+        if ((frameIdx % cli->totalWorkers) == (cli->workerNum - 1)) {
+          if (!getGoogleFrameCompleteFromCache(frameIdx)) {
+            workerFrames.push_back(frameIdx);
+          }
         }
       }
+
+      // Shuffle for random mode
+      if (cli->frameMode == FRAME_MODE_RANDOM && !workerFrames.empty()) {
+        std::mt19937_64 rng(static_cast<uint64_t>(time(nullptr)) + cli->workerNum);
+        std::shuffle(workerFrames.begin(), workerFrames.end(), rng);
+      }
+    } else if (cli->frameMode == FRAME_MODE_INDEX) {
+      workerFrames.push_back(cli->frameModeIndex);
     }
 
-    // Shuffle for random mode, keep in order for sequential mode
-    if (cli->frameMode == FRAME_MODE_RANDOM && !workerFrames.empty()) {
-      std::mt19937_64 rng(static_cast<uint64_t>(time(nullptr)) + cli->workerNum);
-      std::shuffle(workerFrames.begin(), workerFrames.end(), rng);
-    }
-  } else if (cli->frameMode == FRAME_MODE_INDEX) {
-    // Use the pre-parsed frame index
-    workerFrames.push_back(cli->frameModeIndex);
-  }
+    Logger::out() << "Processing " << workerFrames.size() << " frames for this worker\n";
 
-  // Report how many frames will be processed
-  Logger::out() << "Processing " << workerFrames.size() << " frames for this worker\n";
-
-  // Process all frames in the worker's list
-  for (uint64_t frameIdx : workerFrames) {
-    // Get the actual frame value for this index
-    uint64_t frame = getFrameByIndex(frameIdx);
-    if (frame != 0) {
-      executeKernelSearch(mem, cli, frame, frameIdx);
+    // Process all frames
+    for (uint64_t frameIdx : workerFrames) {
+      uint64_t frame = getFrameByIndex(frameIdx);
+      if (frame != 0) {
+        executeKernelSearch(mem, cli, frame, frameIdx);
+      }
     }
   }
 
 #ifdef __NVCC__
-  // Ensure all CUDA operations complete before returning
   cudaDeviceSynchronize();
 #endif
 
   return NULL;
 }
-
 
 __host__ std::string getSearchDescription(ProgramArgs *cli) {
   std::ostringstream oss;
@@ -91,7 +132,6 @@ __host__ std::string getSearchDescription(ProgramArgs *cli) {
     oss << "ERROR: Invalid frame mode";
   }
 
-  // Add worker information
   if (cli->totalWorkers > 1) {
     oss << " [worker " << cli->workerNum << "/" << cli->totalWorkers << "]";
   }
