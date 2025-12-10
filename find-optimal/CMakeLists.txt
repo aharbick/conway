@@ -197,7 +197,6 @@ set_target_properties(find-optimal-torus PROPERTIES
 
 # Additional executables
 add_executable(explore-subgrid src/explore-subgrid.cpp)
-add_executable(explore-reversibility src/explore-reversibility.cpp)
 add_executable(validate-frame-search-completeness src/validate_frame_search_completeness.cpp)
 
 # Hash function comparison tool
