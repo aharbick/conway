@@ -27,6 +27,18 @@ __host__ bool updateBestGenerations(int generations) {
 
 __host__ void *search(void *args) {
   ProgramArgs *cli = static_cast<ProgramArgs *>(args);
+
+  // Strip search mode: use reversibility optimization for 8x8 search
+  if (cli->stripMode != STRIP_MODE_NONE) {
+    uint32_t blockStart = cli->stripBlockStart;
+    // 0 is sentinel for "all 2^32 blocks" since 2^32 doesn't fit in uint32_t
+    uint32_t blockEnd = (cli->stripBlockEnd == 0) ? 0xFFFFFFFF : cli->stripBlockEnd;
+
+    Logger::out() << "Strip search mode: blocks " << blockStart << " to " << blockEnd << "\n";
+    executeStripSearch(cli, blockStart, blockEnd);
+    return NULL;
+  }
+
   gol::SearchMemory mem(FRAME_SEARCH_MAX_CANDIDATES);
 
   if (cli->gridSize == GRID_SIZE_7X7) {

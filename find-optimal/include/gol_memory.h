@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <memory>
 
+#include "constants.h"
 #include "cuda_utils.h"
 #include "subgrid_cache.h"
 
@@ -161,6 +162,72 @@ class SearchMemory {
     }
     return d_cacheTable_;
   }
+};
+
+// StripSearchMemory with RAII for reversibility-based strip search
+// Note: Hash table for deduplication is allocated locally in findUniqueStrips
+class StripSearchMemory {
+ private:
+  // CUDA device memory
+  CudaMemory d_uniqueTopStrips_;
+  CudaMemory d_uniqueBottomStrips_;
+  CudaMemory d_numUniqueStrips_;    // Single counter, reused for top and bottom
+  CudaMemory d_candidates_;
+  CudaMemory d_numCandidates_;
+  CudaMemory d_bestPattern_;
+  CudaMemory d_bestGenerations_;
+
+  // Host memory (need separate top/bottom counts for Phase 2 loop bounds)
+  HostPtr<uint32_t> h_numUniqueTop_;
+  HostPtr<uint32_t> h_numUniqueBottom_;
+  HostPtr<uint64_t> h_numCandidates_;
+  HostPtr<uint64_t> h_bestPattern_;
+  HostPtr<uint64_t> h_bestGenerations_;
+
+ public:
+  StripSearchMemory()
+      : d_uniqueTopStrips_(STRIP_SEARCH_MAX_VALID_STRIPS * sizeof(uint16_t)),
+        d_uniqueBottomStrips_(STRIP_SEARCH_MAX_VALID_STRIPS * sizeof(uint16_t)),
+        d_numUniqueStrips_(sizeof(uint32_t)),
+        d_candidates_(STRIP_SEARCH_MAX_CANDIDATES * sizeof(uint64_t)),
+        d_numCandidates_(sizeof(uint64_t)),
+        d_bestPattern_(sizeof(uint64_t)),
+        d_bestGenerations_(sizeof(uint64_t)),
+        h_numUniqueTop_(make_host_ptr<uint32_t>()),
+        h_numUniqueBottom_(make_host_ptr<uint32_t>()),
+        h_numCandidates_(make_host_ptr<uint64_t>()),
+        h_bestPattern_(make_host_ptr<uint64_t>()),
+        h_bestGenerations_(make_host_ptr<uint64_t>()) {
+    *h_numUniqueTop_ = 0;
+    *h_numUniqueBottom_ = 0;
+    *h_numCandidates_ = 0;
+    *h_bestPattern_ = 0;
+    *h_bestGenerations_ = 0;
+  }
+
+  // Move semantics only
+  StripSearchMemory(StripSearchMemory&&) = default;
+  StripSearchMemory& operator=(StripSearchMemory&&) = default;
+
+  // Delete copy semantics
+  StripSearchMemory(const StripSearchMemory&) = delete;
+  StripSearchMemory& operator=(const StripSearchMemory&) = delete;
+
+  // Device memory accessors
+  uint16_t* d_uniqueTopStrips() const { return d_uniqueTopStrips_.as<uint16_t>(); }
+  uint16_t* d_uniqueBottomStrips() const { return d_uniqueBottomStrips_.as<uint16_t>(); }
+  uint32_t* d_numUniqueStrips() const { return d_numUniqueStrips_.as<uint32_t>(); }
+  uint64_t* d_candidates() const { return d_candidates_.as<uint64_t>(); }
+  uint64_t* d_numCandidates() const { return d_numCandidates_.as<uint64_t>(); }
+  uint64_t* d_bestPattern() const { return d_bestPattern_.as<uint64_t>(); }
+  uint64_t* d_bestGenerations() const { return d_bestGenerations_.as<uint64_t>(); }
+
+  // Host memory accessors
+  uint32_t* h_numUniqueTop() const { return h_numUniqueTop_.get(); }
+  uint32_t* h_numUniqueBottom() const { return h_numUniqueBottom_.get(); }
+  uint64_t* h_numCandidates() const { return h_numCandidates_.get(); }
+  uint64_t* h_bestPattern() const { return h_bestPattern_.get(); }
+  uint64_t* h_bestGenerations() const { return h_bestGenerations_.get(); }
 };
 
 }  // namespace gol

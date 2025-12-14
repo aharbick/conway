@@ -42,10 +42,14 @@ __host__ void *search(void *args);
 // Search execution functions (using RAII memory management)
 __host__ void executeKernelSearch(gol::SearchMemory &mem, ProgramArgs *cli, uint64_t frame, uint64_t frameIdx);
 __host__ void execute7x7Search(gol::SearchMemory &mem, ProgramArgs *cli, uint64_t rangeStart, uint64_t rangeEnd);
+__host__ void executeStripSearch(ProgramArgs* cli, uint32_t blockStart, uint32_t blockEnd);
 __host__ void reportKernelResults(gol::SearchMemory &mem, ProgramArgs *cli, double startTime, uint64_t frame,
                                   uint64_t frameIdx, int kernelIdx, bool isFrameComplete);
 __host__ void report7x7Results(gol::SearchMemory &mem, ProgramArgs *cli, double startTime,
                                 uint64_t rangeStart, uint64_t rangeEnd);
+__host__ void reportStripSearchBlockResults(gol::StripSearchMemory &mem, ProgramArgs *cli,
+                                            double rangeStartTime, uint32_t blockStart,
+                                            uint32_t blockEnd);
 
 // Helper functions
 __host__ std::string getSearchDescription(ProgramArgs *cli);

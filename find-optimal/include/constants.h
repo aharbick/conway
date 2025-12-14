@@ -11,6 +11,30 @@
 #define FRAME_SEARCH_KERNEL_PATTERN_INCREMENT 0x1000000ULL
 #define FRAME_SEARCH_TOTAL_MINIMAL_FRAMES 2102800
 
+// Strip search constants (reversibility-based optimization)
+// Middle block is rows 2-5 (32 bits), strips are rows 0-1 and 6-7 (16 bits each)
+//
+// Phase 1: Find unique strips (small kernel, 65K strips to test)
+#define STRIP_SEARCH_UNIQUE_GRID_SIZE 256
+#define STRIP_SEARCH_UNIQUE_THREADS_PER_BLOCK 256
+#define STRIP_SEARCH_TOTAL_STRIPS 65536              // 2^16 possible strips
+#define STRIP_SEARCH_MAX_VALID_STRIPS 32768          // Max unique strips per block (measured up to ~26K)
+//
+// StripHashTable: CityHash-based hash table for signature deduplication
+// Uses power-of-2 size with bitwise AND for fast indexing
+#define STRIP_HASH_TABLE_SIZE_BITS 17                // 2^17 = 128K slots (~20% load factor for 26K entries)
+#define STRIP_HASH_TABLE_SIZE (1U << STRIP_HASH_TABLE_SIZE_BITS)
+#define STRIP_HASH_TABLE_MASK (STRIP_HASH_TABLE_SIZE - 1)
+#define STRIP_MAX_PROBE_LENGTH 512                   // Safety limit (should need < 100 with good hash)
+//
+// Phase 2: Test strip combinations (large kernel, ~289M combinations)
+#define STRIP_SEARCH_COMBO_GRID_SIZE 1024
+#define STRIP_SEARCH_COMBO_THREADS_PER_BLOCK 1024
+#define STRIP_SEARCH_MAX_CANDIDATES (1ULL << 24)     // 16M candidates per middle block
+//
+// Progress reporting
+#define STRIP_SEARCH_REPORT_INTERVAL 100             // Report progress every N middle blocks
+
 // Subgrid cache constants
 #define SUBGRID_TOTAL_PATTERNS (1ULL << 49)  // 7x7 grid = 2^49 patterns
 #ifdef TOPOLOGY_TORUS

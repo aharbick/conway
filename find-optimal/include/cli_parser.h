@@ -13,6 +13,12 @@ enum FrameMode {
   FRAME_MODE_NONE
 };
 
+enum StripMode {
+  STRIP_MODE_INDEX,
+  STRIP_MODE_RANGE,
+  STRIP_MODE_NONE
+};
+
 enum TestApiType {
   TEST_API_PROGRESS,
   TEST_API_SUMMARY,
@@ -41,10 +47,13 @@ typedef struct ProgramArgs {
   TestApiType testApi;
   SimulateType simulateType;
   FrameMode frameMode;
+  StripMode stripMode;
   GridSize gridSize;
   uint64_t frameModeIndex;  // Only used when frameMode == FRAME_MODE_INDEX
   uint64_t grid7x7StartPattern;  // Starting pattern for 7x7 search (default: 0)
   uint64_t grid7x7EndPattern;    // Ending pattern for 7x7 search (default: 2^49 - 1)
+  uint32_t stripBlockStart;      // Starting middle block for strip search
+  uint32_t stripBlockEnd;        // Ending middle block for strip search (default: 2^32)
   std::string logFilePath;
   std::string queueDirectory;
   std::string subgridCachePath;

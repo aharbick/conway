@@ -121,7 +121,10 @@ set(CPU_SOURCES
 
 # CUDA source files (including .cpp files that use CUDA)
 set(CUDA_SOURCES
-    src/gol_cuda.cu
+    src/gol_cuda_shared.cu
+    src/gol_cuda_subgrid.cu
+    src/gol_cuda_frames.cu
+    src/gol_cuda_strips.cu
     src/gol.cpp
     src/gol_search.cpp
     src/simulation_handlers.cpp
@@ -197,6 +200,7 @@ set_target_properties(find-optimal-torus PROPERTIES
 
 # Additional executables
 add_executable(explore-subgrid src/explore-subgrid.cpp)
+add_executable(explore-reversibility src/explore-reversibility.cpp)
 add_executable(validate-frame-search-completeness src/validate_frame_search_completeness.cpp)
 
 # Hash function comparison tool

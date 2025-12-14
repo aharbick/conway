@@ -1,8 +1,80 @@
 ## Algorithm Design
 
-In the section below is an email thread with Adam Goucher (https://gitlab.com/apgoucher/) where with his coaching and support we built the algorithm included in find-optimal.  I include this here for historical record.  You can also find additional discussion here: https://conwaylife.com/forums/viewtopic.php?f=7&t=5489
+This document describes the core algorithms involved in the "frame search" solution to exhaustively search for the longest-lived pattern in an 8x8 Game of Life grid. 
+
+### Key Optimizations
+
+The algorithm achieves tractability through four major optimizations:
+
+#### 1. Bitsliced Next-Generation Computation (Tom Rokicki's Algorithm)
+
+Instead of looping over 64 cells individually, we compute all 64 cells in parallel using bitwise operations. The entire 8x8 grid is packed into a single 64-bit integer, and the Game of Life rules are implemented as a Boolean circuit using only 19 bitwise operations plus shifts.
+
+```
+void add2(a, b, &s0, &s1) { s0 = a ^ b; s1 = a & b; }
+void add3(a, b, c, &s0, &s1) { add2(a,b,t0,t1); add2(t0,c,s0,t2); s1 = t1^t2; }
+
+next_gen = (x^y^sh2^slh) & ((x|y)^(sh2|slh)) & (sll|a)
+```
+
+#### 2. Frame-Based Symmetry Deduplication (~8x speedup)
+
+Patterns that are rotations or reflections of each other will have identical lifespans. We exploit this by defining a "frame" - the 24 corner cells of the grid:
+
+```
+FFFooFFF
+FFooooFF
+FooooooF
+oooooooo
+oooooooo
+FooooooF
+FFooooFF
+FFFooFFF
+```
+
+Of the 2^24 possible frames, only 2,102,800 are "minimal" (lexicographically smallest among all 8 rotations/reflections). We only search patterns with minimal frames, reducing the search space by a factor of ~8.
+
+**Search space reduction:**
+- No deduplication: 2^64 patterns
+- Frame deduplication: ~2^61 patterns (7.98x reduction)
+
+#### 3. Two-Phase Candidate Filtering
+
+To fully evaluate a pattern we have to handle cycle detection which can cause warp divergence where most threads on the GPU are idle while a few are busy.  To avoid this problem we split the search into two phases:
+
+**Phase 1 (GPU):** Run each pattern for up to 300 generations, checking every 6 generations for:
+- Death (pattern becomes empty)
+- Short-period cycles (comparing g1 with g2, g3, g4)
+
+Patterns surviving 180+ generations without stabilizing are saved as "candidates."
+
+**Phase 2 (GPU):** Candidates undergo full cycle detection using Floyd's or Nivasch's algorithm to determine their exact lifespan.
+
+This two-phase approach avoids expensive cycle detection for the vast majority of patterns that die quickly.
+
+#### 4. Efficient CUDA Work Distribution
+
+The 2^40 interior bits (non-frame cells) are distributed across GPU resources:
+
+```
+FFFKKFFF    F = Frame bits (24 bits, fixed per task)
+FFBBBBFF    K = Kernel bits (4 bits, 16 kernel launches)
+FBBBBBBF    B = Block bits (10 bits, 1024 blocks)
+PPPPPPPP    T = Thread bits (10 bits, 1024 threads)
+PPPPPPPP    P = Pattern bits (16 bits, per-thread iteration)
+FTTTTTTF
+FFTTTTFF
+FFFKKFFF
+```
+
+The P bits are consecutive, allowing simple iteration: `pattern += 0x1000000`. Each thread processes 2^16 patterns, with threads advancing to new patterns as they complete - avoiding warp divergence by ensuring all threads in a warp do similar amounts of work.
+
 
 ### Coaching from Adam Goucher
+
+Below is an email thread with Adam Goucher (https://gitlab.com/apgoucher/) where with his coaching and support we built the algorithm included in find-optimal.  I include this here for historical record.  You can also find additional discussion here: https://conwaylife.com/forums/viewtopic.php?f=7&t=5489
+
+-----
 
 Dear Andrew,
 

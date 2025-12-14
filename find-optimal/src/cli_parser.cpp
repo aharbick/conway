@@ -23,6 +23,7 @@ static char ProgramArgs_doc[] = "";
 // Command line options
 static struct argp_option argp_options[] = {
     {"frame-mode", 'f', "MODE", 0, "Frame search mode: 'random', 'sequential', or 'index:XXXXX' (single frame by index)"},
+    {"strip-mode", 'S', "MODE", OPTION_ARG_OPTIONAL, "Strip search mode: 'index:XXXXX' (single block) or 'range:START[:END]' (block range). Omit MODE for full 2^32 search."},
     {"7x7-mode", '7', "RANGE", OPTION_ARG_OPTIONAL, "Search 7x7 grid: 'start:end', ':end' (from 1), 'start:' (to 2^49), or omit for full search"},
     {"cycle-detection", 'D', "ALGORITHM", 0, "Cycle detection algorithm: 'floyd' or 'nivasch' (default: 'floyd')"},
     {"simulate", 's', "TYPE", 0, "Simulate mode: 'pattern' (8x8 evolution), 'pattern:7x7' (7x7 evolution), or 'symmetry' (transformations)."},
@@ -96,6 +97,104 @@ static bool parseCycleDetection(const char* arg, ProgramArgs* args) {
   return false;
 }
 
+static bool parseStripMode(const char* arg, ProgramArgs* args) {
+  // Note: 2^32 doesn't fit in uint32_t, so we use 0 as sentinel for "all blocks"
+  // The search code interprets stripBlockEnd=0 as "run to 2^32"
+  const uint64_t maxBlock = (1ULL << 32);  // 2^32
+
+  // Handle no argument or empty string: default to full range (0 to 2^32)
+  if (!arg || *arg == '\0') {
+    args->stripMode = STRIP_MODE_RANGE;
+    args->stripBlockStart = 0;
+    args->stripBlockEnd = 0;  // 0 = sentinel for "all blocks"
+    return true;
+  }
+
+  std::string str(arg);
+
+  // Check for index:XXXXX format
+  if (str.substr(0, 6) == "index:") {
+    std::string blockIdxStr = str.substr(6);
+    if (blockIdxStr.empty()) {
+      std::cerr << "[ERROR] Strip mode 'index:' requires a block index\n";
+      return false;
+    }
+
+    try {
+      uint64_t blockIdx = std::stoull(blockIdxStr);
+      if (blockIdx >= maxBlock) {
+        std::cerr << "[ERROR] Block index " << blockIdx << " exceeds maximum (" << maxBlock - 1 << ")\n";
+        return false;
+      }
+      args->stripMode = STRIP_MODE_INDEX;
+      args->stripBlockStart = (uint32_t)blockIdx;
+      args->stripBlockEnd = (uint32_t)blockIdx + 1;
+      return true;
+    } catch (const std::exception&) {
+      std::cerr << "[ERROR] Invalid block index '" << blockIdxStr << "', expected a valid integer\n";
+      return false;
+    }
+  }
+
+  // Check for range:START[:END] format
+  if (str.substr(0, 6) == "range:") {
+    std::string rangeStr = str.substr(6);
+    if (rangeStr.empty()) {
+      std::cerr << "[ERROR] Strip mode 'range:' requires at least a start value\n";
+      return false;
+    }
+
+    size_t colonPos = rangeStr.find(':');
+
+    try {
+      if (colonPos == std::string::npos) {
+        // Only start provided: range:START (END defaults to 2^32)
+        uint64_t start = std::stoull(rangeStr);
+        if (start >= maxBlock) {
+          std::cerr << "[ERROR] Start block " << start << " exceeds maximum (" << maxBlock - 1 << ")\n";
+          return false;
+        }
+        args->stripMode = STRIP_MODE_RANGE;
+        args->stripBlockStart = (uint32_t)start;
+        args->stripBlockEnd = 0;  // 0 = sentinel for "all remaining blocks"
+        return true;
+      } else {
+        // Both start and end provided: range:START:END
+        std::string startStr = rangeStr.substr(0, colonPos);
+        std::string endStr = rangeStr.substr(colonPos + 1);
+
+        uint64_t start = std::stoull(startStr);
+        uint64_t end = endStr.empty() ? maxBlock : std::stoull(endStr);
+
+        if (start >= maxBlock) {
+          std::cerr << "[ERROR] Start block " << start << " exceeds maximum (" << maxBlock - 1 << ")\n";
+          return false;
+        }
+        if (end > maxBlock) {
+          std::cerr << "[ERROR] End block " << end << " exceeds maximum (" << maxBlock << ")\n";
+          return false;
+        }
+        if (start >= end) {
+          std::cerr << "[ERROR] Start block must be less than end block\n";
+          return false;
+        }
+
+        args->stripMode = STRIP_MODE_RANGE;
+        args->stripBlockStart = (uint32_t)start;
+        // If end == 2^32, store 0 as sentinel; otherwise store the actual end
+        args->stripBlockEnd = (end == maxBlock) ? 0 : (uint32_t)end;
+        return true;
+      }
+    } catch (const std::exception&) {
+      std::cerr << "[ERROR] Invalid range format '" << rangeStr << "', expected numeric values\n";
+      return false;
+    }
+  }
+
+  std::cerr << "[ERROR] Invalid strip mode '" << arg << "', expected 'index:XXXXX' or 'range:START[:END]'\n";
+  return false;
+}
+
 
 static bool parseSimulateType(const char* arg, ProgramArgs* args) {
   std::string str(arg);
@@ -166,7 +265,7 @@ static bool parseTestApi(const char* arg, ProgramArgs* args) {
 }
 
 static bool parse7x7Range(const char* arg, ProgramArgs* args) {
-  const uint64_t max7x7 = (1ULL << 49) - 1;
+  const uint64_t max7x7 = 1ULL << 49;
 
   if (!arg || *arg == '\0') {
     // No argument provided: use full range
@@ -231,6 +330,11 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
   case 'f':
     if (!parseFrameMode(arg, a)) {
       argp_failure(state, 1, 0, "Invalid frame mode");
+    }
+    break;
+  case 'S':
+    if (!parseStripMode(arg, a)) {
+      argp_failure(state, 1, 0, "Invalid strip mode");
     }
     break;
   case '7':
@@ -326,10 +430,13 @@ void initializeDefaultArgs(ProgramArgs* args) {
   args->testApi = TEST_API_NONE;
   args->simulateType = SIMULATE_NONE;
   args->frameMode = FRAME_MODE_NONE;
+  args->stripMode = STRIP_MODE_NONE;
   args->gridSize = GRID_SIZE_8X8;
   args->frameModeIndex = 0;
   args->grid7x7StartPattern = 0;
   args->grid7x7EndPattern = (1ULL << 49) - 1;
+  args->stripBlockStart = 0;
+  args->stripBlockEnd = 0;  // 0 means "use max" (2^32), since 2^32 doesn't fit in uint32_t
   args->logFilePath = "";
   args->queueDirectory = "./request-queue";
   args->subgridCachePath = "";
