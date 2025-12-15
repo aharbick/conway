@@ -41,7 +41,7 @@
 // Phase 2: Test strip combinations (large kernel, ~289M combinations)
 #define STRIP_SEARCH_COMBO_GRID_SIZE 1024
 #define STRIP_SEARCH_COMBO_THREADS_PER_BLOCK 1024
-#define STRIP_SEARCH_MAX_CANDIDATES (1ULL << 24)     // 16M candidates per middle block
+#define STRIP_SEARCH_MAX_CANDIDATES (1ULL << 31)     // 2B candidates per middle block (matches frame search)
 
 // Subgrid cache constants
 #define SUBGRID_TOTAL_PATTERNS (1ULL << 49)  // 7x7 grid = 2^49 patterns

@@ -219,11 +219,24 @@ __host__ void executeStripSearchForBlock(
 
   cudaCheckError(cudaMemcpy(mem.h_numCandidates(), mem.d_numCandidates(), sizeof(uint64_t), cudaMemcpyDeviceToHost));
 
+  // Warn if candidates exceeded buffer size (some were lost)
+  if (*mem.h_numCandidates() > STRIP_SEARCH_MAX_CANDIDATES) {
+    Logger::out() << "WARNING: " << *mem.h_numCandidates() << " candidates found, buffer only holds "
+                  << STRIP_SEARCH_MAX_CANDIDATES << " - some candidates lost!\n";
+  }
+
   // Phase 3: Process candidates to find best
   *mem.h_bestGenerations() = 0;
   *mem.h_bestPattern() = 0;
 
-  if (*mem.h_numCandidates() > 0) {
+  // Cap numCandidates to buffer size to avoid out-of-bounds access
+  uint64_t cappedCandidates = (*mem.h_numCandidates() > STRIP_SEARCH_MAX_CANDIDATES)
+                                  ? STRIP_SEARCH_MAX_CANDIDATES
+                                  : *mem.h_numCandidates();
+
+  if (cappedCandidates > 0) {
+    // Write capped count back to device so processCandidates doesn't read out-of-bounds
+    cudaCheckError(cudaMemcpy(mem.d_numCandidates(), &cappedCandidates, sizeof(uint64_t), cudaMemcpyHostToDevice));
     cudaCheckError(cudaMemcpy(mem.d_bestGenerations(), mem.h_bestGenerations(), sizeof(uint64_t), cudaMemcpyHostToDevice));
     cudaCheckError(cudaMemcpy(mem.d_bestPattern(), mem.h_bestPattern(), sizeof(uint64_t), cudaMemcpyHostToDevice));
 
