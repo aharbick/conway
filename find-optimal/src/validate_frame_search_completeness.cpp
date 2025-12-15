@@ -23,7 +23,7 @@
 #define __global__
 #endif
 
-#include "frame_utils.h"
+#include "symmetry_utils.h"
 #include "gol_core.h"
 
 class CompletenessValidator {

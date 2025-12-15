@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "api_test_handlers.h"
+#include "center4x4_utils.h"
 #include "cli_parser.h"
 #include "constants.h"
 #include "gol_search.h"
@@ -39,6 +40,9 @@ int main(int argc, char** argv) {
 
   // Initialize Google client
   initGoogleClient();
+
+  // Initialize center 4x4 lookup table for strip search symmetry reduction
+  initializeUnique4x4Centers();
 
   // Initialize logging system
   Logger::initialize(cli);

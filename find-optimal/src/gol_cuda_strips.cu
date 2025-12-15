@@ -2,6 +2,7 @@
 #include <iomanip>
 #include <iostream>
 
+#include "center4x4_utils.h"
 #include "constants.h"
 #include "gol.h"
 #include "gol_memory.h"
@@ -14,11 +15,10 @@ extern __global__ void processCandidates(uint64_t *candidates, uint64_t *numCand
                                          uint64_t *bestGenerations, CycleDetectionAlgorithm algorithm);
 
 // Forward declaration for progress reporting
-__host__ void reportStripSearchBlockResults(ProgramArgs *cli, double intervalStartTime,
-                                            uint32_t firstBlock, uint32_t lastBlock,
-                                            uint64_t bestGenerations, uint64_t bestPattern,
-                                            uint64_t totalTopStrips, uint64_t totalBottomStrips,
-                                            uint64_t totalCombinations);
+__host__ void reportStripSearchResults(ProgramArgs *cli, double intervalStartTime,
+                                       uint32_t centerIdx, uint64_t startMiddleIdx,
+                                       uint64_t endMiddleIdx, uint64_t bestGenerations,
+                                       uint64_t bestPattern);
 
 // Helper: Compute 2-generation signature for deduplication
 // Strips that produce the same signature are equivalent
@@ -238,12 +238,8 @@ __host__ void executeStripSearchForBlock(
 }
 
 // Main strip search execution function
-// Iterates through all 2^32 middle blocks
-__host__ void executeStripSearch(ProgramArgs* cli, uint32_t blockStart, uint32_t blockEnd) {
-  Logger::out() << "Starting strip search...\n";
-  Logger::out() << "Block range: " << blockStart << " to " << blockEnd << "\n";
-  Logger::out() << "Total middle blocks to search: " << formatWithCommas(blockEnd - blockStart) << "\n\n";
-
+// Iterates through unique center 4x4 blocks (8548 total) with ear combinations (256 × 256)
+__host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_t centerEnd) {
   // Allocate memory using RAII
   gol::StripSearchMemory mem;
 
@@ -252,89 +248,92 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t blockStart, uint32_t
   cudaCheckError(cudaMalloc(&d_hashTable, STRIP_HASH_TABLE_SIZE * sizeof(uint32_t)));
 
   double intervalStartTime = getHighResCurrentTime();
-  uint32_t intervalStartBlock = blockStart;
   uint64_t intervalBestGenerations = 0;
   uint64_t intervalBestPattern = 0;
-  uint64_t intervalTotalTopStrips = 0;
-  uint64_t intervalTotalBottomStrips = 0;
-  uint64_t intervalTotalCombinations = 0;
+  uint64_t currentMiddleIdx = 0;
+  uint64_t intervalStartMiddleIdx = 0;
 
-  for (uint32_t middleBlock = blockStart; middleBlock < blockEnd; middleBlock++) {
-    executeStripSearchForBlock(middleBlock, mem, d_hashTable, cli->cycleDetection);
-    intervalTotalTopStrips += *mem.h_numUniqueTop();
-    intervalTotalBottomStrips += *mem.h_numUniqueBottom();
-    intervalTotalCombinations += (uint64_t)(*mem.h_numUniqueTop()) * (*mem.h_numUniqueBottom());
+  for (uint32_t centerIdx = centerStart; centerIdx < centerEnd; centerIdx++) {
+    uint16_t center4x4 = get4x4CenterByIndex(centerIdx);
 
-    // Track interval best (for reporting)
-    if (*mem.h_bestGenerations() > intervalBestGenerations) {
-      intervalBestGenerations = *mem.h_bestGenerations();
-      intervalBestPattern = *mem.h_bestPattern();
-    }
+    // Iterate through all ear combinations for this center
+    for (uint16_t leftEar = 0; leftEar < 256; leftEar++) {
+      for (uint16_t rightEar = 0; rightEar < 256; rightEar++) {
+        uint32_t middleBlock = reconstructMiddleBlock(center4x4, (uint8_t)leftEar, (uint8_t)rightEar);
+        executeStripSearchForBlock(middleBlock, mem, d_hashTable, cli->cycleDetection);
 
-    // Track global best
-    if (*mem.h_bestGenerations() > 0) {
-      updateBestGenerations((int)*mem.h_bestGenerations());
-    }
+        // Track interval best (for reporting) and update global best
+        if (*mem.h_bestGenerations() > intervalBestGenerations) {
+          intervalBestGenerations = *mem.h_bestGenerations();
+          intervalBestPattern = *mem.h_bestPattern();
+          updateBestGenerations((int)intervalBestGenerations);
+        }
 
-    // Progress reporting every STRIP_SEARCH_REPORT_INTERVAL blocks
-    if ((middleBlock - blockStart + 1) % STRIP_SEARCH_REPORT_INTERVAL == 0) {
-      reportStripSearchBlockResults(cli, intervalStartTime, intervalStartBlock, middleBlock,
-                                    intervalBestGenerations, intervalBestPattern,
-                                    intervalTotalTopStrips, intervalTotalBottomStrips,
-                                    intervalTotalCombinations);
-      intervalStartTime = getHighResCurrentTime();
-      intervalStartBlock = middleBlock + 1;
-      intervalBestGenerations = 0;
-      intervalBestPattern = 0;
-      intervalTotalTopStrips = 0;
-      intervalTotalBottomStrips = 0;
-      intervalTotalCombinations = 0;
+        // Progress reporting every MIDDLE_BLOCK_REPORT_INTERVAL middle blocks
+        if ((currentMiddleIdx + 1) % MIDDLE_BLOCK_REPORT_INTERVAL == 0) {
+          reportStripSearchResults(cli, intervalStartTime, centerIdx, intervalStartMiddleIdx,
+                                   currentMiddleIdx, intervalBestGenerations, intervalBestPattern);
+
+          // Reset interval tracking
+          intervalStartTime = getHighResCurrentTime();
+          intervalBestGenerations = 0;
+          intervalBestPattern = 0;
+          intervalStartMiddleIdx = currentMiddleIdx + 1;
+        }
+
+        currentMiddleIdx++;
+      }
     }
   }
+
+  // Final progress report for any remaining blocks
+  if (currentMiddleIdx > intervalStartMiddleIdx) {
+    reportStripSearchResults(cli, intervalStartTime, centerEnd - 1, intervalStartMiddleIdx,
+                             currentMiddleIdx - 1, intervalBestGenerations, intervalBestPattern);
+  }
+
+  Logger::out() << "Strip search complete.\n";
 
   // Cleanup hash table (StripSearchMemory handles its own cleanup via RAII)
   cudaFree(d_hashTable);
 }
 
 // Report progress for strip search (follows same logging conventions as reportKernelResults)
-__host__ void reportStripSearchBlockResults(ProgramArgs *cli, double intervalStartTime,
-                                            uint32_t firstBlock, uint32_t lastBlock,
-                                            uint64_t bestGenerations, uint64_t bestPattern,
-                                            uint64_t totalTopStrips, uint64_t totalBottomStrips,
-                                            uint64_t totalCombinations) {
+__host__ void reportStripSearchResults(ProgramArgs *cli, double intervalStartTime,
+                                       uint32_t centerIdx, uint64_t startMiddleIdx,
+                                       uint64_t endMiddleIdx, uint64_t bestGenerations,
+                                       uint64_t bestPattern) {
   double elapsed = getHighResCurrentTime() - intervalStartTime;
+  uint64_t blocksInInterval = endMiddleIdx - startMiddleIdx + 1;
 
-  // Each middle block covers 2^32 patterns (all combinations of top/bottom strips)
-  const uint64_t patternsPerBlock = 1ULL << 32;
-  uint64_t blocksInRange = lastBlock - firstBlock + 1;  // inclusive range
-  uint64_t patternsInRange = blocksInRange * patternsPerBlock;
-  uint64_t patternsPerSec = (elapsed > 0) ? (uint64_t)(patternsInRange / elapsed) : 0;
-
-  // Compute averages per block
-  uint64_t avgTopStrips = totalTopStrips / blocksInRange;
-  uint64_t avgBottomStrips = totalBottomStrips / blocksInRange;
-  uint64_t avgCombinations = totalCombinations / blocksInRange;
+  // Calculate patterns per middleBlock in the 2^64 search space:
+  // - Total patterns: 2^64
+  // - Unique centers (D4 symmetry): 8548
+  // - Ear combinations per center: 65536 (256 × 256)
+  // - Total middleBlocks: 8548 × 65536 = 560,201,728
+  // - Patterns per middleBlock: 2^64 / 560,201,728 ≈ 32,930,007,701
+  const uint64_t patternsPerMiddleBlock = 32930007701ULL;
+  uint64_t patternsInInterval = blocksInInterval * patternsPerMiddleBlock;
+  uint64_t patternsPerSec = (elapsed > 0) ? (uint64_t)(patternsInInterval / elapsed) : 0;
 
   char bestPatternBin[BINARY_STRING_BUFFER_SIZE] = {'\0'};
   asBinary(bestPattern, bestPatternBin);
 
   Logger::out() << "timestamp=" << time(NULL)
-                << ", firstBlock=" << firstBlock
-                << ", lastBlock=" << lastBlock
-                << ", avgTopStrips=" << formatWithCommas(avgTopStrips)
-                << ", avgBottomStrips=" << formatWithCommas(avgBottomStrips)
-                << ", avgCombinations=" << formatWithCommas(avgCombinations)
+                << ", centerIdx=" << centerIdx
+                << ", startMiddleIdx=" << startMiddleIdx
+                << ", endMiddleIdx=" << endMiddleIdx
                 << ", bestGenerations=" << bestGenerations
                 << ", bestPattern=" << bestPattern
                 << ", bestPatternBin=" << bestPatternBin
                 << ", patternsPerSec=" << formatWithCommas(patternsPerSec)
                 << "\n";
 
+  // Save to Google Sheets if appropriate
   if (!cli->dontSaveResults && bestGenerations > 0) {
     queueGoogleSummaryData((int)bestGenerations, bestPattern, bestPatternBin, UINT64_MAX);
-
     if (bestGenerations >= 200) {
-      queueGoogleProgress(firstBlock, 0, (int)bestGenerations, bestPattern, bestPatternBin);
+      queueGoogleProgress(centerIdx, endMiddleIdx, (int)bestGenerations, bestPattern, bestPatternBin);
     }
   }
 }

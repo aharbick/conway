@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# Check if input is provided via command line arguments or stdin
+if [ "$#" -gt 0 ]; then
+  # Use command line arguments as input
+  input="$@"
+else
+  # Read from stdin if no arguments are provided
+  input=$(cat /dev/stdin)
+fi
+
+# Use awk to calculate statistics
+echo "$input" | awk '
+BEGIN {
+  min = ""
+  max = ""
+  sum = 0
+  count = 0
+}
+{
+  for (i=1; i<=NF; i++) {
+    if (min == "" || $i < min) {
+      min = $i
+    }
+    if (max == "" || $i > max) {
+      max = $i
+    }
+    sum += $i
+    count++
+  }
+}
+END {
+  if (count > 0) {
+    avg = sum / count
+    printf("Minimum: %f\n", min)
+    printf("Maximum: %f\n", max)
+    printf("Average: %f\n", avg)
+  } else {
+    print "No numbers provided."
+  }
+}'
+

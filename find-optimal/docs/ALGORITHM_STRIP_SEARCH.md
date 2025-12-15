@@ -154,15 +154,79 @@ Due to the speed-of-light limit (1 cell/generation), regions separated by 4+ cel
 
 **Strategy 3 subsumes strategies 1 and 2**, so we only implement the most powerful version.
 
-### Why Symmetry Elimination Doesn't Apply
+### Center 4x4 Symmetry Reduction (~7.7x additional)
 
-Unlike frame search, we cannot easily eliminate symmetric middle blocks:
+While we cannot apply full D4 symmetry to the entire middle block (since valid strips depend on the specific configuration), we *can* apply symmetry reduction to the **center 4x4 portion** of the middle block.
 
-- The middle block is not symmetric with respect to the full grid
-- Valid strips depend on the specific middle block configuration
-- Each middle block produces different sets of valid strips
+#### Middle Block Decomposition
 
-We must test all 2^32 middle blocks, but the ~14x reduction from strip deduplication more than compensates.
+The 8x4 middle block (32 bits) can be decomposed into three parts:
+
+```
+Column positions within each 8-bit row:
+  7  6  5  4  3  2  1  0   (bit positions)
+ [L][L][C][C][C][C][R][R]
+
+Left ear:   columns 6-7 (2 bits × 4 rows = 8 bits)
+Center:     columns 2-5 (4 bits × 4 rows = 16 bits)
+Right ear:  columns 0-1 (2 bits × 4 rows = 8 bits)
+```
+
+The center 4x4 block has D4 symmetry (dihedral group of order 8: 4 rotations + 4 reflections).
+
+#### Burnside's Lemma
+
+Using Burnside's lemma, the number of unique 4x4 binary matrices under D4 symmetry is:
+
+```
+(2^16 + 2×2^8 + 2×2^10 + 2×2^4 + 2^8) / 8 = 8,548
+```
+
+Reference: [OEIS A054247](https://oeis.org/A054247) - "Number of n×n binary matrices under action of dihedral group of the square D_4"
+
+#### New Iteration Structure
+
+Instead of iterating through all 2^32 middle blocks:
+
+```cpp
+// OLD: 2^32 = 4,294,967,296 iterations
+for (uint32_t middleBlock = 0; middleBlock < (1ULL << 32); middleBlock++) {
+    executeStripSearchForBlock(middleBlock);
+}
+```
+
+We can iterate 8,548 × 256 × 256 = 560,201,728 iterations (~7.7x reduction)
+
+```cpp
+for (uint32_t centerIdx = 0; centerIdx < 8548; centerIdx++) {
+    uint16_t center4x4 = get4x4CenterByIndex(centerIdx);
+    for (uint16_t leftEar = 0; leftEar < 256; leftEar++) {
+        for (uint16_t rightEar = 0; rightEar < 256; rightEar++) {
+            uint32_t middleBlock = reconstructMiddleBlock(center4x4, leftEar, rightEar);
+            executeStripSearchForBlock(middleBlock);
+        }
+    }
+}
+```
+
+#### Why This Works
+
+The center 4x4 portion determines the "core" behavior of the middle block. Two middle blocks that differ only by a D4 transformation of their center will produce equivalent search results (up to the same transformation).
+
+By only testing the **minimal representative** of each center equivalence class, we avoid redundant searches while still covering all unique patterns.
+
+#### CLI Usage
+
+```bash
+# Full strip search (all 8548 centers)
+./find-optimal -S
+
+# Single center by index (0-8547)
+./find-optimal -Sindex:2442
+
+# Range of centers
+./find-optimal -Srange:0:1000
+```
 
 ### Empirical Validation Tool
 

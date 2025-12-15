@@ -12,7 +12,7 @@
 #include "display_utils.h"
 #include "gol.h"
 #include "gol_core.h"
-#include "frame_utils.h"
+#include "symmetry_utils.h"
 #include "constants.h"
 
 int handlePatternSimulation(ProgramArgs* cli) {

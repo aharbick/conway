@@ -9,7 +9,7 @@
 #define __global__
 #endif
 
-#include "frame_utils.h"
+#include "symmetry_utils.h"
 #include "gol_core.h"
 #include "constants.h"
 #include "test_utils.h"

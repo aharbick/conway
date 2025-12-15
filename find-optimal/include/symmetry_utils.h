@@ -1,5 +1,5 @@
-#ifndef _FRAME_UTILS_H_
-#define _FRAME_UTILS_H_
+#ifndef _SYMMETRY_UTILS_H_
+#define _SYMMETRY_UTILS_H_
 
 #include <stdbool.h>
 
@@ -7,9 +7,13 @@
 
 #include "constants.h"
 
-// See the algorithm described in PERFORMANCE under "Eliminating Rotations"
+// Symmetry operations for D4 dihedral group (rotations + reflections)
+// Used for both 8x8 frame search and 4x4 center block symmetry reduction
 
-// Optimized bit manipulation functions using bit tricks instead of loops
+// =============================================================================
+// 8x8 Grid Transformations
+// =============================================================================
+
 // Ultra-fast 8x8 transpose using bit manipulation (18 operations total)
 __host__ __device__ inline uint64_t transpose8x8(uint64_t x) {
   uint64_t t;
@@ -144,6 +148,86 @@ __host__ inline uint64_t getFrameByIndex(uint64_t frameIdx) {
     }
   }
   return 0;  // Frame not found
+}
+
+// =============================================================================
+// 4x4 Grid Transformations (for center block symmetry reduction)
+// =============================================================================
+//
+// 4x4 block layout (16 bits):
+//   Row 0: bits 0-3
+//   Row 1: bits 4-7
+//   Row 2: bits 8-11
+//   Row 3: bits 12-15
+//
+// Each row has columns 0-3 from right to left (bit 0 is column 0)
+
+// Transpose 4x4 block (swap rows and columns)
+__host__ __device__ inline uint16_t transpose4x4(uint16_t x) {
+  // Swap 2x2 blocks in upper-right and lower-left
+  uint16_t t;
+  t = (x ^ (x >> 3)) & 0x0A0A;  // Swap bits at distance 3 (columns 1,3 with rows 1,3)
+  x = x ^ t ^ (t << 3);
+  t = (x ^ (x >> 6)) & 0x00CC;  // Swap 2-bit blocks at distance 6
+  x = x ^ t ^ (t << 6);
+  return x;
+}
+
+// Flip 4x4 block horizontally (reverse bits within each row)
+__host__ __device__ inline uint16_t flipHorizontal4x4(uint16_t x) {
+  // Reverse 4 bits in each nibble (row)
+  // Swap bits 0↔3, 1↔2 within each 4-bit row
+  x = ((x & 0x5555) << 1) | ((x & 0xAAAA) >> 1);  // Swap adjacent bits
+  x = ((x & 0x3333) << 2) | ((x & 0xCCCC) >> 2);  // Swap pairs
+  return x;
+}
+
+// Flip 4x4 block vertically (reverse row order)
+__host__ __device__ inline uint16_t flipVertical4x4(uint16_t x) {
+  // Swap rows: 0↔3, 1↔2
+  // First swap 2-row blocks (rows 0-1 ↔ rows 2-3)
+  x = ((x & 0x00FF) << 8) | ((x & 0xFF00) >> 8);
+  // Then swap 1-row blocks within each 2-row block
+  x = ((x & 0x0F0F) << 4) | ((x & 0xF0F0) >> 4);
+  return x;
+}
+
+// Rotate 4x4 block 90 degrees clockwise = transpose + vertical flip
+__host__ __device__ inline uint16_t rotate90_4x4(uint16_t pattern) {
+  return flipVertical4x4(transpose4x4(pattern));
+}
+
+// Reflect 4x4 block horizontally
+__host__ __device__ inline uint16_t reflectHorizontal4x4(uint16_t pattern) {
+  return flipHorizontal4x4(pattern);
+}
+
+// Returns true if this 4x4 block is the lexicographically minimal version
+// among all its rotations and reflections (D4 symmetry group)
+__host__ __device__ inline bool isMinimal4x4(uint16_t block) {
+  uint16_t min = block;
+
+  // Check all rotations (90, 180, 270 degrees)
+  uint16_t rotated = block;
+  for (int i = 0; i < 3; i++) {
+    rotated = rotate90_4x4(rotated);
+    if (rotated < min)
+      return false;
+  }
+
+  // Check horizontal reflection and its rotations
+  uint16_t reflected = reflectHorizontal4x4(block);
+  if (reflected < min)
+    return false;
+
+  rotated = reflected;
+  for (int i = 0; i < 3; i++) {
+    rotated = rotate90_4x4(rotated);
+    if (rotated < min)
+      return false;
+  }
+
+  return true;
 }
 
 #endif

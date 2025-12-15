@@ -113,6 +113,7 @@ include_directories(${CUDAToolkit_INCLUDE_DIRS})
 # CPU-only source files
 set(CPU_SOURCES
     src/api_test_handlers.cpp
+    src/center4x4_utils.cpp
     src/cli_parser.cpp
     src/queue_handlers.cpp
     src/utils.cpp

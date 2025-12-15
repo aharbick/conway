@@ -28,14 +28,13 @@ __host__ bool updateBestGenerations(int generations) {
 __host__ void *search(void *args) {
   ProgramArgs *cli = static_cast<ProgramArgs *>(args);
 
-  // Strip search mode: use reversibility optimization for 8x8 search
+  // Strip search mode: use reversibility optimization with center 4x4 symmetry reduction
   if (cli->stripMode != STRIP_MODE_NONE) {
-    uint32_t blockStart = cli->stripBlockStart;
-    // 0 is sentinel for "all 2^32 blocks" since 2^32 doesn't fit in uint32_t
-    uint32_t blockEnd = (cli->stripBlockEnd == 0) ? 0xFFFFFFFF : cli->stripBlockEnd;
+    uint32_t centerStart = cli->centerIdxStart;
+    uint32_t centerEnd = cli->centerIdxEnd;
 
-    Logger::out() << "Strip search mode: blocks " << blockStart << " to " << blockEnd << "\n";
-    executeStripSearch(cli, blockStart, blockEnd);
+    Logger::out() << "Strip search mode: center indices " << centerStart << " to " << centerEnd << "\n";
+    executeStripSearch(cli, centerStart, centerEnd);
     return NULL;
   }
 
