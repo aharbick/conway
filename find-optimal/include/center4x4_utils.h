@@ -2,6 +2,8 @@
 #define _CENTER4X4_UTILS_H_
 
 #include <cstdint>
+#include "cuda_utils.h"
+#include "gol_core.h"
 
 // Center 4x4 symmetry reduction for strip search
 //
@@ -62,5 +64,63 @@ uint8_t extractRightEar(uint32_t middleBlock);
 // leftEar: 8-bit left ear (columns 6-7)
 // rightEar: 8-bit right ear (columns 0-1)
 uint32_t reconstructMiddleBlock(uint16_t center4x4, uint8_t leftEar, uint8_t rightEar);
+
+// ============================================================================
+// Strip Search Signature Functions
+// ============================================================================
+
+// CityHash-inspired hash function for 32-bit signatures
+// Provides much better distribution than simple modulo
+__host__ __device__ static inline uint32_t hashSignature(uint32_t sig) {
+  sig *= 0x9ddfea08U;  // CityHash-style multiply
+  sig ^= sig >> 16;    // Mix high bits into low bits
+  return sig;
+}
+
+// Compute 2-generation signature for strip deduplication
+// Strips that produce the same signature are equivalent for search purposes.
+// The signature captures how the strip affects the "relevant half" of the grid
+// after 2 generations (due to speed-of-light causality).
+//
+// Parameters:
+//   pattern: Full 64-bit pattern with strip placed (strip + middle block)
+//   isTop: true = top strip (signature from bottom 4 rows of gen2)
+//          false = bottom strip (signature from top 4 rows of gen2)
+//
+// Returns: 32-bit signature for deduplication
+__host__ __device__ static inline uint32_t computeStripSignature(uint64_t pattern, bool isTop) {
+  uint64_t gen1 = computeNextGeneration8x8(pattern);
+  uint64_t gen2 = computeNextGeneration8x8(gen1);
+  return isTop ? (uint32_t)(gen2 & 0xFFFFFFFFULL)   // Bottom 4 rows (affects middle)
+               : (uint32_t)(gen2 >> 32);            // Top 4 rows (affects middle)
+}
+
+// Assemble a full 64-bit pattern from strip search components
+// Layout: [top strip 16 bits][middle block 32 bits][bottom strip 16 bits]
+//         bits 0-15          bits 16-47            bits 48-63
+__host__ __device__ static inline uint64_t assembleStripPattern(
+    uint16_t topStrip,
+    uint32_t middleBlock,
+    uint16_t bottomStrip
+) {
+  return (uint64_t)topStrip |
+         ((uint64_t)middleBlock << 16) |
+         ((uint64_t)bottomStrip << 48);
+}
+
+// Extract top strip from assembled pattern
+__host__ __device__ static inline uint16_t extractTopStrip(uint64_t pattern) {
+  return (uint16_t)(pattern & 0xFFFF);
+}
+
+// Extract middle block from assembled pattern
+__host__ __device__ static inline uint32_t extractMiddleBlock(uint64_t pattern) {
+  return (uint32_t)((pattern >> 16) & 0xFFFFFFFF);
+}
+
+// Extract bottom strip from assembled pattern
+__host__ __device__ static inline uint16_t extractBottomStrip(uint64_t pattern) {
+  return (uint16_t)(pattern >> 48);
+}
 
 #endif

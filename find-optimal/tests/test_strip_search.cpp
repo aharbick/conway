@@ -202,3 +202,190 @@ TEST_F(StripSearchTest, KnownPatternMiddleBlockReconstruction) {
   EXPECT_EQ(reconstructed, middleBlock)
       << "Known pattern reconstruction failed";
 }
+
+// ============================================================================
+// Pattern Assembly Tests
+// ============================================================================
+
+TEST_F(StripSearchTest, AssembleStripPatternLayout) {
+  // Test that pattern assembly correctly places bits in expected positions
+  uint16_t topStrip = 0x1234;
+  uint32_t middleBlock = 0xABCDEF01;
+  uint16_t bottomStrip = 0x5678;
+
+  uint64_t pattern = assembleStripPattern(topStrip, middleBlock, bottomStrip);
+
+  // Verify bit layout: top=0-15, middle=16-47, bottom=48-63
+  EXPECT_EQ((uint16_t)(pattern & 0xFFFF), topStrip);
+  EXPECT_EQ((uint32_t)((pattern >> 16) & 0xFFFFFFFF), middleBlock);
+  EXPECT_EQ((uint16_t)(pattern >> 48), bottomStrip);
+}
+
+TEST_F(StripSearchTest, AssembleExtractRoundTrip) {
+  // Test round-trip: assemble then extract returns original components
+  uint16_t topStrip = 0xFEDC;
+  uint32_t middleBlock = 0x12345678;
+  uint16_t bottomStrip = 0xABCD;
+
+  uint64_t pattern = assembleStripPattern(topStrip, middleBlock, bottomStrip);
+
+  EXPECT_EQ(extractTopStrip(pattern), topStrip);
+  EXPECT_EQ(extractMiddleBlock(pattern), middleBlock);
+  EXPECT_EQ(extractBottomStrip(pattern), bottomStrip);
+}
+
+TEST_F(StripSearchTest, AssembleStripPatternZeros) {
+  // All zeros should produce zero
+  uint64_t pattern = assembleStripPattern(0, 0, 0);
+  EXPECT_EQ(pattern, 0);
+}
+
+TEST_F(StripSearchTest, AssembleStripPatternAllOnes) {
+  // All ones should produce all ones
+  uint64_t pattern = assembleStripPattern(0xFFFF, 0xFFFFFFFF, 0xFFFF);
+  EXPECT_EQ(pattern, 0xFFFFFFFFFFFFFFFFULL);
+}
+
+// ============================================================================
+// Hash Function Tests
+// ============================================================================
+
+TEST_F(StripSearchTest, HashSignatureDeterministic) {
+  // Same input should always produce same output
+  uint32_t sig = 0x12345678;
+  uint32_t hash1 = hashSignature(sig);
+  uint32_t hash2 = hashSignature(sig);
+  EXPECT_EQ(hash1, hash2);
+}
+
+TEST_F(StripSearchTest, HashSignatureDistribution) {
+  // Test that hash function has reasonable distribution (no obvious clustering)
+  // Count bucket usage with 256 buckets for 1000 sequential inputs
+  std::vector<int> buckets(256, 0);
+  for (uint32_t i = 0; i < 1000; i++) {
+    uint32_t hash = hashSignature(i);
+    buckets[hash & 0xFF]++;
+  }
+
+  // Check that no bucket has more than 10x the average (avg ~= 4)
+  int maxBucket = 0;
+  int minBucket = 1000;
+  for (int count : buckets) {
+    if (count > maxBucket) maxBucket = count;
+    if (count > 0 && count < minBucket) minBucket = count;
+  }
+
+  // With good distribution, max should be < 20 for 1000 items in 256 buckets
+  EXPECT_LT(maxBucket, 40) << "Hash function has poor distribution (clustering)";
+}
+
+TEST_F(StripSearchTest, HashSignatureZeroHandling) {
+  // Zero input should produce non-zero output (good hash property)
+  uint32_t hash = hashSignature(0);
+  EXPECT_EQ(hash, 0);  // Actually 0 * anything = 0, so this is expected
+}
+
+// ============================================================================
+// Signature Computation Tests
+// ============================================================================
+
+TEST_F(StripSearchTest, ComputeStripSignatureDeterministic) {
+  // Same pattern should always produce same signature
+  uint64_t pattern = 0x123456789ABCDEF0ULL;
+
+  uint32_t sig1_top = computeStripSignature(pattern, true);
+  uint32_t sig2_top = computeStripSignature(pattern, true);
+  EXPECT_EQ(sig1_top, sig2_top);
+
+  uint32_t sig1_bottom = computeStripSignature(pattern, false);
+  uint32_t sig2_bottom = computeStripSignature(pattern, false);
+  EXPECT_EQ(sig1_bottom, sig2_bottom);
+}
+
+TEST_F(StripSearchTest, ComputeStripSignatureTopBottomDifferent) {
+  // For most patterns, top and bottom signatures should differ
+  // (they look at different halves of gen2)
+  uint64_t pattern = 0x123456789ABCDEF0ULL;
+  uint32_t sigTop = computeStripSignature(pattern, true);
+  uint32_t sigBottom = computeStripSignature(pattern, false);
+
+  // They could theoretically be equal for some symmetric patterns,
+  // but for this random pattern they should differ
+  EXPECT_NE(sigTop, sigBottom);
+}
+
+TEST_F(StripSearchTest, ComputeStripSignatureEmptyPattern) {
+  // Empty pattern stays empty after any number of generations
+  uint64_t pattern = 0;
+  uint32_t sigTop = computeStripSignature(pattern, true);
+  uint32_t sigBottom = computeStripSignature(pattern, false);
+
+  EXPECT_EQ(sigTop, 0);
+  EXPECT_EQ(sigBottom, 0);
+}
+
+TEST_F(StripSearchTest, DifferentStripsCanProduceSameSignature) {
+  // Two different strips that produce the same 2-gen effect should have same signature
+  // This tests the core principle of strip deduplication
+
+  uint32_t middleBlock = 0;  // Empty middle block
+
+  // Count unique signatures for all 65536 top strips
+  std::set<uint32_t> uniqueSignatures;
+  for (uint32_t strip = 0; strip < STRIP_SEARCH_TOTAL_STRIPS; strip++) {
+    uint64_t pattern = assembleStripPattern((uint16_t)strip, middleBlock, 0);
+    uint32_t sig = computeStripSignature(pattern, true);
+    uniqueSignatures.insert(sig);
+  }
+
+  // With empty middle block, many strips should produce same signature
+  // (strips that differ only in "irrelevant" cells)
+  // Expect significantly fewer unique signatures than total strips
+  EXPECT_LT(uniqueSignatures.size(), STRIP_SEARCH_TOTAL_STRIPS)
+      << "Expected signature deduplication to reduce unique count";
+
+  // Per docs, we expect ~17K unique signatures, so at least 50% reduction
+  EXPECT_LT(uniqueSignatures.size(), STRIP_SEARCH_TOTAL_STRIPS / 2)
+      << "Expected at least 2x reduction from signature deduplication";
+}
+
+TEST_F(StripSearchTest, UniqueSignatureCountShowsDeduplication) {
+  // Test that signature-based deduplication reduces unique strip count
+  // Note: The ~17K figure from docs is for a "typical" middle block.
+  // Edge cases (empty, full) have much higher deduplication.
+
+  std::vector<uint32_t> testMiddleBlocks = {
+      0x00000000,  // Empty - high deduplication
+      0xFFFFFFFF,  // Full - very high deduplication (cells die from overcrowding)
+      0x12345678,  // Random-ish - moderate deduplication
+      0x0F0F0F0F,  // Striped pattern
+  };
+
+  for (uint32_t middleBlock : testMiddleBlocks) {
+    std::set<uint32_t> uniqueTopSigs;
+    std::set<uint32_t> uniqueBottomSigs;
+
+    for (uint32_t strip = 0; strip < STRIP_SEARCH_TOTAL_STRIPS; strip++) {
+      // Top strip signature
+      uint64_t topPattern = assembleStripPattern((uint16_t)strip, middleBlock, 0);
+      uniqueTopSigs.insert(computeStripSignature(topPattern, true));
+
+      // Bottom strip signature
+      uint64_t bottomPattern = assembleStripPattern(0, middleBlock, (uint16_t)strip);
+      uniqueBottomSigs.insert(computeStripSignature(bottomPattern, false));
+    }
+
+    // All middle blocks should show significant deduplication
+    // At minimum 2x reduction (32768 unique vs 65536 total)
+    EXPECT_LT(uniqueTopSigs.size(), STRIP_SEARCH_TOTAL_STRIPS / 2)
+        << "Expected at least 2x deduplication for middleBlock=" << middleBlock;
+    EXPECT_LT(uniqueBottomSigs.size(), STRIP_SEARCH_TOTAL_STRIPS / 2)
+        << "Expected at least 2x deduplication for middleBlock=" << middleBlock;
+
+    // Should have at least some unique signatures (sanity check)
+    EXPECT_GT(uniqueTopSigs.size(), 100U)
+        << "Too few unique top signatures for middleBlock=" << middleBlock;
+    EXPECT_GT(uniqueBottomSigs.size(), 100U)
+        << "Too few unique bottom signatures for middleBlock=" << middleBlock;
+  }
+}

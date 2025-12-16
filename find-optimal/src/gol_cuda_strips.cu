@@ -20,23 +20,6 @@ __host__ void reportStripSearchResults(ProgramArgs *cli, double intervalStartTim
                                        uint64_t endMiddleIdx, uint64_t bestGenerations,
                                        uint64_t bestPattern);
 
-// Helper: Compute 2-generation signature for deduplication
-// Strips that produce the same signature are equivalent
-__device__ static inline uint32_t computeSignature(uint64_t pattern, bool isTop) {
-  uint64_t gen1 = computeNextGeneration8x8(pattern);
-  uint64_t gen2 = computeNextGeneration8x8(gen1);
-  return isTop ? (uint32_t)(gen2 & 0xFFFFFFFFULL)   // Top 4 rows
-               : (uint32_t)(gen2 >> 32);            // Bottom 4 rows
-}
-
-// CityHash-inspired hash function for 32-bit signatures
-// Provides much better distribution than simple modulo
-__device__ static inline uint32_t hashSignature(uint32_t sig) {
-  sig *= 0x9ddfea08U;  // CityHash-style multiply
-  sig ^= sig >> 16;    // Mix high bits into low bits
-  return sig;
-}
-
 // Helper: Add strip to output if signature is unique (using hash table with CityHash)
 __device__ static inline void addIfUnique(
     uint16_t strip,
@@ -85,7 +68,7 @@ __global__ void findUniqueTopStrips(
   for (uint32_t strip = threadId; strip < STRIP_SEARCH_TOTAL_STRIPS; strip += totalThreads) {
     // Construct pattern: strip in rows 0-1, middle block in rows 2-5, zeros in rows 6-7
     uint64_t pattern = ((uint64_t)strip) | ((uint64_t)middleBlock << 16);
-    uint32_t signature = computeSignature(pattern, true);
+    uint32_t signature = computeStripSignature(pattern, true);
     addIfUnique((uint16_t)strip, signature, hashTable, uniqueStrips, numUnique);
   }
 }
@@ -104,7 +87,7 @@ __global__ void findUniqueBottomStrips(
   for (uint32_t strip = threadId; strip < STRIP_SEARCH_TOTAL_STRIPS; strip += totalThreads) {
     // Construct pattern: zeros in rows 0-1, middle block in rows 2-5, strip in rows 6-7
     uint64_t pattern = ((uint64_t)middleBlock << 16) | ((uint64_t)strip << 48);
-    uint32_t signature = computeSignature(pattern, false);
+    uint32_t signature = computeStripSignature(pattern, false);
     addIfUnique((uint16_t)strip, signature, hashTable, uniqueStrips, numUnique);
   }
 }
