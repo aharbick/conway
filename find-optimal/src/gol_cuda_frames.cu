@@ -213,7 +213,7 @@ __host__ void report7x7Results(gol::SearchMemory &mem, ProgramArgs *cli, double 
     if (!cli->dontSaveResults) {
       queueGoogleSummaryData((int)*mem.h_bestGenerations(), *mem.h_bestPattern(), bestPatternBin, UINT64_MAX);
 
-      if ((int)*mem.h_bestGenerations() >= 200) {
+      if ((int)*mem.h_bestGenerations() >= 204) {
         queueGoogleProgress(0, 0, (int)*mem.h_bestGenerations(), *mem.h_bestPattern(), bestPatternBin);
       }
     }
@@ -257,8 +257,8 @@ __host__ void reportKernelResults(gol::SearchMemory &mem, ProgramArgs *cli, doub
     uint64_t completedFrameIdx = isFrameComplete ? frameIdx : UINT64_MAX;
     queueGoogleSummaryData((int)*mem.h_bestGenerations(), *mem.h_bestPattern(), bestPatternBin, completedFrameIdx);
 
-    // Send progress data to Google if generations >= 200
-    if ((int)*mem.h_bestGenerations() >= 200) {
+    // Send progress data to Google if generations >= 204
+    if ((int)*mem.h_bestGenerations() >= 204) {
       queueGoogleProgress(frameIdx, kernelIdx, (int)*mem.h_bestGenerations(), *mem.h_bestPattern(), bestPatternBin);
     }
   }

@@ -3,12 +3,12 @@
  */
 
 // Frame search sheet names
-const FRAME_PROGRESS_SHEET_NAME = 'Frame Progress';
+const FRAME_BESTS_SHEET_NAME = 'Frame Bests';
 const FRAME_COMPLETION_SHEET_NAME = 'Frame Completion';
 const FRAME_SUMMARY_SHEET_NAME = 'Frame Summary';
 
 // Strip search sheet names
-const STRIP_PROGRESS_SHEET_NAME = 'Strip Progress';
+const STRIP_BESTS_SHEET_NAME = 'Strip Bests';
 const STRIP_COMPLETION_SHEET_NAME = 'Strip Completion';
 const STRIP_SUMMARY_SHEET_NAME = 'Strip Summary';
 
@@ -195,11 +195,11 @@ function googleSendProgress(e, spreadsheetId) {
 
     // Get the spreadsheet and worksheet
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    let sheet = spreadsheet.getSheetByName(FRAME_PROGRESS_SHEET_NAME);
+    let sheet = spreadsheet.getSheetByName(FRAME_BESTS_SHEET_NAME);
 
     // Create sheet if it doesn't exist
     if (!sheet) {
-      sheet = spreadsheet.insertSheet(FRAME_PROGRESS_SHEET_NAME);
+      sheet = spreadsheet.insertSheet(FRAME_BESTS_SHEET_NAME);
       // Add headers
       sheet.getRange(1, 1, 1, 4).setValues([['frameIdx', 'kernelIdx', 'bestGenerations', 'bestPattern']]);
     }
@@ -411,7 +411,7 @@ function backfillFrameCompletionFromProgress() {
   console.log('Starting Frame Completion backfill...');
 
   // Get Progress sheet
-  const progressSheet = spreadsheet.getSheetByName(FRAME_PROGRESS_SHEET_NAME);
+  const progressSheet = spreadsheet.getSheetByName(FRAME_BESTS_SHEET_NAME);
   if (!progressSheet) {
     console.error('Frame Progress sheet not found');
     return;
@@ -568,11 +568,11 @@ function googleSendStripProgress(e, spreadsheetId) {
 
     // Get the spreadsheet and worksheet
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    let sheet = spreadsheet.getSheetByName(STRIP_PROGRESS_SHEET_NAME);
+    let sheet = spreadsheet.getSheetByName(STRIP_BESTS_SHEET_NAME);
 
     // Create sheet if it doesn't exist
     if (!sheet) {
-      sheet = spreadsheet.insertSheet(STRIP_PROGRESS_SHEET_NAME);
+      sheet = spreadsheet.insertSheet(STRIP_BESTS_SHEET_NAME);
       // Add headers
       sheet.getRange(1, 1, 1, 4).setValues([['centerIdx', 'middleIdx', 'bestGenerations', 'bestPattern']]);
     }

@@ -332,7 +332,7 @@ __host__ void reportStripSearchResults(ProgramArgs *cli, double intervalStartTim
     queueGoogleStripSummaryData((int)bestGenerations, bestPattern, bestPatternBin);
 
     // Only log detailed progress for high-generation results
-    if (bestGenerations >= 200) {
+    if (bestGenerations >= 204) {
       queueGoogleStripProgress(centerIdx, middleIdx, (int)bestGenerations, bestPattern, bestPatternBin);
     }
   }
