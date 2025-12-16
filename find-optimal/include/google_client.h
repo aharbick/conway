@@ -29,6 +29,8 @@
 // Strip completion cache constants
 #define STRIP_CACHE_TOTAL_CENTERS 8548ULL
 #define STRIP_CACHE_MIDDLE_IDX_COUNT 512ULL
+#define STRIP_CACHE_TOTAL_INTERVALS (STRIP_CACHE_TOTAL_CENTERS * STRIP_CACHE_MIDDLE_IDX_COUNT)  // 4,376,576
+#define STRIP_CACHE_BITMAP_BYTES ((STRIP_CACHE_TOTAL_INTERVALS + 7) / 8)  // 547,072 bytes
 
 class CurlResponse {
  public:
@@ -290,20 +292,21 @@ class FrameCompletionCache {
 static FrameCompletionCache frameCache;
 
 // Strip completion cache for fast lookups
-// Stores completion count (0-512) for each of 8,548 centers
+// Uses bitmap format like FrameCompletionCache
+// Linear index = centerIdx * 512 + middleIdx
 class StripCompletionCache {
  private:
-  uint16_t* completedCounts;
+  uint8_t* bitmap;
   bool loaded;
-  uint64_t totalCompletedIntervals;
+  uint64_t completedCount;
 
  public:
-  StripCompletionCache() : completedCounts(nullptr), loaded(false), totalCompletedIntervals(0) {
-    completedCounts = new uint16_t[STRIP_CACHE_TOTAL_CENTERS]();  // Initialize to zero
+  StripCompletionCache() : bitmap(nullptr), loaded(false), completedCount(0) {
+    bitmap = new uint8_t[STRIP_CACHE_BITMAP_BYTES]();  // Initialize to zero
   }
 
   ~StripCompletionCache() {
-    delete[] completedCounts;
+    delete[] bitmap;
   }
 
   // Load cache from Google Sheets API
@@ -329,16 +332,12 @@ class StripCompletionCache {
       return false;
     }
 
-    // Parse JSON response to get completion counts array
+    // Parse JSON response to get base64 bitmap
+    std::string bitmapBase64;
     try {
       nlohmann::json j = nlohmann::json::parse(response.data);
-      if (j.contains("completionCounts") && j["completionCounts"].is_array()) {
-        const auto& counts = j["completionCounts"];
-        totalCompletedIntervals = 0;
-        for (size_t i = 0; i < counts.size() && i < STRIP_CACHE_TOTAL_CENTERS; i++) {
-          completedCounts[i] = static_cast<uint16_t>(counts[i].get<int>());
-          totalCompletedIntervals += completedCounts[i];
-        }
+      if (j.contains("bitmap") && j["bitmap"].is_string()) {
+        bitmapBase64 = j["bitmap"].get<std::string>();
       } else {
         cleanupGoogleResponse(&response);
         return false;
@@ -350,6 +349,22 @@ class StripCompletionCache {
     }
 
     cleanupGoogleResponse(&response);
+
+    // Decode base64 to bitmap
+    if (!decodeBase64(bitmapBase64)) {
+      return false;
+    }
+
+    // Count completed intervals during load
+    completedCount = 0;
+    for (uint64_t i = 0; i < STRIP_CACHE_TOTAL_INTERVALS; i++) {
+      const uint64_t byteIdx = i / 8;
+      const uint8_t bitIdx = i % 8;
+      if (bitmap[byteIdx] & (1 << bitIdx)) {
+        completedCount++;
+      }
+    }
+
     loaded = true;
     return true;
   }
@@ -359,34 +374,27 @@ class StripCompletionCache {
     if (!loaded || centerIdx >= STRIP_CACHE_TOTAL_CENTERS || middleIdx >= STRIP_CACHE_MIDDLE_IDX_COUNT) {
       return false;
     }
-    return completedCounts[centerIdx] > middleIdx;
+    const uint64_t linearIdx = (uint64_t)centerIdx * STRIP_CACHE_MIDDLE_IDX_COUNT + middleIdx;
+    const uint64_t byteIdx = linearIdx / 8;
+    const uint8_t bitIdx = linearIdx % 8;
+    return (bitmap[byteIdx] & (1 << bitIdx)) != 0;
   }
 
-  // Check if a center is fully complete (all 512 middleIdx done)
-  bool isCenterComplete(uint32_t centerIdx) const {
-    if (!loaded || centerIdx >= STRIP_CACHE_TOTAL_CENTERS) {
-      return false;
-    }
-    return completedCounts[centerIdx] >= STRIP_CACHE_MIDDLE_IDX_COUNT;
-  }
-
-  // Get completion count for a center
-  uint16_t getCompletionCount(uint32_t centerIdx) const {
-    if (centerIdx >= STRIP_CACHE_TOTAL_CENTERS) {
-      return 0;
-    }
-    return completedCounts[centerIdx];
-  }
-
-  // Increment completion count for a center
-  void incrementCompletion(uint32_t centerIdx) {
-    if (centerIdx >= STRIP_CACHE_TOTAL_CENTERS) {
+  // Mark a specific interval as complete
+  void setIntervalComplete(uint32_t centerIdx, uint32_t middleIdx) {
+    if (centerIdx >= STRIP_CACHE_TOTAL_CENTERS || middleIdx >= STRIP_CACHE_MIDDLE_IDX_COUNT) {
       return;
     }
-    if (completedCounts[centerIdx] < STRIP_CACHE_MIDDLE_IDX_COUNT) {
-      completedCounts[centerIdx]++;
-      totalCompletedIntervals++;
+    const uint64_t linearIdx = (uint64_t)centerIdx * STRIP_CACHE_MIDDLE_IDX_COUNT + middleIdx;
+    const uint64_t byteIdx = linearIdx / 8;
+    const uint8_t bitIdx = linearIdx % 8;
+
+    // Only increment count if interval wasn't already complete
+    if (!(bitmap[byteIdx] & (1 << bitIdx))) {
+      completedCount++;
     }
+
+    bitmap[byteIdx] |= (1 << bitIdx);
   }
 
   bool isLoaded() const {
@@ -397,8 +405,60 @@ class StripCompletionCache {
     loaded = true;
   }
 
-  uint64_t getTotalCompletedIntervals() const {
-    return totalCompletedIntervals;
+  uint64_t getCompletedCount() const {
+    return completedCount;
+  }
+
+  // Find the first incomplete interval within the given range
+  // Returns true if found, and sets outCenterIdx and outMiddleIdx
+  // Returns false if everything in range is complete
+  bool findFirstIncomplete(uint32_t centerStart, uint32_t centerEnd,
+                           uint32_t middleStart, uint32_t middleEnd,
+                           uint32_t& outCenterIdx, uint32_t& outMiddleIdx) const {
+    if (!loaded) {
+      // If not loaded, start from the beginning of the range
+      outCenterIdx = centerStart;
+      outMiddleIdx = middleStart;
+      return true;
+    }
+
+    for (uint32_t center = centerStart; center < centerEnd; center++) {
+      // For the first center, respect middleStart; otherwise start at 0
+      uint32_t startMiddle = (center == centerStart) ? middleStart : 0;
+      // For the last center, respect middleEnd; otherwise go to max
+      uint32_t endMiddle = (center == centerEnd - 1) ? middleEnd : STRIP_CACHE_MIDDLE_IDX_COUNT;
+
+      for (uint32_t middle = startMiddle; middle < endMiddle; middle++) {
+        if (!isIntervalComplete(center, middle)) {
+          outCenterIdx = center;
+          outMiddleIdx = middle;
+          return true;
+        }
+      }
+    }
+
+    // Everything in range is complete
+    return false;
+  }
+
+ private:
+  // Base64 decoder using OpenSSL BIO
+  bool decodeBase64(const std::string& input) {
+    if (input.empty())
+      return true;  // Empty input is valid
+
+    // Create BIO chain: base64 decoder -> memory buffer
+    BIO* bio = BIO_new_mem_buf(input.c_str(), input.length());
+    BIO* b64 = BIO_new(BIO_f_base64());
+    BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);  // No newlines
+    bio = BIO_push(b64, bio);
+
+    // Read decoded data
+    int decoded_len = BIO_read(bio, bitmap, STRIP_CACHE_BITMAP_BYTES);
+
+    BIO_free_all(bio);  // Cleans up the entire chain
+
+    return decoded_len > 0 && decoded_len <= STRIP_CACHE_BITMAP_BYTES;
   }
 };
 
@@ -566,12 +626,6 @@ static bool sendGoogleStripProgress(uint32_t centerIdx, uint32_t middleIdx, int 
   GoogleResult result = sendGoogleHttpRequest(config.webappUrl, params, &response, "sendStripProgress");
 
   cleanupGoogleResponse(&response);
-
-  // Update cache on success
-  if (result == GOOGLE_SUCCESS) {
-    stripCache.incrementCompletion(centerIdx);
-  }
-
   return (result == GOOGLE_SUCCESS);
 }
 
@@ -596,8 +650,8 @@ static bool sendGoogleStripSummaryData(int bestGenerations, uint64_t bestPattern
   return (result == GOOGLE_SUCCESS);
 }
 
-// Lightweight API to just increment strip completion count
-static bool sendGoogleStripCompletion(uint32_t centerIdx) {
+// Lightweight API to mark a specific strip interval as complete
+static bool sendGoogleStripCompletion(uint32_t centerIdx, uint32_t middleIdx) {
   GoogleConfig config;
   if (getGoogleConfig(&config) != GOOGLE_SUCCESS) {
     return false;
@@ -607,6 +661,7 @@ static bool sendGoogleStripCompletion(uint32_t centerIdx) {
   params["action"] = "incrementStripCompletion";
   params["apiKey"] = config.apiKey;
   params["centerIdx"] = std::to_string(centerIdx);
+  params["middleIdx"] = std::to_string(middleIdx);
 
   CurlResponse response;
   GoogleResult result = sendGoogleHttpRequest(config.webappUrl, params, &response, "incrementStripCompletion");
@@ -621,7 +676,7 @@ static bool loadGoogleStripCache() {
 }
 
 static uint64_t getGoogleStripCacheCompletedCount() {
-  return stripCache.getTotalCompletedIntervals();
+  return stripCache.getCompletedCount();
 }
 
 static bool isGoogleStripIntervalComplete(uint32_t centerIdx, uint32_t middleIdx) {
@@ -636,12 +691,21 @@ static bool isGoogleStripIntervalComplete(uint32_t centerIdx, uint32_t middleIdx
   return stripCache.isIntervalComplete(centerIdx, middleIdx);
 }
 
-static void incrementGoogleStripCompletion(uint32_t centerIdx) {
+static void setGoogleStripIntervalComplete(uint32_t centerIdx, uint32_t middleIdx) {
   // Ensure cache is initialized (even if just as empty cache)
   if (!stripCache.isLoaded()) {
     stripCache.markAsLoaded();
   }
-  stripCache.incrementCompletion(centerIdx);
+  stripCache.setIntervalComplete(centerIdx, middleIdx);
+}
+
+// Find the first incomplete strip interval within the given range
+// Returns true if found (and sets outCenterIdx, outMiddleIdx), false if all complete
+static bool findFirstIncompleteStripInterval(uint32_t centerStart, uint32_t centerEnd,
+                                              uint32_t middleStart, uint32_t middleEnd,
+                                              uint32_t& outCenterIdx, uint32_t& outMiddleIdx) {
+  return stripCache.findFirstIncomplete(centerStart, centerEnd, middleStart, middleEnd,
+                                        outCenterIdx, outMiddleIdx);
 }
 
 #endif

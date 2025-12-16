@@ -25,7 +25,9 @@ const FRAME_COMPLETION_ROWS = Math.ceil(FRAME_TOTAL_FRAMES / FRAME_BITS_PER_ROW)
 // Strip completion constants
 const STRIP_TOTAL_CENTERS = 8548;
 const STRIP_MIDDLE_IDX_COUNT = 512;
-const STRIP_COMPLETION_ROWS = STRIP_TOTAL_CENTERS; // 8,548 rows, each stores 0-512
+const STRIP_TOTAL_INTERVALS = STRIP_TOTAL_CENTERS * STRIP_MIDDLE_IDX_COUNT; // 4,376,576
+const STRIP_BITS_PER_ROW = 64;
+const STRIP_COMPLETION_ROWS = Math.ceil(STRIP_TOTAL_INTERVALS / STRIP_BITS_PER_ROW); // 68,384 rows
 
 /**
  * Execute a function with script-level locking for concurrency safety
@@ -501,6 +503,8 @@ function backfillFrameCompletionFromProgress() {
 
 /**
  * Ensure Strip Completion sheet exists and is properly initialized
+ * Uses bitmap format like Frame Completion: single column with 64-bit values
+ * Linear index = centerIdx * 512 + middleIdx
  * @param {Spreadsheet} spreadsheet - The spreadsheet object
  * @returns {Sheet} The Strip Completion sheet
  */
@@ -509,39 +513,45 @@ function ensureStripCompletionSheet(spreadsheet) {
 
   if (!sheet) {
     sheet = spreadsheet.insertSheet(STRIP_COMPLETION_SHEET_NAME);
-    // Add headers
-    sheet.getRange(1, 1, 1, 2).setValues([['centerIdx', 'completedCount']]);
+    // Add header
+    sheet.getRange(1, 1).setValue('stripBitmap');
 
-    // Initialize all rows with centerIdx and 0 completedCount
-    const initData = [];
-    for (let i = 0; i < STRIP_COMPLETION_ROWS; i++) {
-      initData.push([i, 0]);
-    }
-    sheet.getRange(2, 1, STRIP_COMPLETION_ROWS, 2).setValues(initData);
+    // Initialize all rows with 0 (no intervals completed)
+    const initData = Array(STRIP_COMPLETION_ROWS).fill(['0']);
+    sheet.getRange(2, 1, STRIP_COMPLETION_ROWS, 1).setValues(initData);
   }
 
   return sheet;
 }
 
 /**
- * Increment the completion count for a center in the Strip Completion sheet
+ * Set a specific centerIdx:middleIdx as complete in the Strip Completion sheet
+ * Uses linear indexing: linearIdx = centerIdx * 512 + middleIdx
  * @param {Sheet} sheet - The Strip Completion sheet
- * @param {number} centerIdx - The center index to increment
+ * @param {number} centerIdx - The center index
+ * @param {number} middleIdx - The middleIdx to mark as complete
  */
-function incrementStripCompletion(sheet, centerIdx) {
+function setStripIntervalComplete(sheet, centerIdx, middleIdx) {
   if (centerIdx < 0 || centerIdx >= STRIP_TOTAL_CENTERS) {
     return;
   }
-
-  const rowIndex = centerIdx + 2; // +2 for header and 1-based indexing
-
-  // Get current count
-  const currentCount = parseInt(sheet.getRange(rowIndex, 2).getValue()) || 0;
-
-  // Increment if not already at max
-  if (currentCount < STRIP_MIDDLE_IDX_COUNT) {
-    sheet.getRange(rowIndex, 2).setValue(currentCount + 1);
+  if (middleIdx < 0 || middleIdx >= STRIP_MIDDLE_IDX_COUNT) {
+    return;
   }
+
+  const linearIdx = centerIdx * STRIP_MIDDLE_IDX_COUNT + middleIdx;
+  const rowIndex = Math.floor(linearIdx / STRIP_BITS_PER_ROW) + 2; // +2 for header and 1-based indexing
+  const bitIndex = linearIdx % STRIP_BITS_PER_ROW;
+
+  // Get current value
+  const currentValue = sheet.getRange(rowIndex, 1).getValue() || '0';
+  const currentBitmap = BigInt(currentValue);
+
+  // Set the bit
+  const newBitmap = currentBitmap | (BigInt(1) << BigInt(bitIndex));
+
+  // Write back as string to preserve precision
+  sheet.getRange(rowIndex, 1).setValue(newBitmap.toString());
 }
 
 /**
@@ -569,10 +579,6 @@ function googleSendStripProgress(e, spreadsheetId) {
 
     const newRow = [centerIdx, middleIdx, bestGenerations, bestPattern];
     sheet.appendRow(newRow);
-
-    // Update Strip Completion sheet
-    const stripCompletionSheet = ensureStripCompletionSheet(spreadsheet);
-    incrementStripCompletion(stripCompletionSheet, centerIdx);
 
     return sendJsonResponse(true, 'Strip progress data saved successfully');
   });
@@ -650,8 +656,8 @@ function googleSendStripSummaryData(e, spreadsheetId) {
 }
 
 /**
- * Get strip completion cache
- * Returns an array of completion counts for each center (0-512)
+ * Get strip completion cache as base64-encoded bitmap
+ * Same format as frame completion for consistency
  */
 function googleGetCompleteStripCache(e, spreadsheetId) {
   return withLock(() => {
@@ -659,33 +665,40 @@ function googleGetCompleteStripCache(e, spreadsheetId) {
     const stripCompletionSheet = ensureStripCompletionSheet(spreadsheet);
 
     // Read all completion data from Strip Completion sheet
-    const dataRange = stripCompletionSheet.getRange(2, 2, STRIP_COMPLETION_ROWS, 1).getValues();
+    const dataRange = stripCompletionSheet.getRange(2, 1, STRIP_COMPLETION_ROWS, 1).getValues();
 
-    // Build array of completion counts
-    const completionCounts = [];
-    for (let i = 0; i < dataRange.length && i < STRIP_COMPLETION_ROWS; i++) {
-      completionCounts.push(parseInt(dataRange[i][0]) || 0);
+    // Convert 64-bit values to 8-bit bitmap
+    const bitmapBytes = Math.ceil(STRIP_TOTAL_INTERVALS / 8);
+    const bitmap = new Uint8Array(bitmapBytes);
+
+    for (let rowIdx = 0; rowIdx < dataRange.length && rowIdx < STRIP_COMPLETION_ROWS; rowIdx++) {
+      const bitmapValue = BigInt(dataRange[rowIdx][0] || '0');
+
+      // Each row contains 64 bits, convert to 8 bytes
+      for (let byteInRow = 0; byteInRow < 8; byteInRow++) {
+        const globalByteIdx = rowIdx * 8 + byteInRow;
+        if (globalByteIdx >= bitmapBytes) break;
+
+        // Extract 8 bits from the 64-bit value
+        const byteValue = Number((bitmapValue >> BigInt(byteInRow * 8)) & BigInt(0xFF));
+        bitmap[globalByteIdx] = byteValue;
+      }
     }
 
-    // Calculate total completed intervals
-    let totalCompleted = 0;
-    for (const count of completionCounts) {
-      totalCompleted += count;
-    }
+    // Convert bitmap to base64 for transmission
+    const bitmapBase64 = Utilities.base64Encode(bitmap);
 
     return sendJsonResponse(true, 'Strip cache retrieved successfully', {
-      completionCounts: completionCounts,
-      totalCenters: STRIP_TOTAL_CENTERS,
-      middleIdxPerCenter: STRIP_MIDDLE_IDX_COUNT,
-      totalCompleted: totalCompleted,
-      totalIntervals: STRIP_TOTAL_CENTERS * STRIP_MIDDLE_IDX_COUNT
+      bitmap: bitmapBase64,
+      totalIntervals: STRIP_TOTAL_INTERVALS,
+      bitmapSize: bitmapBytes
     });
   });
 }
 
 /**
- * Increment strip completion count for a center
- * Lightweight API that only updates the completion count without logging progress
+ * Set a specific strip interval as complete
+ * Lightweight API that only updates the completion bitmap without logging progress
  */
 function googleIncrementStripCompletion(e, spreadsheetId) {
   return withLock(() => {
@@ -696,11 +709,16 @@ function googleIncrementStripCompletion(e, spreadsheetId) {
       return sendJsonResponse(false, 'Invalid centerIdx parameter');
     }
 
+    const middleIdx = parseInt(data.middleIdx);
+    if (isNaN(middleIdx) || middleIdx < 0 || middleIdx >= STRIP_MIDDLE_IDX_COUNT) {
+      return sendJsonResponse(false, 'Invalid middleIdx parameter');
+    }
+
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
     const stripCompletionSheet = ensureStripCompletionSheet(spreadsheet);
-    incrementStripCompletion(stripCompletionSheet, centerIdx);
+    setStripIntervalComplete(stripCompletionSheet, centerIdx, middleIdx);
 
-    return sendJsonResponse(true, 'Strip completion incremented successfully');
+    return sendJsonResponse(true, 'Strip interval marked complete');
   });
 }
 

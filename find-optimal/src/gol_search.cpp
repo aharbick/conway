@@ -28,6 +28,20 @@ int executeMainSearch(ProgramArgs* cli) {
       if (loadGoogleStripCache()) {
         uint64_t completedIntervals = getGoogleStripCacheCompletedCount();
         Logger::out() << "Strip completion cache initialized with " << completedIntervals << " completed middle block intervals\n";
+
+        // For range mode searches, advance to the first incomplete interval
+        if (cli->stripMode == STRIP_MODE_RANGE || cli->stripMode == STRIP_MODE_NONE) {
+          uint32_t resumeCenterIdx, resumeMiddleIdx;
+          if (findFirstIncompleteStripInterval(cli->centerIdxStart, cli->centerIdxEnd,
+                                               cli->middleIdxStart, cli->middleIdxEnd,
+                                               resumeCenterIdx, resumeMiddleIdx)) {
+            cli->centerIdxStart = resumeCenterIdx;
+            cli->middleIdxStart = resumeMiddleIdx;
+          } else {
+            Logger::out() << "All intervals in range are already complete!\n";
+            return 0;
+          }
+        }
       }
     } else if (cli->gridSize == GRID_SIZE_8X8 && cli->frameMode != FRAME_MODE_INDEX) {
       // Frame search uses frame completion cache (only useful for random/sequential modes, not index mode)

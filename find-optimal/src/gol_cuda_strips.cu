@@ -260,6 +260,11 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
 
     // middleIdx 0-511, each covers 128 middle blocks
     for (uint32_t middleIdx = thisMiddleStart; middleIdx < thisMiddleEnd; middleIdx++) {
+      // Skip already-completed intervals (unless --dont-save-results is set)
+      if (!cli->dontSaveResults && isGoogleStripIntervalComplete(centerIdx, middleIdx)) {
+        continue;
+      }
+
       // Process STRIP_SEARCH_MIDDLE_BLOCKS_PER_REPORT middle blocks for this middleIdx
       uint32_t blockStart = middleIdx * STRIP_SEARCH_MIDDLE_BLOCKS_PER_REPORT;
       uint32_t blockEnd = blockStart + STRIP_SEARCH_MIDDLE_BLOCKS_PER_REPORT;
@@ -321,7 +326,7 @@ __host__ void reportStripSearchResults(ProgramArgs *cli, double intervalStartTim
   // Save to Google Sheets if appropriate
   if (!cli->dontSaveResults && bestGenerations > 0) {
     // Track completion for every interval (independent of summary/progress)
-    queueGoogleStripCompletion(centerIdx);
+    queueGoogleStripCompletion(centerIdx, middleIdx);
 
     // Record summary data for histogram
     queueGoogleStripSummaryData((int)bestGenerations, bestPattern, bestPatternBin);

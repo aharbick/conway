@@ -75,7 +75,8 @@ static bool initGoogleRequestQueue(const std::string& queueDirectory = "") {
   globalRequestQueue.registerHandler("incrementStripCompletion", [](const nlohmann::json& payload) -> bool {
     try {
       uint32_t centerIdx = payload.at("centerIdx").get<uint32_t>();
-      return sendGoogleStripCompletion(centerIdx);
+      uint32_t middleIdx = payload.at("middleIdx").get<uint32_t>();
+      return sendGoogleStripCompletion(centerIdx, middleIdx);
     } catch (const std::exception& e) {
       std::cerr << "[ERROR] incrementStripCompletion handler failed: " << e.what() << "\n";
       return false;
@@ -144,9 +145,6 @@ static void queueGoogleStripProgress(uint32_t centerIdx, uint32_t middleIdx, int
   if (!globalRequestQueue.enqueue("sendStripProgress", payload)) {
     std::cerr << "[ERROR] Failed to enqueue sendStripProgress request\n";
   }
-
-  // Update local cache
-  stripCache.incrementCompletion(centerIdx);
 }
 
 // Queue-based async version of sendGoogleStripSummaryData
@@ -163,9 +161,10 @@ static void queueGoogleStripSummaryData(int bestGenerations, uint64_t bestPatter
 }
 
 // Queue-based async version of incrementStripCompletion
-static void queueGoogleStripCompletion(uint32_t centerIdx) {
+static void queueGoogleStripCompletion(uint32_t centerIdx, uint32_t middleIdx) {
   nlohmann::json payload = {
-      {"centerIdx", centerIdx}
+      {"centerIdx", centerIdx},
+      {"middleIdx", middleIdx}
   };
 
   if (!globalRequestQueue.enqueue("incrementStripCompletion", payload)) {
@@ -173,7 +172,7 @@ static void queueGoogleStripCompletion(uint32_t centerIdx) {
   }
 
   // Update local cache
-  stripCache.incrementCompletion(centerIdx);
+  stripCache.setIntervalComplete(centerIdx, middleIdx);
 }
 
 // Get count of pending queued requests

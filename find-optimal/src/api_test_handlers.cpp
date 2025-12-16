@@ -194,7 +194,7 @@ int handleTestStripCache(ProgramArgs* cli) {
     return 1;
   }
 
-  uint64_t totalIntervals = STRIP_CACHE_TOTAL_CENTERS * STRIP_CACHE_MIDDLE_IDX_COUNT;
+  uint64_t totalIntervals = STRIP_CACHE_TOTAL_INTERVALS;
   uint64_t completedIntervals = getGoogleStripCacheCompletedCount();
 
   std::cout << "\n=== Strip Cache Test Results ===\n";
@@ -204,12 +204,15 @@ int handleTestStripCache(ProgramArgs* cli) {
   std::cout << "Completed intervals: " << completedIntervals << "\n";
   std::cout << "Completion rate: " << std::fixed << std::setprecision(2)
             << (double)completedIntervals / totalIntervals * 100.0 << "%\n";
-  std::cout << "Cache size: " << (STRIP_CACHE_TOTAL_CENTERS * sizeof(uint16_t)) << " bytes\n";
+  std::cout << "Cache size: " << STRIP_CACHE_BITMAP_BYTES << " bytes\n";
 
-  // Show completion status for first few centers
-  std::cout << "\nFirst 10 centers completion status:\n";
-  for (uint32_t i = 0; i < 10 && i < STRIP_CACHE_TOTAL_CENTERS; i++) {
-    std::cout << "  Center " << i << ": " << stripCache.getCompletionCount(i) << "/" << STRIP_CACHE_MIDDLE_IDX_COUNT << "\n";
+  // Show completion status for first few intervals
+  std::cout << "\nFirst 20 intervals completion status:\n";
+  for (uint32_t i = 0; i < 20; i++) {
+    uint32_t centerIdx = i / STRIP_CACHE_MIDDLE_IDX_COUNT;
+    uint32_t middleIdx = i % STRIP_CACHE_MIDDLE_IDX_COUNT;
+    bool complete = isGoogleStripIntervalComplete(centerIdx, middleIdx);
+    std::cout << "  " << centerIdx << ":" << middleIdx << " = " << (complete ? "complete" : "incomplete") << "\n";
   }
 
   return 0;
@@ -218,13 +221,14 @@ int handleTestStripCache(ProgramArgs* cli) {
 int handleTestStripCompletionApi(ProgramArgs* cli) {
   std::cout << "Testing Google Sheets Strip Completion API...\n";
 
-  // Use centerIdx=0 for easy verification and reversal
+  // Use centerIdx=0, middleIdx=0 for easy verification and reversal
   uint32_t testCenterIdx = 0;
+  uint32_t testMiddleIdx = 0;
 
-  // Test strip completion increment
-  std::cout << "Testing strip completion increment (centerIdx=" << testCenterIdx << ")...\n";
-  bool success = sendGoogleStripCompletion(testCenterIdx);
-  std::cout << "Strip completion increment: " << (success ? "SUCCESS" : "FAILED") << "\n";
+  // Test strip completion
+  std::cout << "Testing strip completion (centerIdx=" << testCenterIdx << ", middleIdx=" << testMiddleIdx << ")...\n";
+  bool success = sendGoogleStripCompletion(testCenterIdx, testMiddleIdx);
+  std::cout << "Strip completion: " << (success ? "SUCCESS" : "FAILED") << "\n";
 
   return 0;
 }
