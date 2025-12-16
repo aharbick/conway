@@ -6,13 +6,7 @@
 #include <unordered_set>
 
 #include "platform_compat.h"
-
-#ifndef __NVCC__
-#define __host__
-#define __device__
-#define __global__
-#endif
-
+#include "cuda_utils.h"
 #include "symmetry_utils.h"
 #include "gol_core.h"
 

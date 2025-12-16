@@ -270,8 +270,8 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
     uint16_t center4x4 = get4x4CenterByIndex(centerIdx);
 
     // Iterate through all ear combinations for this center
-    for (uint16_t leftEar = 0; leftEar < 256; leftEar++) {
-      for (uint16_t rightEar = 0; rightEar < 256; rightEar++) {
+    for (uint16_t leftEar = 0; leftEar < CENTER_4X4_TOTAL_EAR_VALUES; leftEar++) {
+      for (uint16_t rightEar = 0; rightEar < CENTER_4X4_TOTAL_EAR_VALUES; rightEar++) {
         uint32_t middleBlock = reconstructMiddleBlock(center4x4, (uint8_t)leftEar, (uint8_t)rightEar);
         executeStripSearchForBlock(middleBlock, mem, d_hashTable, cli->cycleDetection);
 

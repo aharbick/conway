@@ -3,13 +3,7 @@
 #include <climits>
 #include <vector>
 
-// Define CUDA decorators as empty for CPU compilation
-#ifndef __NVCC__
-#define __host__
-#define __device__
-#define __global__
-#endif
-
+#include "cuda_utils.h"
 #include "constants.h"
 #include "gol_core.h"
 #include "subgrid_cache.h"

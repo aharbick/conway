@@ -2,27 +2,21 @@
 #include <vector>
 #include <cstdlib>
 
-// Define CUDA decorators as empty for CPU compilation
-#ifndef __NVCC__
-#define __host__
-#define __device__
-#define __global__
-#endif
-
+#include "cuda_utils.h"
 #include "symmetry_utils.h"
 #include "gol_core.h"
 #include "constants.h"
 #include "test_utils.h"
 
-// Test frame utility functions (these don't have problematic dependencies)
-class FrameUtilsTest : public ::testing::Test {
+// Test symmetry utility functions (8x8 frame transformations and 4x4 center transformations)
+class SymmetryUtilsTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // Any setup needed before each test
   }
 };
 
-TEST_F(FrameUtilsTest, Rotate90SingleBit) {
+TEST_F(SymmetryUtilsTest, Rotate90SingleBit) {
   // Test rotating a single bit 90 degrees clockwise
   // Bit at position (0,0) should move to (7,0)
   uint64_t pattern = 1ULL << (0 * 8 + 0);  // Top-left corner
@@ -31,7 +25,7 @@ TEST_F(FrameUtilsTest, Rotate90SingleBit) {
   EXPECT_EQ(rotated, expected);
 }
 
-TEST_F(FrameUtilsTest, Rotate90FourTimes) {
+TEST_F(SymmetryUtilsTest, Rotate90FourTimes) {
   // Rotating 4 times should return to original
   uint64_t original = 0x123456789ABCDEFULL;
   uint64_t result = original;
@@ -43,7 +37,7 @@ TEST_F(FrameUtilsTest, Rotate90FourTimes) {
   EXPECT_EQ(result, original);
 }
 
-TEST_F(FrameUtilsTest, ReflectHorizontalSingleBit) {
+TEST_F(SymmetryUtilsTest, ReflectHorizontalSingleBit) {
   // Test horizontal reflection
   // Bit at position (0,0) should move to (0,7)
   uint64_t pattern = 1ULL << (0 * 8 + 0);  // Top-left corner
@@ -52,31 +46,31 @@ TEST_F(FrameUtilsTest, ReflectHorizontalSingleBit) {
   EXPECT_EQ(reflected, expected);
 }
 
-TEST_F(FrameUtilsTest, ReflectHorizontalTwice) {
+TEST_F(SymmetryUtilsTest, ReflectHorizontalTwice) {
   // Reflecting twice should return to original
   uint64_t original = 0x123456789ABCDEFULL;
   uint64_t result = reflectHorizontal(reflectHorizontal(original));
   EXPECT_EQ(result, original);
 }
 
-TEST_F(FrameUtilsTest, ExtractFrameEmpty) {
+TEST_F(SymmetryUtilsTest, ExtractFrameEmpty) {
   // Test extracting frame from empty pattern
   uint64_t frameOnly = extractFrame(0);
   EXPECT_EQ(frameOnly, 0);
 }
 
-TEST_F(FrameUtilsTest, SpreadBitsToFrameZero) {
+TEST_F(SymmetryUtilsTest, SpreadBitsToFrameZero) {
   // Test spreading zero bits
   uint64_t frame = spreadBitsToFrame(0);
   EXPECT_EQ(frame, 0);
 }
 
-TEST_F(FrameUtilsTest, IsMinimalFrameEmpty) {
+TEST_F(SymmetryUtilsTest, IsMinimalFrameEmpty) {
   // Empty frame should be minimal
   EXPECT_TRUE(isMinimalFrame(0));
 }
 
-TEST_F(FrameUtilsTest, ExtractFrameNonEmpty) {
+TEST_F(SymmetryUtilsTest, ExtractFrameNonEmpty) {
   // Test extracting frame from a pattern with both frame and non-frame bits
   uint64_t pattern = 0xFFFFFFFFFFFFFFFFULL;  // All bits set
   uint64_t frameOnly = extractFrame(pattern);
@@ -89,7 +83,7 @@ TEST_F(FrameUtilsTest, ExtractFrameNonEmpty) {
   EXPECT_EQ(extractFrame(frameOnly), frameOnly);  // Extracting again should be identity
 }
 
-TEST_F(FrameUtilsTest, SpreadBitsToFrameNonZero) {
+TEST_F(SymmetryUtilsTest, SpreadBitsToFrameNonZero) {
   // Test spreading some bits to frame positions
   uint64_t bits = 0x1;  // Just the first bit
   uint64_t frame = spreadBitsToFrame(bits);
@@ -105,7 +99,7 @@ TEST_F(FrameUtilsTest, SpreadBitsToFrameNonZero) {
   EXPECT_EQ(extractFrame(allFrame), allFrame);  // Should be valid frame
 }
 
-TEST_F(FrameUtilsTest, IsMinimalFrameAsymmetric) {
+TEST_F(SymmetryUtilsTest, IsMinimalFrameAsymmetric) {
   // Test with known asymmetric patterns to verify minimal frame detection
 
   // Test pattern 1: Single bit at position (0,1) - top row, second column
@@ -152,7 +146,7 @@ TEST_F(FrameUtilsTest, IsMinimalFrameAsymmetric) {
   EXPECT_LE(minimalCount, 8) << "L-pattern should not have more minimal forms than transformations";
 }
 
-TEST_F(FrameUtilsTest, IsMinimalFrameRotationUniqueness) {
+TEST_F(SymmetryUtilsTest, IsMinimalFrameRotationUniqueness) {
   // Test that exactly one rotation of any pattern is the minimal frame
   // Start with an asymmetric pattern that will have 4 distinct rotations
   uint64_t pattern = 0x0000001800240042ULL;  // L-shaped pattern
@@ -202,7 +196,7 @@ TEST_F(FrameUtilsTest, IsMinimalFrameRotationUniqueness) {
                              << minimalCount;
 }
 
-TEST_F(FrameUtilsTest, IsMinimalFrameReflectionUniqueness) {
+TEST_F(SymmetryUtilsTest, IsMinimalFrameReflectionUniqueness) {
   // Test that exactly one orientation among all 8 (4 rotations × 2 reflections) is minimal
   // Start with an asymmetric pattern that will have 8 distinct orientations
   uint64_t pattern = 0x0000001800240042ULL;  // L-shaped pattern (same as rotation test)
@@ -264,7 +258,7 @@ TEST_F(FrameUtilsTest, IsMinimalFrameReflectionUniqueness) {
                              << minimalCount;
 }
 
-TEST_F(FrameUtilsTest, ReflectHorizontalWithRotations) {
+TEST_F(SymmetryUtilsTest, ReflectHorizontalWithRotations) {
   // Test that reflection + rotation combinations work correctly
   uint64_t pattern = 0x8040201008040201ULL;  // Diagonal pattern
 
@@ -291,7 +285,7 @@ TEST_F(FrameUtilsTest, ReflectHorizontalWithRotations) {
   EXPECT_EQ(transformed, pattern) << "Double reflection + double 180° rotation should return to original";
 }
 
-TEST_F(FrameUtilsTest, IsMinimalFrameSymmetricPatterns) {
+TEST_F(SymmetryUtilsTest, IsMinimalFrameSymmetricPatterns) {
   // Test minimal frame detection with symmetric patterns
   // Symmetric patterns may have multiple orientations that are identical
 
@@ -319,7 +313,7 @@ TEST_F(FrameUtilsTest, IsMinimalFrameSymmetricPatterns) {
 }
 
 // Tests for getFrameByIndex function
-TEST_F(FrameUtilsTest, GetFrameByIndexReturnsValidFrame) {
+TEST_F(SymmetryUtilsTest, GetFrameByIndexReturnsValidFrame) {
   // Test a frame index in the middle of the valid range
   uint64_t testIndex = 50000;
   uint64_t frame = getFrameByIndex(testIndex);
@@ -328,7 +322,7 @@ TEST_F(FrameUtilsTest, GetFrameByIndexReturnsValidFrame) {
   EXPECT_TRUE(isMinimalFrame(frame)) << "Frame returned by getFrameByIndex should be minimal";
 }
 
-TEST_F(FrameUtilsTest, GetFrameByIndexConsistentWithEnumeration) {
+TEST_F(SymmetryUtilsTest, GetFrameByIndexConsistentWithEnumeration) {
   // Test that getFrameByIndex returns the same frame as manual enumeration
   uint64_t testIndex = 1000;
   uint64_t frameFromHelper = getFrameByIndex(testIndex);
@@ -352,12 +346,12 @@ TEST_F(FrameUtilsTest, GetFrameByIndexConsistentWithEnumeration) {
       << "getFrameByIndex should return same frame as manual enumeration for index " << testIndex;
 }
 
-TEST_F(FrameUtilsTest, GetFrameByIndexOutOfBounds) {
+TEST_F(SymmetryUtilsTest, GetFrameByIndexOutOfBounds) {
   uint64_t invalidFrame = getFrameByIndex(FRAME_SEARCH_TOTAL_MINIMAL_FRAMES + 1000);
   EXPECT_EQ(invalidFrame, 0) << "getFrameByIndex should return 0 for out-of-bounds index";
 }
 
-TEST_F(FrameUtilsTest, GetFrameByIndexAtBoundaries) {
+TEST_F(SymmetryUtilsTest, GetFrameByIndexAtBoundaries) {
   // Test first frame (empty frame is minimal and equals 0)
   uint64_t firstFrame = getFrameByIndex(0);
   EXPECT_EQ(firstFrame, 0) << "First frame should be empty frame (0)";
@@ -372,7 +366,7 @@ TEST_F(FrameUtilsTest, GetFrameByIndexAtBoundaries) {
   EXPECT_NE(firstFrame, lastFrame) << "First and last frames should be different";
 }
 
-TEST_F(FrameUtilsTest, GetFrameByIndexSequentialFramesDiffer) {
+TEST_F(SymmetryUtilsTest, GetFrameByIndexSequentialFramesDiffer) {
   // Test that sequential indices return different frames
   uint64_t frame1 = getFrameByIndex(100);
   uint64_t frame2 = getFrameByIndex(101);
@@ -389,7 +383,7 @@ TEST_F(FrameUtilsTest, GetFrameByIndexSequentialFramesDiffer) {
 }
 
 // Test basic properties of transformation functions
-TEST_F(FrameUtilsTest, TransformationProperties) {
+TEST_F(SymmetryUtilsTest, TransformationProperties) {
   uint64_t pattern = 0x123456789ABCDEFULL;
 
   // Test that 4 rotations return to original
@@ -409,7 +403,7 @@ TEST_F(FrameUtilsTest, TransformationProperties) {
   EXPECT_EQ(pattern, doubleTransposed) << "Double transpose should return original";
 }
 
-TEST_F(FrameUtilsTest, ValidateTotalMinimalFrames) {
+TEST_F(SymmetryUtilsTest, ValidateTotalMinimalFrames) {
   // Validate that FRAME_SEARCH_TOTAL_MINIMAL_FRAMES is correct by counting
   // all minimal frames from 0 to 2^24-1
   uint64_t minimalFrameCount = 0;
@@ -426,7 +420,7 @@ TEST_F(FrameUtilsTest, ValidateTotalMinimalFrames) {
     << "Actual minimal frame count should match FRAME_SEARCH_TOTAL_MINIMAL_FRAMES constant";
 }
 
-TEST_F(FrameUtilsTest, VerifyPBitIterationCompleteness) {
+TEST_F(SymmetryUtilsTest, VerifyPBitIterationCompleteness) {
   // Probabilistic test to verify that the P-bit iteration loop covers all 65,536 combinations
   // This test picks a random thread/block combination and verifies that its P-bit loop
   // correctly iterates through all 65,536 P-bit values without gaps or duplicates
@@ -489,4 +483,122 @@ TEST_F(FrameUtilsTest, VerifyPBitIterationCompleteness) {
   EXPECT_EQ(missedCount, 0) << "Failed to generate " << missedCount << " out of "
                             << totalPBitCombinations << " P-bit combinations in thread "
                             << randomThreadIdx << " block " << randomBlockIdx;
+}
+
+// ============================================================================
+// 4x4 Symmetry Tests
+// ============================================================================
+
+TEST_F(SymmetryUtilsTest, Transpose4x4SingleBit) {
+  // Test transposing a single bit in 4x4 grid
+  // Bit at position (0,1) should move to (1,0)
+  uint16_t pattern = 1U << (0 * 4 + 1);  // Row 0, column 1
+  uint16_t transposed = transpose4x4(pattern);
+  uint16_t expected = 1U << (1 * 4 + 0);  // Row 1, column 0
+  EXPECT_EQ(transposed, expected);
+}
+
+TEST_F(SymmetryUtilsTest, Transpose4x4SelfInverse) {
+  // Transposing twice should return to original
+  uint16_t original = 0x1234;
+  uint16_t result = transpose4x4(transpose4x4(original));
+  EXPECT_EQ(result, original);
+}
+
+TEST_F(SymmetryUtilsTest, FlipHorizontal4x4SingleBit) {
+  // Test horizontal flip of 4x4 grid
+  // Bit at position (0,0) should move to (0,3)
+  uint16_t pattern = 1U << (0 * 4 + 0);  // Row 0, column 0
+  uint16_t flipped = flipHorizontal4x4(pattern);
+  uint16_t expected = 1U << (0 * 4 + 3);  // Row 0, column 3
+  EXPECT_EQ(flipped, expected);
+}
+
+TEST_F(SymmetryUtilsTest, FlipHorizontal4x4SelfInverse) {
+  // Flipping twice should return to original
+  uint16_t original = 0x5A3C;
+  uint16_t result = flipHorizontal4x4(flipHorizontal4x4(original));
+  EXPECT_EQ(result, original);
+}
+
+TEST_F(SymmetryUtilsTest, FlipVertical4x4SingleBit) {
+  // Test vertical flip of 4x4 grid
+  // Bit at position (0,0) should move to (3,0)
+  uint16_t pattern = 1U << (0 * 4 + 0);  // Row 0, column 0
+  uint16_t flipped = flipVertical4x4(pattern);
+  uint16_t expected = 1U << (3 * 4 + 0);  // Row 3, column 0
+  EXPECT_EQ(flipped, expected);
+}
+
+TEST_F(SymmetryUtilsTest, FlipVertical4x4SelfInverse) {
+  // Flipping twice should return to original
+  uint16_t original = 0x9C27;
+  uint16_t result = flipVertical4x4(flipVertical4x4(original));
+  EXPECT_EQ(result, original);
+}
+
+TEST_F(SymmetryUtilsTest, Rotate90_4x4FourTimes) {
+  // Rotating 4 times should return to original
+  uint16_t original = 0x1234;
+  uint16_t result = original;
+
+  for (int i = 0; i < 4; i++) {
+    result = rotate90_4x4(result);
+  }
+
+  EXPECT_EQ(result, original);
+}
+
+TEST_F(SymmetryUtilsTest, IsMinimal4x4AsymmetricPattern) {
+  // Test with a clearly asymmetric pattern
+  // Only one of the 8 D4 transformations should be minimal
+  uint16_t pattern = 0x0007;  // Three bits in bottom row, left side
+
+  // Generate all 8 D4 transformations
+  uint16_t transformations[8];
+  transformations[0] = pattern;
+  transformations[1] = rotate90_4x4(transformations[0]);
+  transformations[2] = rotate90_4x4(transformations[1]);
+  transformations[3] = rotate90_4x4(transformations[2]);
+
+  uint16_t flipped = flipHorizontal4x4(pattern);
+  transformations[4] = flipped;
+  transformations[5] = rotate90_4x4(transformations[4]);
+  transformations[6] = rotate90_4x4(transformations[5]);
+  transformations[7] = rotate90_4x4(transformations[6]);
+
+  // Count how many are minimal
+  int minimalCount = 0;
+  for (int i = 0; i < 8; i++) {
+    if (isMinimal4x4(transformations[i])) {
+      minimalCount++;
+    }
+  }
+
+  // Exactly one should be minimal for an asymmetric pattern
+  EXPECT_EQ(minimalCount, 1) << "Asymmetric pattern should have exactly 1 minimal form";
+}
+
+TEST_F(SymmetryUtilsTest, IsMinimal4x4EmptyPattern) {
+  // Empty pattern should be minimal
+  EXPECT_TRUE(isMinimal4x4(0));
+}
+
+TEST_F(SymmetryUtilsTest, IsMinimal4x4FullPattern) {
+  // Full pattern (all 16 bits set) should be minimal (it's symmetric)
+  EXPECT_TRUE(isMinimal4x4(0xFFFF));
+}
+
+TEST_F(SymmetryUtilsTest, ValidateTotal4x4MinimalCount) {
+  // Verify that exactly 8548 patterns pass isMinimal4x4
+  // This matches the Burnside's lemma calculation
+  uint32_t minimalCount = 0;
+  for (uint32_t pattern = 0; pattern < 65536; pattern++) {
+    if (isMinimal4x4((uint16_t)pattern)) {
+      minimalCount++;
+    }
+  }
+
+  EXPECT_EQ(minimalCount, CENTER_4X4_TOTAL_UNIQUE)
+      << "Should have exactly " << CENTER_4X4_TOTAL_UNIQUE << " minimal 4x4 patterns";
 }

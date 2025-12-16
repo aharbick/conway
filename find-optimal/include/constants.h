@@ -22,6 +22,7 @@
 // From Burnside's lemma: (2^16 + 2×2^8 + 2×2^10 + 2×2^4 + 2^8) / 8 = 8548
 // Reference: https://oeis.org/A054247
 #define CENTER_4X4_TOTAL_UNIQUE 8548
+#define CENTER_4X4_TOTAL_EAR_VALUES 256              // 2^8 possible values per ear (left or right)
 #define CENTER_4X4_EARS_PER_CENTER 65536             // 256 × 256 ear combinations per center
 #define MIDDLE_BLOCK_REPORT_INTERVAL 100             // Report progress every N middle blocks
 //

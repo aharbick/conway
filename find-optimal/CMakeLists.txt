@@ -270,6 +270,7 @@ if(BUILD_TESTING)
             set(TEST_IMPL_SOURCES
                 src/utils.cpp
                 src/logging.cpp
+                src/center4x4_utils.cpp
             )
 
             # Create test executable with both test sources and implementation sources
