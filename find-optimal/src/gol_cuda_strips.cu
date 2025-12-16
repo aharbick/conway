@@ -324,8 +324,8 @@ __host__ void reportStripSearchResults(ProgramArgs *cli, double intervalStartTim
   // - Unique centers (D4 symmetry): 8548
   // - Ear combinations per center: 65536 (256 × 256)
   // - Total middleBlocks: 8548 × 65536 = 560,201,728
-  // - Patterns per middleBlock: 2^64 / 560,201,728 ≈ 32,930,007,701
-  const uint64_t patternsPerMiddleBlock = 32930007701ULL;
+  // - Patterns per middleBlock: 2^64 / 560,201,728 ≈ 32,928,752,540
+  const uint64_t patternsPerMiddleBlock = 32928752540ULL;
   uint64_t patternsInInterval = blocksInInterval * patternsPerMiddleBlock;
   uint64_t patternsPerSec = (elapsed > 0) ? (uint64_t)(patternsInInterval / elapsed) : 0;
 
