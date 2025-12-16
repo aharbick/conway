@@ -281,7 +281,7 @@ class RequestQueue {
     running = true;
     processorThread = std::thread(&RequestQueue::processorLoop, this);
 
-    Logger::out() << "Request queue with directory \"" << queueDir << "\" started processing\n";
+    Logger::out() << "Request queue with directory " << queueDir << " started processing\n";
   }
 
   void stop() {
