@@ -41,6 +41,47 @@ static bool initGoogleRequestQueue(const std::string& queueDirectory = "") {
     }
   });
 
+  // Register handler for sendStripProgress
+  globalRequestQueue.registerHandler("sendStripProgress", [](const nlohmann::json& payload) -> bool {
+    try {
+      uint32_t centerIdx = payload.at("centerIdx").get<uint32_t>();
+      uint32_t middleIdx = payload.at("middleIdx").get<uint32_t>();
+      int bestGenerations = payload.at("bestGenerations").get<int>();
+      uint64_t bestPattern = payload.at("bestPattern").get<uint64_t>();
+      std::string bestPatternBin = payload.at("bestPatternBin").get<std::string>();
+
+      return sendGoogleStripProgress(centerIdx, middleIdx, bestGenerations, bestPattern, bestPatternBin.c_str());
+    } catch (const std::exception& e) {
+      std::cerr << "[ERROR] sendStripProgress handler failed: " << e.what() << "\n";
+      return false;
+    }
+  });
+
+  // Register handler for sendStripSummaryData
+  globalRequestQueue.registerHandler("sendStripSummaryData", [](const nlohmann::json& payload) -> bool {
+    try {
+      int bestGenerations = payload.at("bestGenerations").get<int>();
+      uint64_t bestPattern = payload.at("bestPattern").get<uint64_t>();
+      std::string bestPatternBin = payload.at("bestPatternBin").get<std::string>();
+
+      return sendGoogleStripSummaryData(bestGenerations, bestPattern, bestPatternBin.c_str());
+    } catch (const std::exception& e) {
+      std::cerr << "[ERROR] sendStripSummaryData handler failed: " << e.what() << "\n";
+      return false;
+    }
+  });
+
+  // Register handler for incrementStripCompletion
+  globalRequestQueue.registerHandler("incrementStripCompletion", [](const nlohmann::json& payload) -> bool {
+    try {
+      uint32_t centerIdx = payload.at("centerIdx").get<uint32_t>();
+      return sendGoogleStripCompletion(centerIdx);
+    } catch (const std::exception& e) {
+      std::cerr << "[ERROR] incrementStripCompletion handler failed: " << e.what() << "\n";
+      return false;
+    }
+  });
+
   globalRequestQueue.start();
   return true;
 }
@@ -87,6 +128,52 @@ static void queueGoogleSummaryData(int bestGenerations, uint64_t bestPattern, co
   if (!globalRequestQueue.enqueue("sendSummaryData", payload)) {
     std::cerr << "[ERROR] Failed to enqueue sendSummaryData request\n";
   }
+}
+
+// Queue-based async version of sendGoogleStripProgress
+static void queueGoogleStripProgress(uint32_t centerIdx, uint32_t middleIdx, int bestGenerations, uint64_t bestPattern,
+                                     const char* bestPatternBin) {
+  nlohmann::json payload = {
+      {"centerIdx", centerIdx},
+      {"middleIdx", middleIdx},
+      {"bestGenerations", bestGenerations},
+      {"bestPattern", bestPattern},
+      {"bestPatternBin", std::string(bestPatternBin ? bestPatternBin : "")}
+  };
+
+  if (!globalRequestQueue.enqueue("sendStripProgress", payload)) {
+    std::cerr << "[ERROR] Failed to enqueue sendStripProgress request\n";
+  }
+
+  // Update local cache
+  stripCache.incrementCompletion(centerIdx);
+}
+
+// Queue-based async version of sendGoogleStripSummaryData
+static void queueGoogleStripSummaryData(int bestGenerations, uint64_t bestPattern, const char* bestPatternBin) {
+  nlohmann::json payload = {
+      {"bestGenerations", bestGenerations},
+      {"bestPattern", bestPattern},
+      {"bestPatternBin", std::string(bestPatternBin ? bestPatternBin : "")}
+  };
+
+  if (!globalRequestQueue.enqueue("sendStripSummaryData", payload)) {
+    std::cerr << "[ERROR] Failed to enqueue sendStripSummaryData request\n";
+  }
+}
+
+// Queue-based async version of incrementStripCompletion
+static void queueGoogleStripCompletion(uint32_t centerIdx) {
+  nlohmann::json payload = {
+      {"centerIdx", centerIdx}
+  };
+
+  if (!globalRequestQueue.enqueue("incrementStripCompletion", payload)) {
+    std::cerr << "[ERROR] Failed to enqueue incrementStripCompletion request\n";
+  }
+
+  // Update local cache
+  stripCache.incrementCompletion(centerIdx);
 }
 
 // Get count of pending queued requests

@@ -114,3 +114,117 @@ int handleTestSummaryApi(ProgramArgs* cli) {
 
   return 0;
 }
+
+// ============================================================================
+// STRIP SEARCH API TEST HANDLERS
+// ============================================================================
+
+int handleTestStripProgressApi(ProgramArgs* cli) {
+  std::cout << "Testing Google Sheets Strip Progress API with fake data...\n";
+
+  // Generate realistic but varying test data based on current time
+  time_t now = time(NULL);
+  srand(now);
+
+  // Generate realistic strip progress data
+  uint32_t testCenterIdx = rand() % STRIP_CACHE_TOTAL_CENTERS;  // 0-8547
+  uint32_t testMiddleIdx = rand() % STRIP_CACHE_MIDDLE_IDX_COUNT;  // 0-511
+
+  // Generate realistic result data
+  int testGenerations = 180 + (rand() % 200);  // Generations 180-379
+  uint64_t testPattern = ((uint64_t)rand() << 32) | rand();
+
+  // Generate a 64-bit binary pattern string
+  char testPatternBin[65];
+  for (int i = 0; i < 64; i++) {
+    testPatternBin[i] = ((testPattern >> (63 - i)) & 1) ? '1' : '0';
+  }
+  testPatternBin[64] = '\0';
+
+  // Test strip progress upload
+  std::cout << "Testing strip progress upload (centerIdx=" << testCenterIdx << ", middleIdx=" << testMiddleIdx
+            << ", generations=" << testGenerations << ", pattern=" << std::hex << testPattern << std::dec << ")...\n";
+  bool success = sendGoogleStripProgress(testCenterIdx, testMiddleIdx, testGenerations, testPattern, testPatternBin);
+  std::cout << "Strip progress upload: " << (success ? "SUCCESS" : "FAILED") << "\n";
+
+  return 0;
+}
+
+int handleTestStripSummaryApi(ProgramArgs* cli) {
+  std::cout << "Testing Google Sheets Strip Summary API with test data...\n";
+
+  // Use easily identifiable test data (bestGenerations=7 to distinguish from frame test)
+  time_t now = time(NULL);
+  srand(now);
+
+  // Generate test pattern data
+  uint64_t testPattern = ((uint64_t)rand() << 32) | rand();
+
+  // Generate a 64-bit binary pattern string
+  char testPatternBin[65];
+  for (int i = 0; i < 64; i++) {
+    testPatternBin[i] = ((testPattern >> (63 - i)) & 1) ? '1' : '0';
+  }
+  testPatternBin[64] = '\0';
+
+  // Test strip summary data upload with bestGenerations=7
+  std::cout << "Testing strip summary data upload (generations=7, pattern=" << testPattern << ")...\n";
+  bool success = sendGoogleStripSummaryData(7, testPattern, testPatternBin);
+  std::cout << "Strip summary data upload: " << (success ? "SUCCESS" : "FAILED") << "\n";
+
+  // Test duplicate entry (should increment count for bestGenerations=7)
+  uint64_t testPattern2 = ((uint64_t)rand() << 32) | rand();
+  for (int i = 0; i < 64; i++) {
+    testPatternBin[i] = ((testPattern2 >> (63 - i)) & 1) ? '1' : '0';
+  }
+
+  std::cout << "Testing DUPLICATE strip summary data upload (generations=7, pattern=" << testPattern2 << ")...\n";
+  success = sendGoogleStripSummaryData(7, testPattern2, testPatternBin);
+  std::cout << "Duplicate strip summary data upload: " << (success ? "SUCCESS" : "FAILED") << "\n";
+
+  return 0;
+}
+
+int handleTestStripCache(ProgramArgs* cli) {
+  std::cout << "Testing Strip Completion Cache...\n";
+
+  std::cout << "Loading strip cache from Google Sheets...\n";
+  if (!loadGoogleStripCache()) {
+    std::cerr << "[ERROR] Failed to load strip cache from Google Sheets API\n";
+    return 1;
+  }
+
+  uint64_t totalIntervals = STRIP_CACHE_TOTAL_CENTERS * STRIP_CACHE_MIDDLE_IDX_COUNT;
+  uint64_t completedIntervals = getGoogleStripCacheCompletedCount();
+
+  std::cout << "\n=== Strip Cache Test Results ===\n";
+  std::cout << "Total centers: " << STRIP_CACHE_TOTAL_CENTERS << "\n";
+  std::cout << "Middle indices per center: " << STRIP_CACHE_MIDDLE_IDX_COUNT << "\n";
+  std::cout << "Total intervals: " << totalIntervals << "\n";
+  std::cout << "Completed intervals: " << completedIntervals << "\n";
+  std::cout << "Completion rate: " << std::fixed << std::setprecision(2)
+            << (double)completedIntervals / totalIntervals * 100.0 << "%\n";
+  std::cout << "Cache size: " << (STRIP_CACHE_TOTAL_CENTERS * sizeof(uint16_t)) << " bytes\n";
+
+  // Show completion status for first few centers
+  std::cout << "\nFirst 10 centers completion status:\n";
+  for (uint32_t i = 0; i < 10 && i < STRIP_CACHE_TOTAL_CENTERS; i++) {
+    std::cout << "  Center " << i << ": " << stripCache.getCompletionCount(i) << "/" << STRIP_CACHE_MIDDLE_IDX_COUNT << "\n";
+  }
+
+  return 0;
+}
+
+int handleTestStripCompletionApi(ProgramArgs* cli) {
+  std::cout << "Testing Google Sheets Strip Completion API...\n";
+
+  // Use centerIdx=0 for easy verification and reversal
+  uint32_t testCenterIdx = 0;
+
+  // Test strip completion increment
+  std::cout << "Testing strip completion increment (centerIdx=" << testCenterIdx << ")...\n";
+  bool success = sendGoogleStripCompletion(testCenterIdx);
+  std::cout << "Strip completion increment: " << (success ? "SUCCESS" : "FAILED") << "\n";
+
+  return 0;
+}

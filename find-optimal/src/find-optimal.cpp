@@ -95,9 +95,23 @@ int main(int argc, char** argv) {
     } else if (cli->testApi == TEST_API_PROGRESS) {
       handleTestProgressApi(cli);
       result = 0;  // API tests always return success
-    } else {  // testApi == TEST_API_SUMMARY
+    } else if (cli->testApi == TEST_API_SUMMARY) {
       handleTestSummaryApi(cli);
       result = 0;  // API tests always return success
+    } else if (cli->testApi == TEST_API_STRIP_PROGRESS) {
+      handleTestStripProgressApi(cli);
+      result = 0;  // API tests always return success
+    } else if (cli->testApi == TEST_API_STRIP_SUMMARY) {
+      handleTestStripSummaryApi(cli);
+      result = 0;  // API tests always return success
+    } else if (cli->testApi == TEST_API_STRIP_CACHE) {
+      result = handleTestStripCache(cli);
+    } else if (cli->testApi == TEST_API_STRIP_COMPLETION) {
+      handleTestStripCompletionApi(cli);
+      result = 0;
+    } else {
+      std::cerr << "[ERROR] Unknown test API type\n";
+      result = 1;
     }
   } else if (cli->compareCycleAlgorithms) {
     result = handleCompareCycleAlgorithms(cli);

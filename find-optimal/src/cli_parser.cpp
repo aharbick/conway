@@ -55,7 +55,7 @@ static struct argp_option argp_options[] = {
     {0, 0, 0, 0, "Debug and testing:", 5},
     {"simulate", 's', "TYPE", 0, "Simulate mode: 'pattern' (8x8 evolution), 'pattern:7x7' (7x7 evolution), or 'symmetry' (transformations).", 5},
     {"compare-cycle-algorithms", 'A', "FRAME_IDX", 0, "Compare Floyd's vs Nivasch's cycle detection on given frame index and exit.", 5},
-    {"test-api", 'T', "TYPE", 0, "Test API functionality and exit: 'progress', 'summary', or 'framecache'.", 5},
+    {"test-api", 'T', "TYPE", 0, "Test API functionality and exit: 'progress', 'summary', 'framecache', 'strip-progress', 'strip-summary', 'strip-cache', or 'strip-completion'.", 5},
 
     {0}};
 
@@ -358,9 +358,21 @@ static bool parseTestApi(const char* arg, ProgramArgs* args) {
   } else if (str == "framecache") {
     args->testApi = TEST_API_FRAMECACHE;
     return true;
+  } else if (str == "strip-progress") {
+    args->testApi = TEST_API_STRIP_PROGRESS;
+    return true;
+  } else if (str == "strip-summary") {
+    args->testApi = TEST_API_STRIP_SUMMARY;
+    return true;
+  } else if (str == "strip-cache") {
+    args->testApi = TEST_API_STRIP_CACHE;
+    return true;
+  } else if (str == "strip-completion") {
+    args->testApi = TEST_API_STRIP_COMPLETION;
+    return true;
   }
 
-  std::cerr << "[ERROR] Invalid test API type '" << arg << "', expected 'progress', 'summary', or 'framecache'\n";
+  std::cerr << "[ERROR] Invalid test API type '" << arg << "', expected 'progress', 'summary', 'framecache', 'strip-progress', 'strip-summary', 'strip-cache', or 'strip-completion'\n";
   return false;
 }
 

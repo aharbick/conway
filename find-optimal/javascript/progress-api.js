@@ -2,18 +2,30 @@
  * Google Apps Script WebApp for Conway's Game of Life Optimization Progress Tracking
  */
 
-const PROGRESS_SHEET_NAME = 'Progress';
+// Frame search sheet names
+const FRAME_PROGRESS_SHEET_NAME = 'Frame Progress';
 const FRAME_COMPLETION_SHEET_NAME = 'Frame Completion';
-const SUMMARY_DATA_SHEET_NAME = 'Summary Data';
+const FRAME_SUMMARY_SHEET_NAME = 'Frame Summary';
+
+// Strip search sheet names
+const STRIP_PROGRESS_SHEET_NAME = 'Strip Progress';
+const STRIP_COMPLETION_SHEET_NAME = 'Strip Completion';
+const STRIP_SUMMARY_SHEET_NAME = 'Strip Summary';
+
 const LOCK_TIMEOUT_MS = 30000; // 30 seconds timeout for locks
 
 // Spreadsheet ID for our Progress data
 const SPREADSHEET_ID = '1bXt22T9cyv1A1vcdozR54n-imEFdIhsMcvEhEUMlsmY';
 
 // Frame completion constants
-const TOTAL_FRAMES = 2102800;
-const FRAMES_PER_ROW = 64; // 64 bits per cell
-const FRAME_COMPLETION_ROWS = Math.ceil(TOTAL_FRAMES / FRAMES_PER_ROW); // 32857 rows
+const FRAME_TOTAL_FRAMES = 2102800;
+const FRAME_BITS_PER_ROW = 64; // 64 bits per cell
+const FRAME_COMPLETION_ROWS = Math.ceil(FRAME_TOTAL_FRAMES / FRAME_BITS_PER_ROW); // 32857 rows
+
+// Strip completion constants
+const STRIP_TOTAL_CENTERS = 8548;
+const STRIP_MIDDLE_IDX_COUNT = 512;
+const STRIP_COMPLETION_ROWS = STRIP_TOTAL_CENTERS; // 8,548 rows, each stores 0-512
 
 /**
  * Execute a function with script-level locking for concurrency safety
@@ -91,12 +103,12 @@ function ensureFrameCompletionSheet(spreadsheet) {
  * @param {number} frameIdx - The frame index to mark as complete
  */
 function setFrameComplete(sheet, frameIdx) {
-  if (frameIdx < 0 || frameIdx >= TOTAL_FRAMES) {
+  if (frameIdx < 0 || frameIdx >= FRAME_TOTAL_FRAMES) {
     return;
   }
 
-  const rowIndex = Math.floor(frameIdx / FRAMES_PER_ROW) + 2; // +2 for header and 1-based indexing
-  const bitIndex = frameIdx % FRAMES_PER_ROW;
+  const rowIndex = Math.floor(frameIdx / FRAME_BITS_PER_ROW) + 2; // +2 for header and 1-based indexing
+  const bitIndex = frameIdx % FRAME_BITS_PER_ROW;
 
   // Get current value
   const currentValue = sheet.getRange(rowIndex, 1).getValue() || '0';
@@ -140,6 +152,7 @@ function handleRequest(e) {
     const action = data.action;
 
     switch (action) {
+      // Frame search actions
       case 'sendProgress':
         return googleSendProgress(e, SPREADSHEET_ID);
       case 'sendSummaryData':
@@ -148,8 +161,17 @@ function handleRequest(e) {
         return googleGetBestResult(e, SPREADSHEET_ID);
       case 'getCompleteFrameCache':
         return googleGetCompleteFrameCache(e, SPREADSHEET_ID);
+      // Strip search actions
+      case 'sendStripProgress':
+        return googleSendStripProgress(e, SPREADSHEET_ID);
+      case 'sendStripSummaryData':
+        return googleSendStripSummaryData(e, SPREADSHEET_ID);
+      case 'getCompleteStripCache':
+        return googleGetCompleteStripCache(e, SPREADSHEET_ID);
+      case 'incrementStripCompletion':
+        return googleIncrementStripCompletion(e, SPREADSHEET_ID);
       default:
-        return sendJsonResponse(false, 'Invalid action. Use "sendProgress", "sendSummaryData", "getBestResult", or "getCompleteFrameCache"');
+        return sendJsonResponse(false, 'Invalid action. Valid actions: sendProgress, sendSummaryData, getBestResult, getCompleteFrameCache, sendStripProgress, sendStripSummaryData, getCompleteStripCache, incrementStripCompletion');
     }
   } catch (error) {
     return sendJsonResponse(false, error.toString());
@@ -171,11 +193,11 @@ function googleSendProgress(e, spreadsheetId) {
 
     // Get the spreadsheet and worksheet
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    let sheet = spreadsheet.getSheetByName(PROGRESS_SHEET_NAME);
+    let sheet = spreadsheet.getSheetByName(FRAME_PROGRESS_SHEET_NAME);
 
     // Create sheet if it doesn't exist
     if (!sheet) {
-      sheet = spreadsheet.insertSheet(PROGRESS_SHEET_NAME);
+      sheet = spreadsheet.insertSheet(FRAME_PROGRESS_SHEET_NAME);
       // Add headers
       sheet.getRange(1, 1, 1, 4).setValues([['frameIdx', 'kernelIdx', 'bestGenerations', 'bestPattern']]);
     }
@@ -196,14 +218,21 @@ function googleSendProgress(e, spreadsheetId) {
 
 /**
  * Returns the highest bestGenerations value from Summary Data sheet
+ * @param {Object} e - Event object with parameters
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {string} e.parameter.searchType - Optional: 'frame' (default) or 'strip'
  */
 function googleGetBestResult(e, spreadsheetId) {
   return withLock(() => {
+    const params = e.parameter;
+    const searchType = (params.searchType || 'frame').toLowerCase();
+
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    const sheet = spreadsheet.getSheetByName(SUMMARY_DATA_SHEET_NAME);
+    const sheetName = searchType === 'strip' ? STRIP_SUMMARY_SHEET_NAME : FRAME_SUMMARY_SHEET_NAME;
+    const sheet = spreadsheet.getSheetByName(sheetName);
 
     if (!sheet) {
-      return sendJsonResponse(true, 'No Summary Data sheet found', { bestGenerations: 0 });
+      return sendJsonResponse(true, `No ${sheetName} sheet found`, { bestGenerations: 0 });
     }
 
     // Get all data from the sheet
@@ -252,7 +281,7 @@ function googleGetCompleteFrameCache(e, spreadsheetId) {
     const dataRange = frameCompletionSheet.getRange(2, 1, FRAME_COMPLETION_ROWS, 1).getValues();
 
     // Convert 64-bit values to 8-bit bitmap
-    const bitmapBytes = Math.ceil(TOTAL_FRAMES / 8);
+    const bitmapBytes = Math.ceil(FRAME_TOTAL_FRAMES / 8);
     const bitmap = new Uint8Array(bitmapBytes);
 
     for (let rowIdx = 0; rowIdx < dataRange.length && rowIdx < FRAME_COMPLETION_ROWS; rowIdx++) {
@@ -274,7 +303,7 @@ function googleGetCompleteFrameCache(e, spreadsheetId) {
 
     return sendJsonResponse(true, 'Frame cache retrieved successfully', {
       bitmap: bitmapBase64,
-      totalFrames: TOTAL_FRAMES,
+      totalFrames: FRAME_TOTAL_FRAMES,
       bitmapSize: bitmapBytes
     });
   });
@@ -307,10 +336,10 @@ function googleSendSummaryData(e, spreadsheetId) {
 
     // Get the spreadsheet and worksheet
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    const sheet = spreadsheet.getSheetByName(SUMMARY_DATA_SHEET_NAME);
+    const sheet = spreadsheet.getSheetByName(FRAME_SUMMARY_SHEET_NAME);
 
     if (!sheet) {
-      return sendJsonResponse(false, 'Summary Data sheet not found');
+      return sendJsonResponse(false, 'Frame Summary sheet not found');
     }
 
     // Get all data to search for existing row
@@ -360,7 +389,7 @@ function googleSendSummaryData(e, spreadsheetId) {
     }
 
     // Update Frame Completion sheet if completedFrameIdx is provided
-    if (completedFrameIdx !== null && completedFrameIdx >= 0 && completedFrameIdx < TOTAL_FRAMES) {
+    if (completedFrameIdx !== null && completedFrameIdx >= 0 && completedFrameIdx < FRAME_TOTAL_FRAMES) {
       const frameCompletionSheet = ensureFrameCompletionSheet(spreadsheet);
       setFrameComplete(frameCompletionSheet, completedFrameIdx);
     }
@@ -380,9 +409,9 @@ function backfillFrameCompletionFromProgress() {
   console.log('Starting Frame Completion backfill...');
 
   // Get Progress sheet
-  const progressSheet = spreadsheet.getSheetByName(PROGRESS_SHEET_NAME);
+  const progressSheet = spreadsheet.getSheetByName(FRAME_PROGRESS_SHEET_NAME);
   if (!progressSheet) {
-    console.error('Progress sheet not found');
+    console.error('Frame Progress sheet not found');
     return;
   }
 
@@ -417,7 +446,7 @@ function backfillFrameCompletionFromProgress() {
     const frameIdx = parseInt(row[frameIdxCol]) || 0;
     const kernelIdx = parseInt(row[kernelIdxCol]) || 0;
 
-    if (kernelIdx === 15 && frameIdx >= 0 && frameIdx < TOTAL_FRAMES) {
+    if (kernelIdx === 15 && frameIdx >= 0 && frameIdx < FRAME_TOTAL_FRAMES) {
       completedFrames.add(frameIdx);
     }
 
@@ -440,9 +469,9 @@ function backfillFrameCompletionFromProgress() {
     let rowBitmap = BigInt(frameCompletionData[rowIdx] ? frameCompletionData[rowIdx][0] || '0' : '0');
 
     // Check each bit position in this row (64 frames per row)
-    for (let bitIdx = 0; bitIdx < FRAMES_PER_ROW; bitIdx++) {
-      const frameIdx = rowIdx * FRAMES_PER_ROW + bitIdx;
-      if (frameIdx >= TOTAL_FRAMES) break;
+    for (let bitIdx = 0; bitIdx < FRAME_BITS_PER_ROW; bitIdx++) {
+      const frameIdx = rowIdx * FRAME_BITS_PER_ROW + bitIdx;
+      if (frameIdx >= FRAME_TOTAL_FRAMES) break;
 
       if (completedFrames.has(frameIdx)) {
         // Set the bit for this completed frame
@@ -464,5 +493,214 @@ function backfillFrameCompletionFromProgress() {
 
   console.log(`✅ Frame completion cache backfilled successfully!`);
   console.log(`📊 Processed ${completedFrames.size} completed frames from ${progressData.length - 1} progress entries`);
+}
+
+// ============================================================================
+// STRIP SEARCH APIs
+// ============================================================================
+
+/**
+ * Ensure Strip Completion sheet exists and is properly initialized
+ * @param {Spreadsheet} spreadsheet - The spreadsheet object
+ * @returns {Sheet} The Strip Completion sheet
+ */
+function ensureStripCompletionSheet(spreadsheet) {
+  let sheet = spreadsheet.getSheetByName(STRIP_COMPLETION_SHEET_NAME);
+
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(STRIP_COMPLETION_SHEET_NAME);
+    // Add headers
+    sheet.getRange(1, 1, 1, 2).setValues([['centerIdx', 'completedCount']]);
+
+    // Initialize all rows with centerIdx and 0 completedCount
+    const initData = [];
+    for (let i = 0; i < STRIP_COMPLETION_ROWS; i++) {
+      initData.push([i, 0]);
+    }
+    sheet.getRange(2, 1, STRIP_COMPLETION_ROWS, 2).setValues(initData);
+  }
+
+  return sheet;
+}
+
+/**
+ * Increment the completion count for a center in the Strip Completion sheet
+ * @param {Sheet} sheet - The Strip Completion sheet
+ * @param {number} centerIdx - The center index to increment
+ */
+function incrementStripCompletion(sheet, centerIdx) {
+  if (centerIdx < 0 || centerIdx >= STRIP_TOTAL_CENTERS) {
+    return;
+  }
+
+  const rowIndex = centerIdx + 2; // +2 for header and 1-based indexing
+
+  // Get current count
+  const currentCount = parseInt(sheet.getRange(rowIndex, 2).getValue()) || 0;
+
+  // Increment if not already at max
+  if (currentCount < STRIP_MIDDLE_IDX_COUNT) {
+    sheet.getRange(rowIndex, 2).setValue(currentCount + 1);
+  }
+}
+
+/**
+ * Adds strip progress data to the Google Sheet
+ */
+function googleSendStripProgress(e, spreadsheetId) {
+  return withLock(() => {
+    const data = e.parameter;
+
+    const centerIdx = parseInt(data.centerIdx) || 0;
+    const middleIdx = parseInt(data.middleIdx) || 0;
+    const bestGenerations = parseInt(data.bestGenerations) || 0;
+    const bestPattern = data.bestPattern || '';
+
+    // Get the spreadsheet and worksheet
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    let sheet = spreadsheet.getSheetByName(STRIP_PROGRESS_SHEET_NAME);
+
+    // Create sheet if it doesn't exist
+    if (!sheet) {
+      sheet = spreadsheet.insertSheet(STRIP_PROGRESS_SHEET_NAME);
+      // Add headers
+      sheet.getRange(1, 1, 1, 4).setValues([['centerIdx', 'middleIdx', 'bestGenerations', 'bestPattern']]);
+    }
+
+    const newRow = [centerIdx, middleIdx, bestGenerations, bestPattern];
+    sheet.appendRow(newRow);
+
+    // Update Strip Completion sheet
+    const stripCompletionSheet = ensureStripCompletionSheet(spreadsheet);
+    incrementStripCompletion(stripCompletionSheet, centerIdx);
+
+    return sendJsonResponse(true, 'Strip progress data saved successfully');
+  });
+}
+
+/**
+ * Updates strip summary data for histogram tracking
+ * Increments count if bestGenerations exists, otherwise creates new row
+ */
+function googleSendStripSummaryData(e, spreadsheetId) {
+  return withLock(() => {
+    const data = e.parameter;
+
+    // Validate required parameters
+    if (!data.bestGenerations || !data.bestPattern || !data.bestPatternBin) {
+      return sendJsonResponse(false, 'Missing required parameters: bestGenerations, bestPattern, bestPatternBin');
+    }
+
+    const bestGenerations = parseInt(data.bestGenerations);
+    if (isNaN(bestGenerations) || bestGenerations < 0) {
+      return sendJsonResponse(false, 'Invalid bestGenerations parameter: must be a non-negative integer');
+    }
+
+    const bestPattern = data.bestPattern;
+    const bestPatternBin = data.bestPatternBin;
+
+    // Get the spreadsheet and worksheet
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    let sheet = spreadsheet.getSheetByName(STRIP_SUMMARY_SHEET_NAME);
+
+    // Create sheet if it doesn't exist
+    if (!sheet) {
+      sheet = spreadsheet.insertSheet(STRIP_SUMMARY_SHEET_NAME);
+      // Add headers
+      sheet.getRange(1, 1, 1, 4).setValues([['bestGenerations', 'count', 'bestPattern', 'bestPatternBin']]);
+    }
+
+    // Get all data to search for existing row
+    const dataRange = sheet.getDataRange();
+    const data_values = dataRange.getValues();
+
+    // Find column indices
+    const headers = data_values[0];
+    const bestGenerationsCol = headers.indexOf('bestGenerations');
+    const countCol = headers.indexOf('count');
+
+    // Search for existing row with same bestGenerations
+    let foundRow = -1;
+    for (let i = 1; i < data_values.length; i++) {
+      const rowBestGenerations = parseInt(data_values[i][bestGenerationsCol]) || 0;
+      if (rowBestGenerations === bestGenerations) {
+        foundRow = i + 1; // Convert to 1-based row index
+        break;
+      }
+    }
+
+    if (foundRow > 0) {
+      // Increment count in existing row
+      const currentCount = parseInt(data_values[foundRow - 1][countCol]) || 0;
+      sheet.getRange(foundRow, countCol + 1).setValue(currentCount + 1);
+    } else {
+      // Add new row
+      sheet.appendRow([bestGenerations, 1, bestPattern, bestPatternBin]);
+
+      // Sort the sheet by bestGenerations column (ascending order)
+      const lastRow = sheet.getLastRow();
+      if (lastRow > 1) {
+        const sortRange = sheet.getRange(2, 1, lastRow - 1, 4);
+        sortRange.sort({ column: bestGenerationsCol + 1, ascending: true });
+      }
+    }
+
+    return sendJsonResponse(true, 'Strip summary data saved successfully');
+  });
+}
+
+/**
+ * Get strip completion cache
+ * Returns an array of completion counts for each center (0-512)
+ */
+function googleGetCompleteStripCache(e, spreadsheetId) {
+  return withLock(() => {
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    const stripCompletionSheet = ensureStripCompletionSheet(spreadsheet);
+
+    // Read all completion data from Strip Completion sheet
+    const dataRange = stripCompletionSheet.getRange(2, 2, STRIP_COMPLETION_ROWS, 1).getValues();
+
+    // Build array of completion counts
+    const completionCounts = [];
+    for (let i = 0; i < dataRange.length && i < STRIP_COMPLETION_ROWS; i++) {
+      completionCounts.push(parseInt(dataRange[i][0]) || 0);
+    }
+
+    // Calculate total completed intervals
+    let totalCompleted = 0;
+    for (const count of completionCounts) {
+      totalCompleted += count;
+    }
+
+    return sendJsonResponse(true, 'Strip cache retrieved successfully', {
+      completionCounts: completionCounts,
+      totalCenters: STRIP_TOTAL_CENTERS,
+      middleIdxPerCenter: STRIP_MIDDLE_IDX_COUNT,
+      totalCompleted: totalCompleted,
+      totalIntervals: STRIP_TOTAL_CENTERS * STRIP_MIDDLE_IDX_COUNT
+    });
+  });
+}
+
+/**
+ * Increment strip completion count for a center
+ * Lightweight API that only updates the completion count without logging progress
+ */
+function googleIncrementStripCompletion(e, spreadsheetId) {
+  return withLock(() => {
+    const data = e.parameter;
+
+    const centerIdx = parseInt(data.centerIdx);
+    if (isNaN(centerIdx) || centerIdx < 0 || centerIdx >= STRIP_TOTAL_CENTERS) {
+      return sendJsonResponse(false, 'Invalid centerIdx parameter');
+    }
+
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    const stripCompletionSheet = ensureStripCompletionSheet(spreadsheet);
+    incrementStripCompletion(stripCompletionSheet, centerIdx);
+
+    return sendJsonResponse(true, 'Strip completion incremented successfully');
+  });
 }
 

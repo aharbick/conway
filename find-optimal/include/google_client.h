@@ -21,8 +21,14 @@
 #include "logging.h"
 
 #define CURL_TIMEOUT 30L
+
+// Frame completion cache constants
 #define FRAME_CACHE_TOTAL_FRAMES 2102800ULL
 #define FRAME_CACHE_BITMAP_BYTES ((FRAME_CACHE_TOTAL_FRAMES + 7) / 8)  // 262,850 bytes
+
+// Strip completion cache constants
+#define STRIP_CACHE_TOTAL_CENTERS 8548ULL
+#define STRIP_CACHE_MIDDLE_IDX_COUNT 512ULL
 
 class CurlResponse {
  public:
@@ -280,8 +286,124 @@ class FrameCompletionCache {
   }
 };
 
-// Global cache instance
+// Global frame cache instance
 static FrameCompletionCache frameCache;
+
+// Strip completion cache for fast lookups
+// Stores completion count (0-512) for each of 8,548 centers
+class StripCompletionCache {
+ private:
+  uint16_t* completedCounts;
+  bool loaded;
+  uint64_t totalCompletedIntervals;
+
+ public:
+  StripCompletionCache() : completedCounts(nullptr), loaded(false), totalCompletedIntervals(0) {
+    completedCounts = new uint16_t[STRIP_CACHE_TOTAL_CENTERS]();  // Initialize to zero
+  }
+
+  ~StripCompletionCache() {
+    delete[] completedCounts;
+  }
+
+  // Load cache from Google Sheets API
+  bool loadFromAPI() {
+    GoogleConfig config;
+    if (getGoogleConfig(&config) != GOOGLE_SUCCESS) {
+      return false;
+    }
+
+    // Build parameters map
+    std::map<std::string, std::string> params;
+    params["action"] = "getCompleteStripCache";
+    params["apiKey"] = config.apiKey;
+
+    CurlResponse response;
+    GoogleResult result = sendGoogleHttpRequest(config.webappUrl, params, &response, "getCompleteStripCache");
+
+    if (result != GOOGLE_SUCCESS) {
+      return false;
+    }
+
+    if (response.data.empty()) {
+      return false;
+    }
+
+    // Parse JSON response to get completion counts array
+    try {
+      nlohmann::json j = nlohmann::json::parse(response.data);
+      if (j.contains("completionCounts") && j["completionCounts"].is_array()) {
+        const auto& counts = j["completionCounts"];
+        totalCompletedIntervals = 0;
+        for (size_t i = 0; i < counts.size() && i < STRIP_CACHE_TOTAL_CENTERS; i++) {
+          completedCounts[i] = static_cast<uint16_t>(counts[i].get<int>());
+          totalCompletedIntervals += completedCounts[i];
+        }
+      } else {
+        cleanupGoogleResponse(&response);
+        return false;
+      }
+    } catch (const nlohmann::json::exception& e) {
+      std::cerr << "[ERROR] Failed to parse strip cache JSON: " << e.what() << "\n";
+      cleanupGoogleResponse(&response);
+      return false;
+    }
+
+    cleanupGoogleResponse(&response);
+    loaded = true;
+    return true;
+  }
+
+  // Check if a specific interval is complete
+  bool isIntervalComplete(uint32_t centerIdx, uint32_t middleIdx) const {
+    if (!loaded || centerIdx >= STRIP_CACHE_TOTAL_CENTERS || middleIdx >= STRIP_CACHE_MIDDLE_IDX_COUNT) {
+      return false;
+    }
+    return completedCounts[centerIdx] > middleIdx;
+  }
+
+  // Check if a center is fully complete (all 512 middleIdx done)
+  bool isCenterComplete(uint32_t centerIdx) const {
+    if (!loaded || centerIdx >= STRIP_CACHE_TOTAL_CENTERS) {
+      return false;
+    }
+    return completedCounts[centerIdx] >= STRIP_CACHE_MIDDLE_IDX_COUNT;
+  }
+
+  // Get completion count for a center
+  uint16_t getCompletionCount(uint32_t centerIdx) const {
+    if (centerIdx >= STRIP_CACHE_TOTAL_CENTERS) {
+      return 0;
+    }
+    return completedCounts[centerIdx];
+  }
+
+  // Increment completion count for a center
+  void incrementCompletion(uint32_t centerIdx) {
+    if (centerIdx >= STRIP_CACHE_TOTAL_CENTERS) {
+      return;
+    }
+    if (completedCounts[centerIdx] < STRIP_CACHE_MIDDLE_IDX_COUNT) {
+      completedCounts[centerIdx]++;
+      totalCompletedIntervals++;
+    }
+  }
+
+  bool isLoaded() const {
+    return loaded;
+  }
+
+  void markAsLoaded() {
+    loaded = true;
+  }
+
+  uint64_t getTotalCompletedIntervals() const {
+    return totalCompletedIntervals;
+  }
+};
+
+// Global strip cache instance
+static StripCompletionCache stripCache;
 
 static bool sendGoogleProgress(uint64_t frameIdx, int kernelIdx, int bestGenerations, uint64_t bestPattern,
                                const char* bestPatternBin) {
@@ -322,7 +444,13 @@ static bool initGoogleClient() {
   return true;
 }
 
-static int getGoogleBestResult() {
+// Search type for getBestResult API
+enum GoogleSearchType {
+  GOOGLE_SEARCH_FRAME,
+  GOOGLE_SEARCH_STRIP
+};
+
+static int getGoogleBestResult(GoogleSearchType searchType = GOOGLE_SEARCH_FRAME) {
   GoogleConfig config;
   if (getGoogleConfig(&config) != GOOGLE_SUCCESS) {
     return -1;
@@ -332,6 +460,7 @@ static int getGoogleBestResult() {
   std::map<std::string, std::string> params;
   params["action"] = "getBestResult";
   params["apiKey"] = config.apiKey;
+  params["searchType"] = (searchType == GOOGLE_SEARCH_STRIP) ? "strip" : "frame";
 
   CurlResponse response;
   GoogleResult result = sendGoogleHttpRequest(config.webappUrl, params, &response, "getBestResult");
@@ -411,6 +540,108 @@ static bool sendGoogleSummaryData(int bestGenerations, uint64_t bestPattern, con
 
   cleanupGoogleResponse(&response);
   return (result == GOOGLE_SUCCESS);
+}
+
+// ============================================================================
+// STRIP SEARCH APIs
+// ============================================================================
+
+static bool sendGoogleStripProgress(uint32_t centerIdx, uint32_t middleIdx, int bestGenerations, uint64_t bestPattern,
+                                    const char* bestPatternBin) {
+  GoogleConfig config;
+  if (getGoogleConfig(&config) != GOOGLE_SUCCESS) {
+    return false;
+  }
+
+  // Build parameters map
+  std::map<std::string, std::string> params;
+  params["action"] = "sendStripProgress";
+  params["apiKey"] = config.apiKey;
+  params["centerIdx"] = std::to_string(centerIdx);
+  params["middleIdx"] = std::to_string(middleIdx);
+  params["bestGenerations"] = std::to_string(bestGenerations);
+  params["bestPattern"] = std::string(bestPatternBin) + ":" + std::to_string(bestPattern);
+
+  CurlResponse response;
+  GoogleResult result = sendGoogleHttpRequest(config.webappUrl, params, &response, "sendStripProgress");
+
+  cleanupGoogleResponse(&response);
+
+  // Update cache on success
+  if (result == GOOGLE_SUCCESS) {
+    stripCache.incrementCompletion(centerIdx);
+  }
+
+  return (result == GOOGLE_SUCCESS);
+}
+
+static bool sendGoogleStripSummaryData(int bestGenerations, uint64_t bestPattern, const char* bestPatternBin) {
+  GoogleConfig config;
+  if (getGoogleConfig(&config) != GOOGLE_SUCCESS) {
+    return false;
+  }
+
+  // Build parameters map
+  std::map<std::string, std::string> params;
+  params["action"] = "sendStripSummaryData";
+  params["apiKey"] = config.apiKey;
+  params["bestGenerations"] = std::to_string(bestGenerations);
+  params["bestPattern"] = std::to_string(bestPattern);
+  params["bestPatternBin"] = std::string(bestPatternBin);
+
+  CurlResponse response;
+  GoogleResult result = sendGoogleHttpRequest(config.webappUrl, params, &response, "sendStripSummaryData");
+
+  cleanupGoogleResponse(&response);
+  return (result == GOOGLE_SUCCESS);
+}
+
+// Lightweight API to just increment strip completion count
+static bool sendGoogleStripCompletion(uint32_t centerIdx) {
+  GoogleConfig config;
+  if (getGoogleConfig(&config) != GOOGLE_SUCCESS) {
+    return false;
+  }
+
+  std::map<std::string, std::string> params;
+  params["action"] = "incrementStripCompletion";
+  params["apiKey"] = config.apiKey;
+  params["centerIdx"] = std::to_string(centerIdx);
+
+  CurlResponse response;
+  GoogleResult result = sendGoogleHttpRequest(config.webappUrl, params, &response, "incrementStripCompletion");
+
+  cleanupGoogleResponse(&response);
+  return (result == GOOGLE_SUCCESS);
+}
+
+// Strip cache management functions
+static bool loadGoogleStripCache() {
+  return stripCache.loadFromAPI();
+}
+
+static uint64_t getGoogleStripCacheCompletedCount() {
+  return stripCache.getTotalCompletedIntervals();
+}
+
+static bool isGoogleStripIntervalComplete(uint32_t centerIdx, uint32_t middleIdx) {
+  // Load cache on first use
+  if (!stripCache.isLoaded()) {
+    if (!stripCache.loadFromAPI()) {
+      // Cache loading failed, but we should still mark it as loaded
+      // to start with an empty cache and rely on local state
+      stripCache.markAsLoaded();
+    }
+  }
+  return stripCache.isIntervalComplete(centerIdx, middleIdx);
+}
+
+static void incrementGoogleStripCompletion(uint32_t centerIdx) {
+  // Ensure cache is initialized (even if just as empty cache)
+  if (!stripCache.isLoaded()) {
+    stripCache.markAsLoaded();
+  }
+  stripCache.incrementCompletion(centerIdx);
 }
 
 #endif

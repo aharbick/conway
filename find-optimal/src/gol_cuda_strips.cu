@@ -320,9 +320,15 @@ __host__ void reportStripSearchResults(ProgramArgs *cli, double intervalStartTim
 
   // Save to Google Sheets if appropriate
   if (!cli->dontSaveResults && bestGenerations > 0) {
-    queueGoogleSummaryData((int)bestGenerations, bestPattern, bestPatternBin, UINT64_MAX);
+    // Track completion for every interval (independent of summary/progress)
+    queueGoogleStripCompletion(centerIdx);
+
+    // Record summary data for histogram
+    queueGoogleStripSummaryData((int)bestGenerations, bestPattern, bestPatternBin);
+
+    // Only log detailed progress for high-generation results
     if (bestGenerations >= 200) {
-      queueGoogleProgress(centerIdx, middleIdx, (int)bestGenerations, bestPattern, bestPatternBin);
+      queueGoogleStripProgress(centerIdx, middleIdx, (int)bestGenerations, bestPattern, bestPatternBin);
     }
   }
 }
