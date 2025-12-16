@@ -32,9 +32,26 @@ __host__ void *search(void *args) {
   if (cli->stripMode != STRIP_MODE_NONE) {
     uint32_t centerStart = cli->centerIdxStart;
     uint32_t centerEnd = cli->centerIdxEnd;
+    uint32_t middleStart = cli->middleIdxStart;
+    uint32_t middleEnd = cli->middleIdxEnd;
 
-    Logger::out() << "Strip search mode: center indices " << centerStart << " to " << centerEnd << "\n";
-    executeStripSearch(cli, centerStart, centerEnd);
+    // Log start message based on whether it's a single index or a range
+    if (cli->stripMode == STRIP_MODE_INDEX) {
+      // Single center (possibly with middleIdx or middle range)
+      if (middleEnd - middleStart == 1) {
+        Logger::out() << "Strip search: centerIdx=" << centerStart << ", middleIdx=" << middleStart << "\n";
+      } else if (middleStart == 0 && middleEnd == STRIP_SEARCH_TOTAL_MIDDLE_IDX) {
+        Logger::out() << "Strip search: centerIdx=" << centerStart << "\n";
+      } else {
+        Logger::out() << "Strip search: centerIdx=" << centerStart
+                      << ", middleIdx=" << middleStart << "-" << (middleEnd - 1) << "\n";
+      }
+    } else {
+      // Range mode
+      Logger::out() << "Strip search: " << centerStart << ":" << middleStart
+                    << " to " << (centerEnd - 1) << ":" << (middleEnd - 1) << "\n";
+    }
+    executeStripSearch(cli, centerStart, centerEnd, middleStart, middleEnd);
     return NULL;
   }
 

@@ -54,6 +54,8 @@ typedef struct ProgramArgs {
   uint64_t grid7x7EndPattern;    // Ending pattern for 7x7 search (default: 2^49 - 1)
   uint32_t centerIdxStart;       // Starting center 4x4 index for strip search (0-8547)
   uint32_t centerIdxEnd;         // Ending center 4x4 index for strip search (default: 8548)
+  uint32_t middleIdxStart;       // Starting middle index within centerIdxStart (0-511)
+  uint32_t middleIdxEnd;         // Ending middle index within centerIdxEnd (0-512, exclusive)
   std::string logFilePath;
   std::string queueDirectory;
   std::string subgridCachePath;

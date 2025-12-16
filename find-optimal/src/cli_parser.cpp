@@ -20,25 +20,43 @@ const char* prog_bug_email = "aharbick@aharbick.com";
 static char prog_doc[] = "Search for terminal and stable states in an 8x8 bounded Conway's Game of Life grid";
 static char ProgramArgs_doc[] = "";
 
-// Command line options
+// Command line options - organized by group for display order
+// Group 1: Search modes (primary operations)
+// Group 2: Search options (cache, algorithm settings)
+// Group 3: Output/logging
+// Group 4: Worker/queue configuration
+// Group 5: Debug/testing utilities
 static struct argp_option argp_options[] = {
-    {"frame-mode", 'f', "MODE", 0, "Frame search mode: 'random', 'sequential', or 'index:XXXXX' (single frame by index)"},
-    {"strip-mode", 'S', "MODE", OPTION_ARG_OPTIONAL, "Strip search mode: 'index:N' (single center) or 'range:START[:END]' (center range 0-8547). Omit MODE for full search."},
-    {"7x7-mode", '7', "RANGE", OPTION_ARG_OPTIONAL, "Search 7x7 grid: 'start:end', ':end' (from 1), 'start:' (to 2^49), or omit for full search"},
-    {"cycle-detection", 'D', "ALGORITHM", 0, "Cycle detection algorithm: 'floyd' or 'nivasch' (default: 'floyd')"},
-    {"simulate", 's', "TYPE", 0, "Simulate mode: 'pattern' (8x8 evolution), 'pattern:7x7' (7x7 evolution), or 'symmetry' (transformations)."},
-    {"compare-cycle-algorithms", 'A', "FRAME_IDX", 0,
-     "Compare Floyd's vs Nivasch's cycle detection on given frame index and exit."},
-    {"compute-subgrid-cache", 'c', "PATH", 0, "Compute 7x7 subgrid cache for all 2^49 patterns and save to disk at PATH."},
-    {"subgrid-cache-begin", 'b', "NUMBER", 0, "Starting pattern index for subgrid cache computation (for resuming)."},
-    {"subgrid-cache-file", 'C', "FILE", 0, "Load 7x7 subgrid cache from FILE to use for early termination optimization."},
-    {"dont-save-results", 'r', 0, 0, "Don't save results to Google Sheets (for testing/benchmarking)."},
-    {"test-api", 'T', "TYPE", 0, "Test API functionality and exit: 'progress', 'summary', or 'framecache'."},
-    {"log-file", 'l', "PATH", 0, "Path to log file for progress output."},
-    {"worker", 'w', "N:M", 0,
-     "Worker configuration N:M where N is worker number (1-based) and M is total workers (default: 1:1)."},
-    {"queue-directory", 'q', "PATH", 0, "Directory for persistent request queue (default: ./request-queue)."},
-    {"drain-request-queue", 'Q', 0, 0, "Process all pending requests in queue and exit."},
+    // Group 1: Search modes
+    {0, 0, 0, 0, "Search modes:", 1},
+    {"frame-mode", 'f', "MODE", 0, "Frame search mode: 'random', 'sequential', or 'index:XXXXX' (single frame by index)", 1},
+    {"strip-mode", 'S', "MODE", OPTION_ARG_OPTIONAL, "Strip search mode: 'index:C[:M[-M2]]' (single center with optional middle range), 'range:C1[:M1]-C2[:M2]' (range). C=0-8547, M=0-511. Omit MODE for full search.", 1},
+    {"7x7-mode", '7', "RANGE", OPTION_ARG_OPTIONAL, "Search 7x7 grid: 'start:end', ':end' (from 1), 'start:' (to 2^49), or omit for full search", 1},
+
+    // Group 2: Search options
+    {0, 0, 0, 0, "Search options:", 2},
+    {"cycle-detection", 'D', "ALGORITHM", 0, "Cycle detection algorithm: 'floyd' or 'nivasch' (default: 'floyd')", 2},
+    {"subgrid-cache-file", 'C', "FILE", 0, "Load 7x7 subgrid cache from FILE to use for early termination optimization.", 2},
+    {"compute-subgrid-cache", 'c', "PATH", 0, "Compute 7x7 subgrid cache for all 2^49 patterns and save to disk at PATH.", 2},
+    {"subgrid-cache-begin", 'b', "NUMBER", 0, "Starting pattern index for subgrid cache computation (for resuming).", 2},
+
+    // Group 3: Output/logging
+    {0, 0, 0, 0, "Output options:", 3},
+    {"log-file", 'l', "PATH", 0, "Path to log file for progress output.", 3},
+    {"dont-save-results", 'r', 0, 0, "Don't save results to Google Sheets (for testing/benchmarking).", 3},
+
+    // Group 4: Worker/queue
+    {0, 0, 0, 0, "Distributed processing:", 4},
+    {"worker", 'w', "N:M", 0, "Worker configuration N:M where N is worker number (1-based) and M is total workers (default: 1:1).", 4},
+    {"queue-directory", 'q', "PATH", 0, "Directory for persistent request queue (default: ./request-queue).", 4},
+    {"drain-request-queue", 'Q', 0, 0, "Process all pending requests in queue and exit.", 4},
+
+    // Group 5: Debug/testing
+    {0, 0, 0, 0, "Debug and testing:", 5},
+    {"simulate", 's', "TYPE", 0, "Simulate mode: 'pattern' (8x8 evolution), 'pattern:7x7' (7x7 evolution), or 'symmetry' (transformations).", 5},
+    {"compare-cycle-algorithms", 'A', "FRAME_IDX", 0, "Compare Floyd's vs Nivasch's cycle detection on given frame index and exit.", 5},
+    {"test-api", 'T', "TYPE", 0, "Test API functionality and exit: 'progress', 'summary', or 'framecache'.", 5},
+
     {0}};
 
 
@@ -100,42 +118,86 @@ static bool parseCycleDetection(const char* arg, ProgramArgs* args) {
 static bool parseStripMode(const char* arg, ProgramArgs* args) {
   // Center 4x4 symmetry reduction: 8548 unique centers (from Burnside's lemma)
   const uint32_t maxCenter = CENTER_4X4_TOTAL_UNIQUE;
+  const uint32_t maxMiddle = STRIP_SEARCH_TOTAL_MIDDLE_IDX;  // 512
 
-  // Handle no argument or empty string: default to full range (0 to 8548)
+  // Handle no argument or empty string: default to full range
   if (!arg || *arg == '\0') {
     args->stripMode = STRIP_MODE_RANGE;
     args->centerIdxStart = 0;
     args->centerIdxEnd = maxCenter;
+    args->middleIdxStart = 0;
+    args->middleIdxEnd = maxMiddle;
     return true;
   }
 
   std::string str(arg);
 
-  // Check for index:N format (single center index)
+  // Check for index:C[:M[-M2]] format (single center, optionally with middle index or range)
   if (str.substr(0, 6) == "index:") {
-    std::string centerIdxStr = str.substr(6);
-    if (centerIdxStr.empty()) {
+    std::string indexStr = str.substr(6);
+    if (indexStr.empty()) {
       std::cerr << "[ERROR] Strip mode 'index:' requires a center index (0-" << maxCenter - 1 << ")\n";
       return false;
     }
 
     try {
-      uint64_t centerIdx = std::stoull(centerIdxStr);
+      size_t colonPos = indexStr.find(':');
+      uint64_t centerIdx;
+      uint64_t middleIdxStart = 0;
+      uint64_t middleIdxEnd = maxMiddle;
+      bool hasMiddle = false;
+
+      if (colonPos == std::string::npos) {
+        // Just center: index:C
+        centerIdx = std::stoull(indexStr);
+      } else {
+        // Center and middle: index:C:M or index:C:M1-M2
+        centerIdx = std::stoull(indexStr.substr(0, colonPos));
+        std::string middleStr = indexStr.substr(colonPos + 1);
+        hasMiddle = true;
+
+        size_t dashPos = middleStr.find('-');
+        if (dashPos == std::string::npos) {
+          // Single middle: index:C:M
+          middleIdxStart = std::stoull(middleStr);
+          middleIdxEnd = middleIdxStart + 1;
+        } else {
+          // Middle range: index:C:M1-M2
+          middleIdxStart = std::stoull(middleStr.substr(0, dashPos));
+          middleIdxEnd = std::stoull(middleStr.substr(dashPos + 1)) + 1;  // +1 for exclusive end
+        }
+      }
+
       if (centerIdx >= maxCenter) {
         std::cerr << "[ERROR] Center index " << centerIdx << " exceeds maximum (" << maxCenter - 1 << ")\n";
         return false;
       }
+      if (hasMiddle && middleIdxStart >= maxMiddle) {
+        std::cerr << "[ERROR] Middle index " << middleIdxStart << " exceeds maximum (" << maxMiddle - 1 << ")\n";
+        return false;
+      }
+      if (hasMiddle && middleIdxEnd > maxMiddle) {
+        std::cerr << "[ERROR] Middle end index " << (middleIdxEnd - 1) << " exceeds maximum (" << maxMiddle - 1 << ")\n";
+        return false;
+      }
+      if (hasMiddle && middleIdxStart >= middleIdxEnd) {
+        std::cerr << "[ERROR] Middle start must be less than or equal to middle end\n";
+        return false;
+      }
+
       args->stripMode = STRIP_MODE_INDEX;
       args->centerIdxStart = (uint32_t)centerIdx;
       args->centerIdxEnd = (uint32_t)centerIdx + 1;
+      args->middleIdxStart = (uint32_t)middleIdxStart;
+      args->middleIdxEnd = (uint32_t)middleIdxEnd;
       return true;
     } catch (const std::exception&) {
-      std::cerr << "[ERROR] Invalid center index '" << centerIdxStr << "', expected a valid integer\n";
+      std::cerr << "[ERROR] Invalid index format '" << indexStr << "', expected C, C:M, or C:M1-M2\n";
       return false;
     }
   }
 
-  // Check for range:START[:END] format
+  // Check for range:C1[:M1]-C2[:M2] format
   if (str.substr(0, 6) == "range:") {
     std::string rangeStr = str.substr(6);
     if (rangeStr.empty()) {
@@ -143,53 +205,93 @@ static bool parseStripMode(const char* arg, ProgramArgs* args) {
       return false;
     }
 
-    size_t colonPos = rangeStr.find(':');
+    // Find the dash separator between start and end
+    size_t dashPos = rangeStr.find('-');
 
     try {
-      if (colonPos == std::string::npos) {
-        // Only start provided: range:START (END defaults to 8548)
-        uint64_t start = std::stoull(rangeStr);
-        if (start >= maxCenter) {
-          std::cerr << "[ERROR] Start center " << start << " exceeds maximum (" << maxCenter - 1 << ")\n";
-          return false;
+      uint64_t startCenter, endCenter;
+      uint64_t startMiddle = 0, endMiddle = maxMiddle;
+
+      if (dashPos == std::string::npos) {
+        // Only start provided: range:C1[:M1] (end defaults to max)
+        std::string startStr = rangeStr;
+        size_t colonPos = startStr.find(':');
+
+        if (colonPos == std::string::npos) {
+          startCenter = std::stoull(startStr);
+        } else {
+          startCenter = std::stoull(startStr.substr(0, colonPos));
+          startMiddle = std::stoull(startStr.substr(colonPos + 1));
         }
-        args->stripMode = STRIP_MODE_RANGE;
-        args->centerIdxStart = (uint32_t)start;
-        args->centerIdxEnd = maxCenter;
-        return true;
+        endCenter = maxCenter;
+        endMiddle = maxMiddle;
       } else {
-        // Both start and end provided: range:START:END
-        std::string startStr = rangeStr.substr(0, colonPos);
-        std::string endStr = rangeStr.substr(colonPos + 1);
+        // Both start and end: range:C1[:M1]-C2[:M2]
+        std::string startStr = rangeStr.substr(0, dashPos);
+        std::string endStr = rangeStr.substr(dashPos + 1);
 
-        uint64_t start = std::stoull(startStr);
-        uint64_t end = endStr.empty() ? maxCenter : std::stoull(endStr);
-
-        if (start >= maxCenter) {
-          std::cerr << "[ERROR] Start center " << start << " exceeds maximum (" << maxCenter - 1 << ")\n";
-          return false;
-        }
-        if (end > maxCenter) {
-          std::cerr << "[ERROR] End center " << end << " exceeds maximum (" << maxCenter << ")\n";
-          return false;
-        }
-        if (start >= end) {
-          std::cerr << "[ERROR] Start center must be less than end center\n";
-          return false;
+        // Parse start (C1[:M1])
+        size_t startColonPos = startStr.find(':');
+        if (startColonPos == std::string::npos) {
+          startCenter = std::stoull(startStr);
+        } else {
+          startCenter = std::stoull(startStr.substr(0, startColonPos));
+          startMiddle = std::stoull(startStr.substr(startColonPos + 1));
         }
 
-        args->stripMode = STRIP_MODE_RANGE;
-        args->centerIdxStart = (uint32_t)start;
-        args->centerIdxEnd = (uint32_t)end;
-        return true;
+        // Parse end (C2[:M2])
+        if (endStr.empty()) {
+          endCenter = maxCenter;
+          endMiddle = maxMiddle;
+        } else {
+          size_t endColonPos = endStr.find(':');
+          if (endColonPos == std::string::npos) {
+            endCenter = std::stoull(endStr);
+            endMiddle = maxMiddle;
+          } else {
+            endCenter = std::stoull(endStr.substr(0, endColonPos));
+            endMiddle = std::stoull(endStr.substr(endColonPos + 1));
+          }
+        }
       }
+
+      // Validate bounds
+      if (startCenter >= maxCenter) {
+        std::cerr << "[ERROR] Start center " << startCenter << " exceeds maximum (" << maxCenter - 1 << ")\n";
+        return false;
+      }
+      if (endCenter > maxCenter) {
+        std::cerr << "[ERROR] End center " << endCenter << " exceeds maximum (" << maxCenter << ")\n";
+        return false;
+      }
+      if (startMiddle >= maxMiddle) {
+        std::cerr << "[ERROR] Start middle " << startMiddle << " exceeds maximum (" << maxMiddle - 1 << ")\n";
+        return false;
+      }
+      if (endMiddle > maxMiddle) {
+        std::cerr << "[ERROR] End middle " << endMiddle << " exceeds maximum (" << maxMiddle << ")\n";
+        return false;
+      }
+
+      // Validate ordering (lexicographic on center:middle pairs)
+      if (startCenter > endCenter || (startCenter == endCenter && startMiddle >= endMiddle)) {
+        std::cerr << "[ERROR] Start position must be before end position\n";
+        return false;
+      }
+
+      args->stripMode = STRIP_MODE_RANGE;
+      args->centerIdxStart = (uint32_t)startCenter;
+      args->centerIdxEnd = (uint32_t)endCenter;
+      args->middleIdxStart = (uint32_t)startMiddle;
+      args->middleIdxEnd = (uint32_t)endMiddle;
+      return true;
     } catch (const std::exception&) {
-      std::cerr << "[ERROR] Invalid range format '" << rangeStr << "', expected numeric values\n";
+      std::cerr << "[ERROR] Invalid range format '" << rangeStr << "', expected C1[:M1]-C2[:M2]\n";
       return false;
     }
   }
 
-  std::cerr << "[ERROR] Invalid strip mode '" << arg << "', expected 'index:N' or 'range:START[:END]'\n";
+  std::cerr << "[ERROR] Invalid strip mode '" << arg << "', expected 'index:C[:M]' or 'range:C1[:M1]-C2[:M2]'\n";
   return false;
 }
 
@@ -435,6 +537,8 @@ void initializeDefaultArgs(ProgramArgs* args) {
   args->grid7x7EndPattern = (1ULL << 49) - 1;
   args->centerIdxStart = 0;
   args->centerIdxEnd = CENTER_4X4_TOTAL_UNIQUE;  // 8548 unique center patterns
+  args->middleIdxStart = 0;
+  args->middleIdxEnd = STRIP_SEARCH_TOTAL_MIDDLE_IDX;  // 512 middle indices per center
   args->logFilePath = "";
   args->queueDirectory = "./request-queue";
   args->subgridCachePath = "";

@@ -24,7 +24,8 @@
 #define CENTER_4X4_TOTAL_UNIQUE 8548
 #define CENTER_4X4_TOTAL_EAR_VALUES 256              // 2^8 possible values per ear (left or right)
 #define CENTER_4X4_EARS_PER_CENTER 65536             // 256 × 256 ear combinations per center
-#define MIDDLE_BLOCK_REPORT_INTERVAL 100             // Report progress every N middle blocks
+#define STRIP_SEARCH_MIDDLE_BLOCKS_PER_REPORT 128    // Report every 128 blocks (512 reports per center)
+#define STRIP_SEARCH_TOTAL_MIDDLE_IDX 512            // 65536 / 128 = 512 middleIdx values per center
 //
 // Phase 1: Find unique strips (small kernel, 65K strips to test)
 #define STRIP_SEARCH_UNIQUE_GRID_SIZE 256
