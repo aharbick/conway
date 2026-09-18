@@ -20,7 +20,12 @@
 
 #include "logging.h"
 
-#define CURL_TIMEOUT 30L
+// Apps Script calls are slow and variable: getCompleteStripCache rebuilds a 68,384-row
+// bitmap (measured 19s, and over 60s when queued behind writes by the script lock), and
+// every action serializes on that same lock. At 30s the slow tail timed out *after* the
+// server had already applied the write, so the retry appended duplicate summary rows and
+// a startup cache load could fail outright.
+#define CURL_TIMEOUT 120L
 
 // Frame completion cache constants
 #define FRAME_CACHE_TOTAL_FRAMES 2102800ULL
