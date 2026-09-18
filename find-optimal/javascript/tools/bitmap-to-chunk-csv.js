@@ -5,8 +5,8 @@
  * bitmap reads as zero completed intervals and would restart the whole search - so this is
  * the restore path.
  *
- *   node javascript/bitmap-to-chunk-csv.js data/strip-completion-bitmap-20260918.csv out.csv
- *   node javascript/bitmap-to-chunk-csv.js cache-response.json out.csv
+ *   node javascript/tools/bitmap-to-chunk-csv.js data/strip-completion-bitmap-20260918.csv out.csv
+ *   node javascript/tools/bitmap-to-chunk-csv.js cache-response.json out.csv
  *
  * Input is either a CSV export of the old "Strip Completion" sheet (one 64-bit decimal
  * value per row) or a saved getCompleteStripCache response (JSON with a base64 "bitmap").
@@ -27,7 +27,7 @@ const PREFIX = 'b64:'; // must match STRIP_CHUNK_PREFIX
 
 const [inPath, outPath] = process.argv.slice(2);
 if (!inPath || !outPath) {
-  console.error('usage: node bitmap-to-chunk-csv.js <backup.csv|cache.json> <out.csv>');
+  console.error('usage: node javascript/tools/bitmap-to-chunk-csv.js <backup.csv|cache.json> <out.csv>');
   process.exit(2);
 }
 

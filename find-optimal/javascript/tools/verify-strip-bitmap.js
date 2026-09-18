@@ -2,8 +2,8 @@
  * Verify that getCompleteStripCache is serving the right completion data.
  *
  *   source .envrc
- *   node javascript/verify-strip-bitmap.js
- *   node javascript/verify-strip-bitmap.js --csv data/strip-completion-bitmap-20260918.csv
+ *   node javascript/tools/verify-strip-bitmap.js
+ *   node javascript/tools/verify-strip-bitmap.js --csv data/strip-completion-bitmap-20260918.csv
  *
  * With --csv, the live bitmap is compared bit for bit against a CSV export of the legacy
  * "Strip Completion" sheet (one 64-bit decimal value per row). The check that matters is

@@ -1,8 +1,8 @@
 /**
  * Tests for the strip completion bitmap logic in progress-api.js.
  *
- *   node javascript/progress-api.test.js                 # synthetic bitmap
- *   node javascript/progress-api.test.js cache.json      # a real getCompleteStripCache response
+ *   node javascript/tests/progress-api.test.js              # synthetic bitmap
+ *   node javascript/tests/progress-api.test.js cache.json   # a real getCompleteStripCache response
  *
  * The Apps Script globals the bitmap code touches (Utilities, Sheet ranges) are stubbed
  * here, so this exercises the real functions without deploying. Worth running before any
@@ -48,7 +48,7 @@ function FakeSheet() {
 }
 
 // ------------------------------------------------------- load the real script --
-const apiPath = path.join(__dirname, 'progress-api.js');
+const apiPath = path.join(__dirname, '..', 'progress-api.js');
 eval(
   fs.readFileSync(apiPath, 'utf8') +
     '\nglobal.__api = {stripChunkLength, writeStripBitmapBytes, readStripBitmapBytes, countStripBits,' +
