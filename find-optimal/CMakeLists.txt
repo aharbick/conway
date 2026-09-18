@@ -204,6 +204,16 @@ add_executable(explore-subgrid src/explore-subgrid.cpp)
 add_executable(explore-reversibility src/explore-reversibility.cpp)
 add_executable(validate-frame-search-completeness src/validate_frame_search_completeness.cpp)
 
+# 7x7 subgrid cache tools: build the Bloom filter artifact, and validate the cache itself
+add_executable(build-subgrid-bloom src/build_subgrid_bloom.cpp)
+set_source_files_properties(src/build_subgrid_bloom.cpp PROPERTIES LANGUAGE CUDA)
+target_link_libraries(build-subgrid-bloom CUDA::cudart)
+set_target_properties(build-subgrid-bloom PROPERTIES CUDA_RUNTIME_LIBRARY Static)
+
+add_executable(validate-subgrid-cache src/validate_subgrid_cache.cu)
+target_link_libraries(validate-subgrid-cache CUDA::cudart)
+set_target_properties(validate-subgrid-cache PROPERTIES CUDA_RUNTIME_LIBRARY Static)
+
 # Strip search benchmark harness (phase timing + kernel variant comparison)
 add_executable(bench-strip-search src/bench_strip_search.cu src/center4x4_utils.cpp)
 set_source_files_properties(src/center4x4_utils.cpp PROPERTIES LANGUAGE CUDA)

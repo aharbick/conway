@@ -12,6 +12,48 @@ To use this data:
 cat 7x7subgrid-cache.json.gz.part_* | gzip -dc > 7x7subgrid-cache.json
 ```
 
+## 7x7 Bloom filter (7x7subgrid-bloom.bin)
+
+A 34MB blocked Bloom filter over the cache keys, used by strip search to discard patterns
+that cannot reach its target. Rebuild it whenever the cache changes:
+
+```
+cat 7x7subgrid-cache.json.gz.part_* | gzip -dc \
+  | ../build/build-subgrid-bloom 7x7subgrid-bloom.bin
+```
+
+The tool refuses to write a filter with any false negative, and the header carries the
+cache's min and max generation counts (180 and 206) so the bounds the search derives travel
+with the artifact instead of being hardcoded. See include/subgrid_bloom.h for why those two
+numbers are all the search needs.
+
+### Validating the cache
+
+The search's early-outs are only as sound as this cache, so it can be re-checked:
+
+```
+cat 7x7subgrid-cache.json.gz.part_* | gzip -dc \
+  | ../build/validate-subgrid-cache 281474976710656 68719476736
+```
+
+This recomputes every entry with 8x8 box dynamics, re-derives the maximum, and
+re-enumerates a contiguous slice of the 2^49 space from scratch to check that everything it
+finds above the threshold is in the cache. Last run (2026-09-18), on the slice above:
+
+```
+    keys that do not fit a 7x7 box: 0
+    entries whose count differs:    0
+    entries below the threshold:    0
+    highest recomputed lifetime:    206 (file says 206)
+    states found at or above the threshold: 570
+    missing from the cache:      0
+    present with a wrong count:  0
+```
+
+The slice is 0.01% of the space and takes about 3 minutes; pass a larger length for more
+confidence. It uses a different work division than the cache builder, so an error in the
+builder's per-thread arithmetic would show up here.
+
 ## Progress Data
 
 The progress-all-20251114.csv is a snapshot from my google sheet.  I ran it for a period of time
