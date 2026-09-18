@@ -104,6 +104,16 @@ function legacyCsvToBitmap(path) {
       break;
     }
   }
+  // C1 of the bitmap sheet caches this count for dashboard formulas. A second source of
+  // truth drifts silently unless something checks it, so check it.
+  if (body.completedIntervals === null || body.completedIntervals === undefined) {
+    console.log(`\nNOTE: the sheet's cached count (C1) is not set - run recountStripCompletions()`);
+  } else {
+    check('cached count in C1 matches a popcount of the bitmap', body.completedIntervals === liveBits,
+          body.completedIntervals === liveBits ? `${body.completedIntervals}`
+            : `C1=${body.completedIntervals} vs bitmap=${liveBits} - run recountStripCompletions()`);
+  }
+
   console.log(`\nlive: ${liveBits} intervals complete, first incomplete ${label(first)}, highest complete ${label(highest)}`);
   console.log(`      (the search should resume at ${label(first)})\n`);
 

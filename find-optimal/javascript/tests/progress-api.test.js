@@ -30,33 +30,32 @@ global.ContentService = {
 };
 global.LockService = { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) };
 
-/** A single-column sheet; row 1 is the header. */
+/** A sheet addressed by (row, col); column A holds the header plus the chunks. */
 function FakeSheet() {
-  this.cells = [];
+  this.cells = new Map();
+  const key = (r, c) => `${r},${c}`;
+  this.get = (r, c) => this.cells.get(key(r, c)) ?? '';
   this.getRange = (row, col, numRows = 1) => ({
-    getValue: () => this.cells[row - 1] || '',
-    setValue: (v) => {
-      this.cells[row - 1] = v;
-    },
-    getValues: () => Array.from({ length: numRows }, (_, i) => [this.cells[row - 1 + i] || '']),
-    setValues: (vals) => {
-      vals.forEach((r, i) => {
-        this.cells[row - 1 + i] = r[0];
-      });
-    },
+    getValue: () => this.cells.get(key(row, col)) ?? '',
+    setValue: (v) => this.cells.set(key(row, col), v),
+    getValues: () => Array.from({ length: numRows }, (_, i) => [this.cells.get(key(row + i, col)) ?? '']),
+    setValues: (vals) => vals.forEach((r, i) => this.cells.set(key(row + i, col), r[0])),
   });
 }
 
 // ------------------------------------------------------- load the real script --
+// Loaded through new Function so it gets its own scope: with a plain eval the script would
+// see this file's locals, and a variable here could stand in for one the script failed to
+// declare - exactly the bug that shipped in e05ccb6. Only the stubbed globals resolve.
 const apiPath = path.join(__dirname, '..', 'progress-api.js');
-eval(
+const A = new Function(
   fs.readFileSync(apiPath, 'utf8') +
-    '\nglobal.__api = {stripChunkLength, writeStripBitmapBytes, readStripBitmapBytes, countStripBits,' +
-    ' setStripIntervalComplete, ensureStripBitmapSheet, STRIP_BITMAP_BYTES, STRIP_CHUNK_ROWS,' +
+    '\nreturn {stripChunkLength, writeStripBitmapBytes, readStripBitmapBytes, countStripBits,' +
+    ' setStripIntervalComplete, ensureStripBitmapSheet, readStripCompletedCount, handleRequest,' +
+    ' writeStripCompletedCount, STRIP_BITMAP_BYTES, STRIP_CHUNK_ROWS, STRIP_COUNT_COL,' +
     ' STRIP_CHUNK_BYTES, STRIP_CHUNK_PREFIX, STRIP_BITMAP_SHEET_NAME, STRIP_MIDDLE_IDX_COUNT,' +
     ' STRIP_TOTAL_CENTERS};'
-);
-const A = global.__api;
+)();
 
 let failures = 0;
 function check(name, cond, extra = '') {
@@ -162,6 +161,79 @@ const after = A.readStripBitmapBytes(live);
 check('one completion adds exactly one bit and leaves the rest alone',
       A.countStripBits(after) === totalBits + 1 && isSet(after, 839, 200) &&
         after.every((b, i) => b === migrated[i] || i === (839 * A.STRIP_MIDDLE_IDX_COUNT + 200) >> 3));
+
+// ------------------------------------------------------ completion counter ----
+const counted = new FakeSheet();
+A.writeStripBitmapBytes(counted, new Array(A.STRIP_BITMAP_BYTES).fill(0));
+A.writeStripCompletedCount(counted, 0);
+
+A.setStripIntervalComplete(counted, 100, 5);
+A.setStripIntervalComplete(counted, 100, 6);
+check('the counter tracks new completions', A.readStripCompletedCount(counted) === 2,
+      `C1=${A.readStripCompletedCount(counted)}`);
+
+A.setStripIntervalComplete(counted, 100, 5);
+A.setStripIntervalComplete(counted, 100, 6);
+check('re-running an interval does not inflate the counter', A.readStripCompletedCount(counted) === 2,
+      `C1=${A.readStripCompletedCount(counted)}`);
+
+A.setStripIntervalComplete(counted, 9999, 0); // out of range
+check('an ignored interval does not touch the counter', A.readStripCompletedCount(counted) === 2);
+
+check('the counter agrees with a popcount of the bitmap',
+      A.readStripCompletedCount(counted) === A.countStripBits(A.readStripBitmapBytes(counted)));
+
+check('the counter is labelled in B1', counted.get(1, 2) === 'completedIntervals');
+check('the counter does not overwrite the chunk header', counted.get(1, 1) === '');
+
+// A restore wipes C1; the next completion must rebuild it from the bitmap rather than
+// starting over at 1.
+const wiped = new FakeSheet();
+A.writeStripBitmapBytes(wiped, migrated.slice());
+check('a wiped counter reads as missing', A.readStripCompletedCount(wiped) === null);
+A.setStripIntervalComplete(wiped, 839, 300);
+check('a wiped counter is rebuilt from the bitmap, not reset to 1',
+      A.readStripCompletedCount(wiped) === totalBits + 1,
+      `C1=${A.readStripCompletedCount(wiped)}, expected ${totalBits + 1}`);
+
+// ---------------------------------------------------------- request path ------
+// Call the handlers the way a deployed web app does. A unit test of the bitmap helpers
+// cannot catch a bad reference inside a request handler; this can.
+global.AUTHORIZED_API_KEY = 'test-key';
+const served = new FakeSheet();
+A.writeStripBitmapBytes(served, migrated.slice());
+A.writeStripCompletedCount(served, totalBits);
+
+const withSheet = { openById: () => ({ getSheetByName: (n) => (n === A.STRIP_BITMAP_SHEET_NAME ? served : null) }) };
+const withoutSheet = { openById: () => ({ getSheetByName: () => null }) };
+const request = (params, spreadsheetApp = withSheet) => {
+  global.SpreadsheetApp = spreadsheetApp;
+  return JSON.parse(A.handleRequest({ parameter: { apiKey: 'test-key', ...params } }));
+};
+
+const cacheResp = request({ action: 'getCompleteStripCache' });
+check('getCompleteStripCache succeeds', cacheResp.success === true,
+      cacheResp.error ? `error=${cacheResp.error}` : '');
+check('it returns the bitmap intact',
+      cacheResp.success && Buffer.from(cacheResp.bitmap, 'base64').equals(bitmap));
+check('it reports the cached completion count', cacheResp.completedIntervals === totalBits,
+      `${cacheResp.completedIntervals}`);
+
+const incResp = request({ action: 'incrementStripCompletion', centerIdx: '839', middleIdx: '400' });
+check('incrementStripCompletion succeeds', incResp.success === true,
+      incResp.error ? `error=${incResp.error}` : '');
+check('it sets the bit and bumps the count',
+      isSet(A.readStripBitmapBytes(served), 839, 400) &&
+        A.readStripCompletedCount(served) === totalBits + 1);
+
+const badIdx = request({ action: 'incrementStripCompletion', centerIdx: '9999', middleIdx: '0' });
+check('an out-of-range completion is rejected', badIdx.success === false);
+
+const missing = request({ action: 'getCompleteStripCache' }, withoutSheet);
+check('a missing bitmap sheet becomes a JSON error, not an empty bitmap',
+      missing.success === false && /missing/i.test(missing.error || ''),
+      missing.success ? 'returned success!' : '');
+check('and no bitmap is handed back in that case', missing.bitmap === undefined);
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

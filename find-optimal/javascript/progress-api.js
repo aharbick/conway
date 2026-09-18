@@ -43,6 +43,12 @@ const STRIP_CHUNK_ROWS = Math.ceil(STRIP_BITMAP_BYTES / STRIP_CHUNK_BYTES);     
 // Sheets parses a leading '=' or '+' as a formula, and base64 can start with '+', so the
 // stored text carries a prefix that is stripped on read.
 const STRIP_CHUNK_PREFIX = 'b64:';
+// Column A row 1 is the chunk header and A2:A180 the chunks, so row 1 of columns B and C
+// is free. C1 caches the number of completed intervals for dashboard formulas: summing the
+// Strip Summary histogram instead gets this wrong, because intervals that find nothing
+// never file a summary and re-run intervals file a second one.
+const STRIP_COUNT_LABEL_COL = 2; // B1: 'completedIntervals'
+const STRIP_COUNT_COL = 3;       // C1: the count itself
 
 /**
  * Execute a function with script-level locking for concurrency safety
@@ -571,6 +577,27 @@ function writeStripBitmapBytes(sheet, bytes) {
 }
 
 /**
+ * Read the cached completion count.
+ * @param {Sheet} sheet - The chunked bitmap sheet
+ * @returns {?number} The count, or null if the cell is missing or not a number
+ */
+function readStripCompletedCount(sheet) {
+  const raw = sheet.getRange(1, STRIP_COUNT_COL).getValue();
+  const value = typeof raw === 'number' ? raw : parseInt(String(raw), 10);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/**
+ * Write the completion count and its label.
+ * @param {Sheet} sheet - The chunked bitmap sheet
+ * @param {number} count - Number of completed intervals
+ */
+function writeStripCompletedCount(sheet, count) {
+  sheet.getRange(1, STRIP_COUNT_LABEL_COL).setValue('completedIntervals');
+  sheet.getRange(1, STRIP_COUNT_COL).setValue(count);
+}
+
+/**
  * Set one interval's bit by rewriting just its chunk row.
  * Uses linear indexing: linearIdx = centerIdx * 512 + middleIdx
  * @param {Sheet} sheet - The chunked bitmap sheet
@@ -598,11 +625,22 @@ function setStripIntervalComplete(sheet, centerIdx, middleIdx) {
 
   const updated = (bytes[byteInChunk] & 0xFF) | (1 << bitIdx);
   if (updated === (bytes[byteInChunk] & 0xFF)) {
-    return; // already complete, leave the cell alone
+    return; // already complete, leave the cell and the count alone
   }
   bytes[byteInChunk] = updated > 127 ? updated - 256 : updated;
 
   cell.setValue(STRIP_CHUNK_PREFIX + Utilities.base64Encode(bytes));
+
+  // Only reached on a real 0 -> 1 flip, so re-running an interval cannot inflate this.
+  // Callers hold the script lock, which makes the read-modify-write safe.
+  const count = readStripCompletedCount(sheet);
+  if (count === null) {
+    // No usable count - a restore that replaced the sheet wipes C1. Derive it from the
+    // bitmap, which is authoritative, rather than starting a plausible-looking count at 1.
+    writeStripCompletedCount(sheet, countStripBits(readStripBitmapBytes(sheet)));
+  } else {
+    writeStripCompletedCount(sheet, count + 1);
+  }
 }
 
 /**
@@ -719,7 +757,7 @@ function googleGetCompleteStripCache(e, spreadsheetId) {
   // row, so the worst a concurrent write can do is leave a just-set bit out of this
   // response - which costs one interval being searched again and re-marked, not
   // corruption. Torn bits are impossible: a cell is read whole.
-  return stripCacheResponse(sheet);
+  return stripCacheResponse(ensureStripBitmapSheet(spreadsheet));
 }
 
 /**
@@ -745,7 +783,10 @@ function stripCacheResponse(sheet) {
   return sendJsonResponse(true, 'Strip cache retrieved successfully', {
     bitmap: bitmapBase64,
     totalIntervals: STRIP_TOTAL_INTERVALS,
-    bitmapSize: STRIP_BITMAP_BYTES
+    bitmapSize: STRIP_BITMAP_BYTES,
+    // Cached count, for cross-checking against the bitmap itself. null means it has not
+    // been seeded yet - run recountStripCompletions().
+    completedIntervals: readStripCompletedCount(sheet)
   });
 }
 
@@ -804,7 +845,30 @@ function initializeStripBitmapSheet() {
   const sheet = spreadsheet.insertSheet(STRIP_BITMAP_SHEET_NAME);
   sheet.getRange(1, 1).setValue('stripBitmapBase64');
   writeStripBitmapBytes(sheet, new Array(STRIP_BITMAP_BYTES).fill(0));
+  writeStripCompletedCount(sheet, 0);
   console.log(`✅ Created ${STRIP_BITMAP_SHEET_NAME} with ${STRIP_CHUNK_ROWS} empty chunk rows`);
+}
+
+/**
+ * UTILITY FUNCTION: recompute the cached completion count in C1 from the bitmap.
+ * Call this manually in the Apps Script console: recountStripCompletions()
+ *
+ * Needed once to seed the count, after restoring the sheet from a backup (importing over
+ * the sheet wipes C1), and any time you want to confirm the count has not drifted.
+ */
+function recountStripCompletions() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  withLock(() => {
+    const sheet = ensureStripBitmapSheet(spreadsheet);
+    const actual = countStripBits(readStripBitmapBytes(sheet));
+    const stored = readStripCompletedCount(sheet);
+    writeStripCompletedCount(sheet, actual);
+    if (stored === actual) {
+      console.log(`✅ Count in C1 was already correct: ${actual} completed intervals`);
+    } else {
+      console.log(`✅ Updated C1: ${stored === null ? '(unset)' : stored} -> ${actual} completed intervals`);
+    }
+  });
 }
 
 /**

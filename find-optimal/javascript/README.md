@@ -72,6 +72,34 @@ would restart the entire search. To set up a genuinely new spreadsheet, run
 `initializeStripBitmapSheet()` from the Apps Script editor; to recover a lost sheet, use
 `tools/bitmap-to-chunk-csv.js` below.
 
+### The completion count in B1/C1
+
+Row 1 of columns B and C holds a cached count of completed intervals:
+
+| | A | B | C |
+|---|---|---|---|
+| **1** | `stripBitmapBase64` | `completedIntervals` | `429736` |
+| **2** | `b64:////…` | | |
+
+`setStripIntervalComplete` bumps C1 only when a bit actually flips 0→1, so re-running an
+interval cannot inflate it. If C1 is missing or not a number - importing a CSV over the
+sheet wipes it - the next completion rebuilds it by counting the bitmap rather than
+restarting the count at 1. `recountStripCompletions()` recomputes it on demand, and
+`getCompleteStripCache` returns it as `completedIntervals` so `tools/verify-strip-bitmap.js`
+can check it against a popcount of the bitmap itself.
+
+Use it for dashboard formulas, e.g. in Strip Analysis:
+
+```
+=TEXT('Strip Completion B64'!C1/512,"#,###.##") & " centers ✅ (" & TEXT('Strip Completion B64'!C1/(8548*512),"0.00%") & ")"
+```
+
+Do **not** derive progress from `SUM('Strip Summary'!B:B)`. That sums the histogram's count
+column, which is the number of summary submissions: intervals that find nothing never file
+one (21 so far), and any interval processed twice files a second (114 duplicates in the logs
+to date). The two errors pull in opposite directions and never reconcile. Note `/512` gives
+center-equivalents, not completed centers - progress is not aligned to center boundaries.
+
 ## Tools
 
 Both need the API credentials for the live checks:
@@ -113,18 +141,28 @@ rejoining the chunks and comparing against the source bitmap.
 
 To restore: create a sheet named exactly `Strip Completion B64`, then **File → Import →**
 upload the generated CSV with *Import location* "Replace current sheet" and **"Convert text
-to numbers, dates, and formulas" turned OFF**. Verify afterwards with
-`tools/verify-strip-bitmap.js`.
+to numbers, dates, and formulas" turned OFF**. The import wipes the count in C1, so run
+`recountStripCompletions()` afterwards, then verify with `tools/verify-strip-bitmap.js`.
 
 ## Tests
 
 ### tests/progress-api.test.js
 
-Runs the real bitmap functions out of `progress-api.js` against stubbed Apps Script globals
-(`Utilities`, `LockService`, sheet ranges), so no deployment is involved. Covers the chunk
-layout, the write/read round trip, the base64 join, bit setting at the boundaries, out-of-
-range indices, idempotency, formula-safety of every stored cell, and that a missing sheet
-throws rather than being created empty.
+Runs the real functions out of `progress-api.js` against stubbed Apps Script globals
+(`Utilities`, `LockService`, `SpreadsheetApp`, sheet ranges), so no deployment is involved.
+Covers the chunk layout, the write/read round trip, the base64 join, bit setting at the
+boundaries, out-of-range indices, idempotency, formula-safety of every stored cell, the
+completion counter (including rebuilding a wiped C1), and that a missing sheet throws
+rather than being created empty.
+
+It also drives `handleRequest` the way a deployed web app does, for both
+`getCompleteStripCache` and `incrementStripCompletion`. That part matters: a bad reference
+inside a request handler is invisible to `node --check` and to unit tests of the helpers,
+and one shipped that way once - `getCompleteStripCache` referenced a variable that had been
+removed, so the deployed API returned `ReferenceError: sheet is not defined` for every
+cache read. The script is loaded through `new Function` rather than `eval` so it cannot see
+this file's locals; with a plain `eval`, a same-named variable in the test masked that very
+bug.
 
 ```sh
 node javascript/tests/progress-api.test.js              # synthetic bitmap
