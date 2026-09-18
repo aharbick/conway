@@ -153,13 +153,86 @@ __global__ void findCandidatesForStripBlock(
   }
 }
 
+// Fast variant of findCandidatesForStripBlock. Produces exactly the same candidate set.
+//
+// Two changes over the legacy kernel:
+//
+// 1. Work division. The legacy kernel maps one thread per top strip, so only
+//    numUniqueTop threads (2K-31K) of the 1M launched ever run and the rest of the GPU
+//    sits idle. Here the grid is 2D - blockIdx.y picks the top strip, threads walk the
+//    bottom strips - so parallelism scales with the number of strip *pairs*.
+//
+// 2. Repacking. Pattern lifetimes are very uneven (mean ~28 generations, tail past 180),
+//    so a lane that finishes early would idle while the rest of its warp grinds on. Each
+//    lane instead picks up its next bottom strip immediately and keeps the warp full.
+__global__ void findCandidatesForStripBlockFast(
+    uint32_t middleBlock,
+    const uint16_t* uniqueTopStrips,
+    const uint16_t* uniqueBottomStrips,
+    uint32_t numUniqueTop,
+    uint32_t numUniqueBottom,
+    uint64_t* candidates,
+    uint64_t* numCandidates
+) {
+  uint32_t topIdx = blockIdx.y;
+  if (topIdx >= numUniqueTop) {
+    return;
+  }
+
+  // Everything except the bottom strip is fixed for this block
+  uint64_t base = (uint64_t)uniqueTopStrips[topIdx] | ((uint64_t)middleBlock << 16);
+
+  uint32_t stride = gridDim.x * blockDim.x;
+  uint32_t bottomIdx = blockIdx.x * blockDim.x + threadIdx.x;
+
+  uint64_t pattern = 0;
+  uint64_t g1 = 0;
+  uint16_t generations = 0;
+  bool active = false;
+
+  while (true) {
+    // Refill: this lane has no live pattern, so take the next bottom strip
+    if (!active) {
+      if (bottomIdx >= numUniqueBottom) {
+        break;
+      }
+      pattern = base | ((uint64_t)uniqueBottomStrips[bottomIdx] << 48);
+      bottomIdx += stride;
+      g1 = pattern;
+      generations = 0;
+      active = true;
+    }
+
+    generations += 6;
+    uint64_t g2 = computeNextGeneration8x8(g1);
+    uint64_t g3 = computeNextGeneration8x8(g2);
+    uint64_t g4 = computeNextGeneration8x8(g3);
+    uint64_t g5 = computeNextGeneration8x8(g4);
+    uint64_t g6 = computeNextGeneration8x8(g5);
+    g1 = computeNextGeneration8x8(g6);
+
+    if ((g1 == g2) || (g1 == g3) || (g1 == g4)) {
+      active = false;  // Pattern ended, not interesting
+    } else if (generations >= MIN_CANDIDATE_GENERATIONS) {
+      uint64_t idx = atomicAdd((unsigned long long*)numCandidates, 1ULL);
+      if (idx < STRIP_SEARCH_MAX_CANDIDATES) {
+        candidates[idx] = pattern;
+      }
+      active = false;
+    } else if (generations >= FAST_SEARCH_MAX_GENERATIONS) {
+      active = false;
+    }
+  }
+}
+
 // Execute strip search for a single middle block using StripSearchMemory
 // Hash table is allocated locally and reused between top/bottom strip finding
 __host__ void executeStripSearchForBlock(
     uint32_t middleBlock,
     gol::StripSearchMemory& mem,
     uint32_t* d_hashTable,
-    CycleDetectionAlgorithm algorithm
+    CycleDetectionAlgorithm algorithm,
+    StripKernel stripKernel
 ) {
   // Phase 1a: Find unique TOP strips
   uint32_t zero = 0;
@@ -187,14 +260,28 @@ __host__ void executeStripSearchForBlock(
   cudaCheckError(cudaMemcpy(mem.d_numCandidates(), &zero64, sizeof(uint64_t), cudaMemcpyHostToDevice));
 
   if (*mem.h_numUniqueTop() > 0 && *mem.h_numUniqueBottom() > 0) {
-    findCandidatesForStripBlock<<<STRIP_SEARCH_COMBO_GRID_SIZE, STRIP_SEARCH_COMBO_THREADS_PER_BLOCK>>>(
-        middleBlock,
-        mem.d_uniqueTopStrips(),
-        mem.d_uniqueBottomStrips(),
-        *mem.h_numUniqueTop(),
-        *mem.h_numUniqueBottom(),
-        mem.d_candidates(),
-        mem.d_numCandidates());
+    if (stripKernel == STRIP_KERNEL_LEGACY) {
+      findCandidatesForStripBlock<<<STRIP_SEARCH_COMBO_GRID_SIZE, STRIP_SEARCH_COMBO_THREADS_PER_BLOCK>>>(
+          middleBlock,
+          mem.d_uniqueTopStrips(),
+          mem.d_uniqueBottomStrips(),
+          *mem.h_numUniqueTop(),
+          *mem.h_numUniqueBottom(),
+          mem.d_candidates(),
+          mem.d_numCandidates());
+    } else {
+      // One block per top strip in the y dimension (numUniqueTop <= 32768, well under the
+      // 65535 gridDim.y limit), x dimension and threads walk the bottom strips.
+      dim3 grid(STRIP_SEARCH_COMBO_FAST_X_BLOCKS, *mem.h_numUniqueTop());
+      findCandidatesForStripBlockFast<<<grid, STRIP_SEARCH_COMBO_FAST_THREADS_PER_BLOCK>>>(
+          middleBlock,
+          mem.d_uniqueTopStrips(),
+          mem.d_uniqueBottomStrips(),
+          *mem.h_numUniqueTop(),
+          *mem.h_numUniqueBottom(),
+          mem.d_candidates(),
+          mem.d_numCandidates());
+    }
     cudaCheckError(cudaGetLastError());
     cudaCheckError(cudaDeviceSynchronize());
   }
@@ -273,7 +360,7 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
         uint16_t leftEar = blockOffset / CENTER_4X4_TOTAL_EAR_VALUES;
         uint16_t rightEar = blockOffset % CENTER_4X4_TOTAL_EAR_VALUES;
         uint32_t middleBlock = reconstructMiddleBlock(center4x4, (uint8_t)leftEar, (uint8_t)rightEar);
-        executeStripSearchForBlock(middleBlock, mem, d_hashTable, cli->cycleDetection);
+        executeStripSearchForBlock(middleBlock, mem, d_hashTable, cli->cycleDetection, cli->stripKernel);
 
         // Track interval best (for reporting) and update global best
         if (*mem.h_bestGenerations() > intervalBestGenerations) {

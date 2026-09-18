@@ -36,6 +36,11 @@ enum SimulateType {
   SIMULATE_NONE
 };
 
+enum StripKernel {
+  STRIP_KERNEL_FAST,    // 2D grid + lane repacking (default)
+  STRIP_KERNEL_LEGACY   // one thread per top strip, serial over bottom strips
+};
+
 enum GridSize {
   GRID_SIZE_8X8,
   GRID_SIZE_7X7
@@ -64,6 +69,7 @@ typedef struct ProgramArgs {
   std::string queueDirectory;
   std::string subgridCachePath;
   CycleDetectionAlgorithm cycleDetection;
+  StripKernel stripKernel;       // Phase-2 kernel used by strip search
   uint64_t compareFrameIdx;
   uint64_t subgridCacheBegin;
   int workerNum;

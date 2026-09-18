@@ -36,6 +36,7 @@ static struct argp_option argp_options[] = {
     // Group 2: Search options
     {0, 0, 0, 0, "Search options:", 2},
     {"cycle-detection", 'D', "ALGORITHM", 0, "Cycle detection algorithm: 'floyd' or 'nivasch' (default: 'floyd')", 2},
+    {"strip-kernel", 'K', "KERNEL", 0, "Strip search combination kernel: 'fast' or 'legacy' (default: 'fast')", 2},
     {"subgrid-cache-file", 'C', "FILE", 0, "Load 7x7 subgrid cache from FILE to use for early termination optimization.", 2},
     {"compute-subgrid-cache", 'c', "PATH", 0, "Compute 7x7 subgrid cache for all 2^49 patterns and save to disk at PATH.", 2},
     {"subgrid-cache-begin", 'b', "NUMBER", 0, "Starting pattern index for subgrid cache computation (for resuming).", 2},
@@ -112,6 +113,21 @@ static bool parseCycleDetection(const char* arg, ProgramArgs* args) {
   }
 
   std::cerr << "[ERROR] Invalid cycle detection algorithm '" << arg << "', expected 'floyd' or 'nivasch'\n";
+  return false;
+}
+
+static bool parseStripKernel(const char* arg, ProgramArgs* args) {
+  std::string str(arg);
+
+  if (str == "fast") {
+    args->stripKernel = STRIP_KERNEL_FAST;
+    return true;
+  } else if (str == "legacy") {
+    args->stripKernel = STRIP_KERNEL_LEGACY;
+    return true;
+  }
+
+  std::cerr << "[ERROR] Invalid strip kernel '" << arg << "', expected 'fast' or 'legacy'\n";
   return false;
 }
 
@@ -459,6 +475,11 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
       argp_failure(state, 1, 0, "Invalid cycle detection algorithm");
     }
     break;
+  case 'K':
+    if (!parseStripKernel(arg, a)) {
+      argp_failure(state, 1, 0, "Invalid strip kernel");
+    }
+    break;
   case 's':
     if (!parseSimulateType(arg, a)) {
       argp_failure(state, 1, 0, "Invalid simulate type");
@@ -555,6 +576,7 @@ void initializeDefaultArgs(ProgramArgs* args) {
   args->queueDirectory = "./request-queue";
   args->subgridCachePath = "";
   args->cycleDetection = CYCLE_DETECTION_FLOYD;
+  args->stripKernel = STRIP_KERNEL_FAST;
   args->compareFrameIdx = 0;
   args->subgridCacheBegin = 0;
   args->workerNum = 1;

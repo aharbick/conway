@@ -43,7 +43,18 @@
 // Phase 2: Test strip combinations (large kernel, ~289M combinations)
 #define STRIP_SEARCH_COMBO_GRID_SIZE 1024
 #define STRIP_SEARCH_COMBO_THREADS_PER_BLOCK 1024
-#define STRIP_SEARCH_MAX_CANDIDATES (1ULL << 31)     // 2B candidates per middle block (matches frame search)
+//
+// Fast phase 2 launch geometry: grid is (COMBO_FAST_X_BLOCKS, numUniqueTop) so that
+// parallelism scales with the *pairs* of strips rather than with numUniqueTop alone.
+// One warp per top strip measured fastest on a 5090 (32 threads x 1 x-block); larger
+// blocks lose because each lane then has fewer bottom strips to repack across.
+#define STRIP_SEARCH_COMBO_FAST_THREADS_PER_BLOCK 32
+#define STRIP_SEARCH_COMBO_FAST_X_BLOCKS 1
+// 64M candidates per middle block = 512MB buffer. Measured worst case across sampled
+// middle blocks is ~1.6M, so this is ~40x headroom; overflow is detected and warned about
+// in executeStripSearchForBlock. (Was 2^31 = 16GB, which left no room for anything else
+// on the GPU.)
+#define STRIP_SEARCH_MAX_CANDIDATES (1ULL << 26)
 
 // Subgrid cache constants
 #define SUBGRID_TOTAL_PATTERNS (1ULL << 49)  // 7x7 grid = 2^49 patterns

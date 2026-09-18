@@ -204,6 +204,12 @@ add_executable(explore-subgrid src/explore-subgrid.cpp)
 add_executable(explore-reversibility src/explore-reversibility.cpp)
 add_executable(validate-frame-search-completeness src/validate_frame_search_completeness.cpp)
 
+# Strip search benchmark harness (phase timing + kernel variant comparison)
+add_executable(bench-strip-search src/bench_strip_search.cu src/center4x4_utils.cpp)
+set_source_files_properties(src/center4x4_utils.cpp PROPERTIES LANGUAGE CUDA)
+target_link_libraries(bench-strip-search CUDA::cudart)
+set_target_properties(bench-strip-search PROPERTIES CUDA_RUNTIME_LIBRARY Static)
+
 # Hash function comparison tool
 add_executable(compare-hash-functions src/compare_hash_functions.cpp)
 target_link_libraries(compare-hash-functions nlohmann_json::nlohmann_json)
