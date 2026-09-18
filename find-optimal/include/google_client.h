@@ -279,17 +279,35 @@ class FrameCompletionCache {
     BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);  // No newlines
     bio = BIO_push(b64, bio);
 
-    // Read decoded data
-    int decoded_len = BIO_read(bio, bitmap, FRAME_CACHE_BITMAP_BYTES);
+    // Read decoded data. A single BIO_read can come up short on a large payload, so
+    // keep reading until the buffer is full or the chain is exhausted.
+    int total = 0;
+    while (total < (int)FRAME_CACHE_BITMAP_BYTES) {
+      int n = BIO_read(bio, bitmap + total, (int)FRAME_CACHE_BITMAP_BYTES - total);
+      if (n <= 0) {
+        break;
+      }
+      total += n;
+    }
 
     BIO_free_all(bio);  // Cleans up the entire chain
 
-    return decoded_len > 0 && decoded_len <= FRAME_CACHE_BITMAP_BYTES;
+    if (total > 0 && total < (int)FRAME_CACHE_BITMAP_BYTES) {
+      // Short payload leaves the tail of the bitmap zeroed, which reads as "incomplete"
+      // and silently re-runs finished work. Loud, because it is expensive.
+      std::cerr << "[WARNING] Completion cache decoded only " << total << " of " << FRAME_CACHE_BITMAP_BYTES
+                << " bytes - completion state beyond byte " << total << " is unknown\n";
+    }
+
+    return total > 0 && total <= (int)FRAME_CACHE_BITMAP_BYTES;
   }
 };
 
-// Global frame cache instance
-static FrameCompletionCache frameCache;
+// Global frame cache instance.
+// NOTE: 'inline', not 'static'. A 'static' global in a header gives every translation
+// unit its own copy, so the copy loaded at startup is not the copy the search loop
+// queries - which silently made every interval look incomplete and re-ran finished work.
+inline FrameCompletionCache frameCache;
 
 // Strip completion cache for fast lookups
 // Uses bitmap format like FrameCompletionCache
@@ -453,17 +471,32 @@ class StripCompletionCache {
     BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);  // No newlines
     bio = BIO_push(b64, bio);
 
-    // Read decoded data
-    int decoded_len = BIO_read(bio, bitmap, STRIP_CACHE_BITMAP_BYTES);
+    // Read decoded data. A single BIO_read can come up short on a large payload, so
+    // keep reading until the buffer is full or the chain is exhausted.
+    int total = 0;
+    while (total < (int)STRIP_CACHE_BITMAP_BYTES) {
+      int n = BIO_read(bio, bitmap + total, (int)STRIP_CACHE_BITMAP_BYTES - total);
+      if (n <= 0) {
+        break;
+      }
+      total += n;
+    }
 
     BIO_free_all(bio);  // Cleans up the entire chain
 
-    return decoded_len > 0 && decoded_len <= STRIP_CACHE_BITMAP_BYTES;
+    if (total > 0 && total < (int)STRIP_CACHE_BITMAP_BYTES) {
+      // Short payload leaves the tail of the bitmap zeroed, which reads as "incomplete"
+      // and silently re-runs finished work. Loud, because it is expensive.
+      std::cerr << "[WARNING] Completion cache decoded only " << total << " of " << STRIP_CACHE_BITMAP_BYTES
+                << " bytes - completion state beyond byte " << total << " is unknown\n";
+    }
+
+    return total > 0 && total <= (int)STRIP_CACHE_BITMAP_BYTES;
   }
 };
 
-// Global strip cache instance
-static StripCompletionCache stripCache;
+// Global strip cache instance (see the note on frameCache about 'inline' vs 'static')
+inline StripCompletionCache stripCache;
 
 static bool sendGoogleProgress(uint64_t frameIdx, int kernelIdx, int bestGenerations, uint64_t bestPattern,
                                const char* bestPatternBin) {
@@ -559,8 +592,10 @@ static bool getGoogleFrameCompleteFromCache(uint64_t frameIdx) {
   // Load cache on first use
   if (!frameCache.isLoaded()) {
     if (!frameCache.loadFromAPI()) {
-      // Cache loading failed, but we should still mark it as loaded
-      // to start with an empty cache and rely on local state
+      // Carry on with an empty cache and local state only, but say so: every frame will
+      // look incomplete, so already-finished frames may be searched again.
+      std::cerr << "[WARNING] Could not load the frame completion cache - treating all\n"
+                << "          frames as incomplete, so finished frames may be repeated\n";
       frameCache.markAsLoaded();
     }
   }
@@ -680,12 +715,16 @@ static uint64_t getGoogleStripCacheCompletedCount() {
 }
 
 static bool isGoogleStripIntervalComplete(uint32_t centerIdx, uint32_t middleIdx) {
-  // Load cache on first use
+  // Load cache on first use. Treating a failed load as an empty cache would re-run every
+  // completed interval (weeks of GPU time) while looking like normal progress, so bail out
+  // instead and let the caller retry.
   if (!stripCache.isLoaded()) {
     if (!stripCache.loadFromAPI()) {
-      // Cache loading failed, but we should still mark it as loaded
-      // to start with an empty cache and rely on local state
-      stripCache.markAsLoaded();
+      std::cerr << "[FATAL] Could not load the strip completion cache. Refusing to run:\n"
+                << "        every interval would look incomplete and already-finished work\n"
+                << "        would be repeated. Retry, or pass --dont-save-results to search\n"
+                << "        without completion tracking.\n";
+      exit(1);
     }
   }
   return stripCache.isIntervalComplete(centerIdx, middleIdx);

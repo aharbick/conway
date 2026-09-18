@@ -25,7 +25,15 @@ int executeMainSearch(ProgramArgs* cli) {
     // Initialize completion cache based on search type
     if (isStripSearch) {
       // Strip search uses strip completion cache
-      if (loadGoogleStripCache()) {
+      if (!loadGoogleStripCache()) {
+        // Without the cache every interval looks incomplete, so the search would silently
+        // repeat finished work. Stop instead of burning GPU time on it.
+        Logger::out() << "[FATAL] Could not load the strip completion cache from Google Sheets.\n"
+                      << "        Retry, or pass --dont-save-results to search without\n"
+                      << "        completion tracking.\n";
+        return 1;
+      }
+      {
         uint64_t completedIntervals = getGoogleStripCacheCompletedCount();
         Logger::out() << "Strip completion cache initialized with " << completedIntervals << " completed middle block intervals\n";
 
