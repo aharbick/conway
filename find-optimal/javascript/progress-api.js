@@ -29,6 +29,25 @@ const STRIP_TOTAL_INTERVALS = STRIP_TOTAL_CENTERS * STRIP_MIDDLE_IDX_COUNT; // 4
 const STRIP_BITS_PER_ROW = 64;
 const STRIP_COMPLETION_ROWS = Math.ceil(STRIP_TOTAL_INTERVALS / STRIP_BITS_PER_ROW); // 68,384 rows
 
+// Strip completion bitmap, stored as base64 chunks instead of 68,384 BigInt rows.
+//
+// The old layout cost ~19s to read: 68,384 rows plus 8 BigInt shift-and-mask operations
+// per row (~547,000 BigInt ops) to rebuild 547,072 bytes, all of it inside the script
+// lock, which blocked every completion and summary write behind it. Here the bitmap lives
+// in 179 cells of base64 and a read is a single getValues() plus a join - no BigInt at
+// all - so getCompleteStripCache stops hogging the lock.
+//
+// STRIP_CHUNK_BYTES must stay a multiple of 3: base64 then encodes each full chunk with
+// no padding, so concatenating the cells' base64 is itself valid base64 for the whole
+// bitmap and the server never has to decode it to answer a read.
+const STRIP_BITMAP_SHEET_NAME = 'Strip Completion B64';
+const STRIP_BITMAP_BYTES = Math.ceil(STRIP_TOTAL_INTERVALS / 8);                  // 547,072
+const STRIP_CHUNK_BYTES = 3072;                                                    // 4,096 base64 chars
+const STRIP_CHUNK_ROWS = Math.ceil(STRIP_BITMAP_BYTES / STRIP_CHUNK_BYTES);        // 179 rows
+// Sheets parses a leading '=' or '+' as a formula, and base64 can start with '+', so the
+// stored text carries a prefix that is stripped on read.
+const STRIP_CHUNK_PREFIX = 'b64:';
+
 /**
  * Execute a function with script-level locking for concurrency safety
  * @param {Function} operation - The function to execute under lock
@@ -525,9 +544,88 @@ function ensureStripCompletionSheet(spreadsheet) {
 }
 
 /**
- * Set a specific centerIdx:middleIdx as complete in the Strip Completion sheet
+ * Number of bytes in a given chunk row (the last one is short).
+ */
+function stripChunkLength(chunkIdx) {
+  const start = chunkIdx * STRIP_CHUNK_BYTES;
+  return Math.min(STRIP_CHUNK_BYTES, STRIP_BITMAP_BYTES - start);
+}
+
+/**
+ * Base64 for a run of zero bytes, used to initialize the sheet.
+ */
+function zeroChunkBase64(length) {
+  return Utilities.base64Encode(new Array(length).fill(0));
+}
+
+/**
+ * Ensure the base64 bitmap sheet exists, migrating from the legacy 64-bit row format if
+ * that sheet is present. Callers that might trigger the migration must hold the lock.
+ * @param {Spreadsheet} spreadsheet - The spreadsheet object
+ * @returns {Sheet} The chunked bitmap sheet
+ */
+function ensureStripBitmapSheet(spreadsheet) {
+  let sheet = spreadsheet.getSheetByName(STRIP_BITMAP_SHEET_NAME);
+  if (sheet) {
+    return sheet;
+  }
+
+  sheet = spreadsheet.insertSheet(STRIP_BITMAP_SHEET_NAME);
+  sheet.getRange(1, 1).setValue('stripBitmapBase64');
+
+  // Carry over the legacy bitmap if there is one, otherwise start empty
+  const legacy = spreadsheet.getSheetByName(STRIP_COMPLETION_SHEET_NAME);
+  const bytes = legacy ? legacyStripBitmapBytes(legacy) : new Array(STRIP_BITMAP_BYTES).fill(0);
+
+  writeStripBitmapBytes(sheet, bytes);
+  return sheet;
+}
+
+/**
+ * Read the legacy Strip Completion sheet (one 64-bit decimal string per row) into a byte
+ * array. Only used by the one-time migration.
+ * @param {Sheet} legacySheet - The legacy Strip Completion sheet
+ * @returns {number[]} Signed byte values, STRIP_BITMAP_BYTES long
+ */
+function legacyStripBitmapBytes(legacySheet) {
+  const rows = legacySheet.getRange(2, 1, STRIP_COMPLETION_ROWS, 1).getValues();
+  const bytes = new Array(STRIP_BITMAP_BYTES).fill(0);
+
+  for (let rowIdx = 0; rowIdx < rows.length && rowIdx < STRIP_COMPLETION_ROWS; rowIdx++) {
+    const value = BigInt(rows[rowIdx][0] || '0');
+    if (value === BigInt(0)) {
+      continue;
+    }
+    for (let byteInRow = 0; byteInRow < 8; byteInRow++) {
+      const byteIdx = rowIdx * 8 + byteInRow;
+      if (byteIdx >= STRIP_BITMAP_BYTES) break;
+      const byteValue = Number((value >> BigInt(byteInRow * 8)) & BigInt(0xFF));
+      bytes[byteIdx] = byteValue > 127 ? byteValue - 256 : byteValue;
+    }
+  }
+
+  return bytes;
+}
+
+/**
+ * Write a whole byte array out as base64 chunk rows.
+ * @param {Sheet} sheet - The chunked bitmap sheet
+ * @param {number[]} bytes - Signed byte values, STRIP_BITMAP_BYTES long
+ */
+function writeStripBitmapBytes(sheet, bytes) {
+  const rows = [];
+  for (let chunkIdx = 0; chunkIdx < STRIP_CHUNK_ROWS; chunkIdx++) {
+    const start = chunkIdx * STRIP_CHUNK_BYTES;
+    const slice = bytes.slice(start, start + stripChunkLength(chunkIdx));
+    rows.push([STRIP_CHUNK_PREFIX + Utilities.base64Encode(slice)]);
+  }
+  sheet.getRange(2, 1, STRIP_CHUNK_ROWS, 1).setValues(rows);
+}
+
+/**
+ * Set one interval's bit by rewriting just its chunk row.
  * Uses linear indexing: linearIdx = centerIdx * 512 + middleIdx
- * @param {Sheet} sheet - The Strip Completion sheet
+ * @param {Sheet} sheet - The chunked bitmap sheet
  * @param {number} centerIdx - The center index
  * @param {number} middleIdx - The middleIdx to mark as complete
  */
@@ -540,18 +638,23 @@ function setStripIntervalComplete(sheet, centerIdx, middleIdx) {
   }
 
   const linearIdx = centerIdx * STRIP_MIDDLE_IDX_COUNT + middleIdx;
-  const rowIndex = Math.floor(linearIdx / STRIP_BITS_PER_ROW) + 2; // +2 for header and 1-based indexing
-  const bitIndex = linearIdx % STRIP_BITS_PER_ROW;
+  const byteIdx = Math.floor(linearIdx / 8);
+  const bitIdx = linearIdx % 8;
+  const chunkIdx = Math.floor(byteIdx / STRIP_CHUNK_BYTES);
+  const byteInChunk = byteIdx % STRIP_CHUNK_BYTES;
+  const cell = sheet.getRange(chunkIdx + 2, 1); // +2 for header and 1-based indexing
 
-  // Get current value
-  const currentValue = sheet.getRange(rowIndex, 1).getValue() || '0';
-  const currentBitmap = BigInt(currentValue);
+  const stored = String(cell.getValue() || '');
+  const encoded = stored.startsWith(STRIP_CHUNK_PREFIX) ? stored.substring(STRIP_CHUNK_PREFIX.length) : stored;
+  const bytes = encoded ? Utilities.base64Decode(encoded) : new Array(stripChunkLength(chunkIdx)).fill(0);
 
-  // Set the bit
-  const newBitmap = currentBitmap | (BigInt(1) << BigInt(bitIndex));
+  const updated = (bytes[byteInChunk] & 0xFF) | (1 << bitIdx);
+  if (updated === (bytes[byteInChunk] & 0xFF)) {
+    return; // already complete, leave the cell alone
+  }
+  bytes[byteInChunk] = updated > 127 ? updated - 256 : updated;
 
-  // Write back as string to preserve precision
-  sheet.getRange(rowIndex, 1).setValue(newBitmap.toString());
+  cell.setValue(STRIP_CHUNK_PREFIX + Utilities.base64Encode(bytes));
 }
 
 /**
@@ -660,40 +763,154 @@ function googleSendStripSummaryData(e, spreadsheetId) {
  * Same format as frame completion for consistency
  */
 function googleGetCompleteStripCache(e, spreadsheetId) {
-  return withLock(() => {
-    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    const stripCompletionSheet = ensureStripCompletionSheet(spreadsheet);
+  const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  const sheet = spreadsheet.getSheetByName(STRIP_BITMAP_SHEET_NAME);
 
-    // Read all completion data from Strip Completion sheet
-    const dataRange = stripCompletionSheet.getRange(2, 1, STRIP_COMPLETION_ROWS, 1).getValues();
+  // First call after deploying the chunked format: build it under the lock, then read
+  if (!sheet) {
+    return withLock(() => stripCacheResponse(ensureStripBitmapSheet(spreadsheet)));
+  }
 
-    // Convert 64-bit values to 8-bit bitmap
-    const bitmapBytes = Math.ceil(STRIP_TOTAL_INTERVALS / 8);
-    const bitmap = new Uint8Array(bitmapBytes);
+  // Deliberately NOT under withLock. Reading used to hold the script lock for ~19s, which
+  // queued every completion and summary write behind it and pushed some past their own
+  // 30s lock timeout. Completions only ever set bits and each write touches a single chunk
+  // row, so the worst a concurrent write can do is leave a just-set bit out of this
+  // response - which costs one interval being searched again and re-marked, not
+  // corruption. Torn bits are impossible: a cell is read whole.
+  return stripCacheResponse(sheet);
+}
 
-    for (let rowIdx = 0; rowIdx < dataRange.length && rowIdx < STRIP_COMPLETION_ROWS; rowIdx++) {
-      const bitmapValue = BigInt(dataRange[rowIdx][0] || '0');
+/**
+ * Build the cache response by concatenating the stored base64 chunks.
+ * No decode, no BigInt: STRIP_CHUNK_BYTES is a multiple of 3, so the chunks' base64
+ * joins into valid base64 for the whole bitmap.
+ * @param {Sheet} sheet - The chunked bitmap sheet
+ * @returns {ContentService.TextOutput} The formatted response
+ */
+function stripCacheResponse(sheet) {
+  const rows = sheet.getRange(2, 1, STRIP_CHUNK_ROWS, 1).getValues();
 
-      // Each row contains 64 bits, convert to 8 bytes
-      for (let byteInRow = 0; byteInRow < 8; byteInRow++) {
-        const globalByteIdx = rowIdx * 8 + byteInRow;
-        if (globalByteIdx >= bitmapBytes) break;
-
-        // Extract 8 bits from the 64-bit value
-        const byteValue = Number((bitmapValue >> BigInt(byteInRow * 8)) & BigInt(0xFF));
-        bitmap[globalByteIdx] = byteValue;
-      }
+  let bitmapBase64 = '';
+  for (let i = 0; i < rows.length; i++) {
+    const stored = String(rows[i][0] || '');
+    if (!stored) {
+      return sendJsonResponse(false, `Strip bitmap chunk ${i} is empty - run migrateStripCompletionToBase64()`);
     }
+    bitmapBase64 += stored.startsWith(STRIP_CHUNK_PREFIX) ? stored.substring(STRIP_CHUNK_PREFIX.length) : stored;
+  }
 
-    // Convert bitmap to base64 for transmission
-    const bitmapBase64 = Utilities.base64Encode(bitmap);
-
-    return sendJsonResponse(true, 'Strip cache retrieved successfully', {
-      bitmap: bitmapBase64,
-      totalIntervals: STRIP_TOTAL_INTERVALS,
-      bitmapSize: bitmapBytes
-    });
+  return sendJsonResponse(true, 'Strip cache retrieved successfully', {
+    bitmap: bitmapBase64,
+    totalIntervals: STRIP_TOTAL_INTERVALS,
+    bitmapSize: STRIP_BITMAP_BYTES
   });
+}
+
+/**
+ * Read the chunked bitmap sheet back into a byte array.
+ * @param {Sheet} sheet - The chunked bitmap sheet
+ * @returns {number[]} Signed byte values, STRIP_BITMAP_BYTES long
+ */
+function readStripBitmapBytes(sheet) {
+  const rows = sheet.getRange(2, 1, STRIP_CHUNK_ROWS, 1).getValues();
+  let bytes = [];
+  for (let i = 0; i < STRIP_CHUNK_ROWS; i++) {
+    const stored = String(rows[i][0] || '');
+    const encoded = stored.startsWith(STRIP_CHUNK_PREFIX) ? stored.substring(STRIP_CHUNK_PREFIX.length) : stored;
+    bytes = bytes.concat(encoded ? Utilities.base64Decode(encoded) : new Array(stripChunkLength(i)).fill(0));
+  }
+  return bytes;
+}
+
+/**
+ * Count the set bits in a byte array (how many intervals are complete).
+ * @param {number[]} bytes - Signed byte values
+ * @returns {number} Number of set bits
+ */
+function countStripBits(bytes) {
+  let count = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    let v = bytes[i] & 0xFF;
+    while (v) {
+      count += v & 1;
+      v >>= 1;
+    }
+  }
+  return count;
+}
+
+/**
+ * UTILITY FUNCTION: one-time migration of the strip completion bitmap from the legacy
+ * 64-bit-per-row format to base64 chunks.
+ * Call this manually in the Apps Script console: migrateStripCompletionToBase64()
+ *
+ * The legacy sheet is left untouched as a backup. Note that completions recorded after
+ * the migration land only in the chunked sheet, so rolling the script back means running
+ * backfillLegacyStripCompletionFromBase64() first.
+ */
+function migrateStripCompletionToBase64() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+  const legacy = spreadsheet.getSheetByName(STRIP_COMPLETION_SHEET_NAME);
+  if (!legacy) {
+    console.error(`${STRIP_COMPLETION_SHEET_NAME} sheet not found - nothing to migrate`);
+    return;
+  }
+
+  console.log(`Reading ${STRIP_COMPLETION_ROWS} legacy rows...`);
+  const bytes = legacyStripBitmapBytes(legacy);
+  const expected = countStripBits(bytes);
+  console.log(`Legacy bitmap has ${expected} completed intervals`);
+
+  let sheet = spreadsheet.getSheetByName(STRIP_BITMAP_SHEET_NAME);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(STRIP_BITMAP_SHEET_NAME);
+    sheet.getRange(1, 1).setValue('stripBitmapBase64');
+  }
+
+  console.log(`Writing ${STRIP_CHUNK_ROWS} base64 chunk rows...`);
+  writeStripBitmapBytes(sheet, bytes);
+
+  // Read it back and confirm it round-tripped
+  const actual = countStripBits(readStripBitmapBytes(sheet));
+  if (actual === expected) {
+    console.log(`✅ Migration complete: ${actual} completed intervals in ${STRIP_CHUNK_ROWS} rows`);
+  } else {
+    console.error(`❌ Mismatch after migration: expected ${expected} bits, read back ${actual}`);
+  }
+}
+
+/**
+ * UTILITY FUNCTION: write the chunked bitmap back into the legacy sheet.
+ * Call this manually in the Apps Script console before rolling the script back to a
+ * version that reads the legacy format: backfillLegacyStripCompletionFromBase64()
+ */
+function backfillLegacyStripCompletionFromBase64() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+  const sheet = spreadsheet.getSheetByName(STRIP_BITMAP_SHEET_NAME);
+  if (!sheet) {
+    console.error(`${STRIP_BITMAP_SHEET_NAME} sheet not found - nothing to backfill from`);
+    return;
+  }
+
+  const bytes = readStripBitmapBytes(sheet);
+  console.log(`Chunked bitmap has ${countStripBits(bytes)} completed intervals`);
+
+  const legacy = ensureStripCompletionSheet(spreadsheet);
+  const rows = [];
+  for (let rowIdx = 0; rowIdx < STRIP_COMPLETION_ROWS; rowIdx++) {
+    let value = BigInt(0);
+    for (let byteInRow = 0; byteInRow < 8; byteInRow++) {
+      const byteIdx = rowIdx * 8 + byteInRow;
+      if (byteIdx >= STRIP_BITMAP_BYTES) break;
+      value |= BigInt(bytes[byteIdx] & 0xFF) << BigInt(byteInRow * 8);
+    }
+    rows.push([value.toString()]);
+  }
+
+  legacy.getRange(2, 1, STRIP_COMPLETION_ROWS, 1).setValues(rows);
+  console.log(`✅ Wrote ${STRIP_COMPLETION_ROWS} legacy rows`);
 }
 
 /**
@@ -715,8 +932,8 @@ function googleIncrementStripCompletion(e, spreadsheetId) {
     }
 
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    const stripCompletionSheet = ensureStripCompletionSheet(spreadsheet);
-    setStripIntervalComplete(stripCompletionSheet, centerIdx, middleIdx);
+    const stripBitmapSheet = ensureStripBitmapSheet(spreadsheet);
+    setStripIntervalComplete(stripBitmapSheet, centerIdx, middleIdx);
 
     return sendJsonResponse(true, 'Strip interval marked complete');
   });
