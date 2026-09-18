@@ -52,8 +52,8 @@ const apiPath = path.join(__dirname, 'progress-api.js');
 eval(
   fs.readFileSync(apiPath, 'utf8') +
     '\nglobal.__api = {stripChunkLength, writeStripBitmapBytes, readStripBitmapBytes, countStripBits,' +
-    ' setStripIntervalComplete, legacyStripBitmapBytes, STRIP_BITMAP_BYTES, STRIP_CHUNK_ROWS,' +
-    ' STRIP_CHUNK_BYTES, STRIP_CHUNK_PREFIX, STRIP_COMPLETION_ROWS, STRIP_MIDDLE_IDX_COUNT,' +
+    ' setStripIntervalComplete, ensureStripBitmapSheet, STRIP_BITMAP_BYTES, STRIP_CHUNK_ROWS,' +
+    ' STRIP_CHUNK_BYTES, STRIP_CHUNK_PREFIX, STRIP_BITMAP_SHEET_NAME, STRIP_MIDDLE_IDX_COUNT,' +
     ' STRIP_TOTAL_CENTERS};'
 );
 const A = global.__api;
@@ -102,25 +102,20 @@ check('last chunk length is the remainder',
         A.STRIP_BITMAP_BYTES - (A.STRIP_CHUNK_ROWS - 1) * A.STRIP_CHUNK_BYTES,
       `${A.stripChunkLength(A.STRIP_CHUNK_ROWS - 1)}B`);
 
-// -------------------------------------------------------- legacy migration ----
-const legacy = new FakeSheet();
-const legacyRows = [];
-for (let r = 0; r < A.STRIP_COMPLETION_ROWS; r++) {
-  let v = 0n;
-  for (let b = 0; b < 8; b++) {
-    const idx = r * 8 + b;
-    if (idx >= bitmap.length) break;
-    v |= BigInt(bitmap[idx]) << BigInt(b * 8);
-  }
-  legacyRows.push([v.toString()]);
+// --------------------------------------------- a missing sheet must throw -----
+// Silently creating an empty bitmap would report zero completed intervals and restart
+// the whole search, so an absent sheet has to be an error.
+let threw = false;
+try {
+  A.ensureStripBitmapSheet({ getSheetByName: () => null });
+} catch (err) {
+  threw = /missing/i.test(err.message);
 }
-legacy.getRange(2, 1, A.STRIP_COMPLETION_ROWS).setValues(legacyRows);
+check('a missing bitmap sheet throws instead of being created empty', threw);
+check('an existing bitmap sheet is returned as-is',
+      A.ensureStripBitmapSheet({ getSheetByName: (n) => (n === A.STRIP_BITMAP_SHEET_NAME ? 'sheet' : null) }) === 'sheet');
 
-const migrated = A.legacyStripBitmapBytes(legacy);
-check('legacy rows -> bytes reproduces the bitmap byte for byte',
-      migrated.length === signed.length && migrated.every((b, i) => b === signed[i]));
-check('bit count survives the legacy read', A.countStripBits(migrated) === totalBits,
-      `${totalBits} intervals`);
+const migrated = signed;
 
 // ------------------------------------------------------- chunk round trip -----
 const sheet = new FakeSheet();

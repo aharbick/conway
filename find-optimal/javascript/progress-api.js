@@ -9,7 +9,6 @@ const FRAME_SUMMARY_SHEET_NAME = 'Frame Summary';
 
 // Strip search sheet names
 const STRIP_BESTS_SHEET_NAME = 'Strip Bests';
-const STRIP_COMPLETION_SHEET_NAME = 'Strip Completion';
 const STRIP_SUMMARY_SHEET_NAME = 'Strip Summary';
 
 const LOCK_TIMEOUT_MS = 30000; // 30 seconds timeout for locks
@@ -26,9 +25,6 @@ const FRAME_COMPLETION_ROWS = Math.ceil(FRAME_TOTAL_FRAMES / FRAME_BITS_PER_ROW)
 const STRIP_TOTAL_CENTERS = 8548;
 const STRIP_MIDDLE_IDX_COUNT = 512;
 const STRIP_TOTAL_INTERVALS = STRIP_TOTAL_CENTERS * STRIP_MIDDLE_IDX_COUNT; // 4,376,576
-const STRIP_BITS_PER_ROW = 64;
-const STRIP_COMPLETION_ROWS = Math.ceil(STRIP_TOTAL_INTERVALS / STRIP_BITS_PER_ROW); // 68,384 rows
-
 // Strip completion bitmap, stored as base64 chunks instead of 68,384 BigInt rows.
 //
 // The old layout cost ~19s to read: 68,384 rows plus 8 BigInt shift-and-mask operations
@@ -521,29 +517,6 @@ function backfillFrameCompletionFromProgress() {
 // ============================================================================
 
 /**
- * Ensure Strip Completion sheet exists and is properly initialized
- * Uses bitmap format like Frame Completion: single column with 64-bit values
- * Linear index = centerIdx * 512 + middleIdx
- * @param {Spreadsheet} spreadsheet - The spreadsheet object
- * @returns {Sheet} The Strip Completion sheet
- */
-function ensureStripCompletionSheet(spreadsheet) {
-  let sheet = spreadsheet.getSheetByName(STRIP_COMPLETION_SHEET_NAME);
-
-  if (!sheet) {
-    sheet = spreadsheet.insertSheet(STRIP_COMPLETION_SHEET_NAME);
-    // Add header
-    sheet.getRange(1, 1).setValue('stripBitmap');
-
-    // Initialize all rows with 0 (no intervals completed)
-    const initData = Array(STRIP_COMPLETION_ROWS).fill(['0']);
-    sheet.getRange(2, 1, STRIP_COMPLETION_ROWS, 1).setValues(initData);
-  }
-
-  return sheet;
-}
-
-/**
  * Number of bytes in a given chunk row (the last one is short).
  */
 function stripChunkLength(chunkIdx) {
@@ -559,52 +532,27 @@ function zeroChunkBase64(length) {
 }
 
 /**
- * Ensure the base64 bitmap sheet exists, migrating from the legacy 64-bit row format if
- * that sheet is present. Callers that might trigger the migration must hold the lock.
+ * Get the bitmap sheet, or throw if it is missing.
+ *
+ * Deliberately does NOT create it. An absent sheet used to fall back to the legacy
+ * row-format sheet and, failing that, to a freshly zeroed bitmap - which would report
+ * "0 completed intervals" and send the search back to 0:0 to redo everything. Failing
+ * here instead surfaces as a failed cache load, which the client treats as fatal.
+ * Use initializeStripBitmapSheet() to set up a new spreadsheet on purpose.
+ *
  * @param {Spreadsheet} spreadsheet - The spreadsheet object
  * @returns {Sheet} The chunked bitmap sheet
  */
 function ensureStripBitmapSheet(spreadsheet) {
-  let sheet = spreadsheet.getSheetByName(STRIP_BITMAP_SHEET_NAME);
-  if (sheet) {
-    return sheet;
+  const sheet = spreadsheet.getSheetByName(STRIP_BITMAP_SHEET_NAME);
+  if (!sheet) {
+    throw new Error(
+        `${STRIP_BITMAP_SHEET_NAME} sheet is missing. Refusing to create an empty bitmap: ` +
+        `that would look like zero completed intervals and restart the whole search. ` +
+        `Restore the sheet from a backup, or run initializeStripBitmapSheet() if this is ` +
+        `genuinely a new spreadsheet.`);
   }
-
-  sheet = spreadsheet.insertSheet(STRIP_BITMAP_SHEET_NAME);
-  sheet.getRange(1, 1).setValue('stripBitmapBase64');
-
-  // Carry over the legacy bitmap if there is one, otherwise start empty
-  const legacy = spreadsheet.getSheetByName(STRIP_COMPLETION_SHEET_NAME);
-  const bytes = legacy ? legacyStripBitmapBytes(legacy) : new Array(STRIP_BITMAP_BYTES).fill(0);
-
-  writeStripBitmapBytes(sheet, bytes);
   return sheet;
-}
-
-/**
- * Read the legacy Strip Completion sheet (one 64-bit decimal string per row) into a byte
- * array. Only used by the one-time migration.
- * @param {Sheet} legacySheet - The legacy Strip Completion sheet
- * @returns {number[]} Signed byte values, STRIP_BITMAP_BYTES long
- */
-function legacyStripBitmapBytes(legacySheet) {
-  const rows = legacySheet.getRange(2, 1, STRIP_COMPLETION_ROWS, 1).getValues();
-  const bytes = new Array(STRIP_BITMAP_BYTES).fill(0);
-
-  for (let rowIdx = 0; rowIdx < rows.length && rowIdx < STRIP_COMPLETION_ROWS; rowIdx++) {
-    const value = BigInt(rows[rowIdx][0] || '0');
-    if (value === BigInt(0)) {
-      continue;
-    }
-    for (let byteInRow = 0; byteInRow < 8; byteInRow++) {
-      const byteIdx = rowIdx * 8 + byteInRow;
-      if (byteIdx >= STRIP_BITMAP_BYTES) break;
-      const byteValue = Number((value >> BigInt(byteInRow * 8)) & BigInt(0xFF));
-      bytes[byteIdx] = byteValue > 127 ? byteValue - 256 : byteValue;
-    }
-  }
-
-  return bytes;
 }
 
 /**
@@ -764,12 +712,6 @@ function googleSendStripSummaryData(e, spreadsheetId) {
  */
 function googleGetCompleteStripCache(e, spreadsheetId) {
   const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-  const sheet = spreadsheet.getSheetByName(STRIP_BITMAP_SHEET_NAME);
-
-  // First call after deploying the chunked format: build it under the lock, then read
-  if (!sheet) {
-    return withLock(() => stripCacheResponse(ensureStripBitmapSheet(spreadsheet)));
-  }
 
   // Deliberately NOT under withLock. Reading used to hold the script lock for ~19s, which
   // queued every completion and summary write behind it and pushed some past their own
@@ -794,7 +736,8 @@ function stripCacheResponse(sheet) {
   for (let i = 0; i < rows.length; i++) {
     const stored = String(rows[i][0] || '');
     if (!stored) {
-      return sendJsonResponse(false, `Strip bitmap chunk ${i} is empty - run migrateStripCompletionToBase64()`);
+      return sendJsonResponse(false, `Strip bitmap chunk ${i} of ${STRIP_CHUNK_ROWS} is empty - the ` +
+          `${STRIP_BITMAP_SHEET_NAME} sheet is damaged, restore it from a backup`);
     }
     bitmapBase64 += stored.startsWith(STRIP_CHUNK_PREFIX) ? stored.substring(STRIP_CHUNK_PREFIX.length) : stored;
   }
@@ -840,77 +783,28 @@ function countStripBits(bytes) {
 }
 
 /**
- * UTILITY FUNCTION: one-time migration of the strip completion bitmap from the legacy
- * 64-bit-per-row format to base64 chunks.
- * Call this manually in the Apps Script console: migrateStripCompletionToBase64()
+ * UTILITY FUNCTION: create the strip bitmap sheet with nothing marked complete.
+ * Call this manually in the Apps Script console for a brand new spreadsheet only:
+ * initializeStripBitmapSheet()
  *
- * The legacy sheet is left untouched as a backup. Note that completions recorded after
- * the migration land only in the chunked sheet, so rolling the script back means running
- * backfillLegacyStripCompletionFromBase64() first.
+ * Nothing calls this automatically - an empty bitmap means the search starts over from
+ * 0:0, so creating one is always a deliberate act.
  */
-function migrateStripCompletionToBase64() {
+function initializeStripBitmapSheet() {
   const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
 
-  const legacy = spreadsheet.getSheetByName(STRIP_COMPLETION_SHEET_NAME);
-  if (!legacy) {
-    console.error(`${STRIP_COMPLETION_SHEET_NAME} sheet not found - nothing to migrate`);
+  const existing = spreadsheet.getSheetByName(STRIP_BITMAP_SHEET_NAME);
+  if (existing) {
+    const bits = countStripBits(readStripBitmapBytes(existing));
+    console.error(`${STRIP_BITMAP_SHEET_NAME} already exists with ${bits} completed intervals - ` +
+                  `refusing to overwrite it. Delete the sheet first if you really mean to reset.`);
     return;
   }
 
-  console.log(`Reading ${STRIP_COMPLETION_ROWS} legacy rows...`);
-  const bytes = legacyStripBitmapBytes(legacy);
-  const expected = countStripBits(bytes);
-  console.log(`Legacy bitmap has ${expected} completed intervals`);
-
-  let sheet = spreadsheet.getSheetByName(STRIP_BITMAP_SHEET_NAME);
-  if (!sheet) {
-    sheet = spreadsheet.insertSheet(STRIP_BITMAP_SHEET_NAME);
-    sheet.getRange(1, 1).setValue('stripBitmapBase64');
-  }
-
-  console.log(`Writing ${STRIP_CHUNK_ROWS} base64 chunk rows...`);
-  writeStripBitmapBytes(sheet, bytes);
-
-  // Read it back and confirm it round-tripped
-  const actual = countStripBits(readStripBitmapBytes(sheet));
-  if (actual === expected) {
-    console.log(`✅ Migration complete: ${actual} completed intervals in ${STRIP_CHUNK_ROWS} rows`);
-  } else {
-    console.error(`❌ Mismatch after migration: expected ${expected} bits, read back ${actual}`);
-  }
-}
-
-/**
- * UTILITY FUNCTION: write the chunked bitmap back into the legacy sheet.
- * Call this manually in the Apps Script console before rolling the script back to a
- * version that reads the legacy format: backfillLegacyStripCompletionFromBase64()
- */
-function backfillLegacyStripCompletionFromBase64() {
-  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
-
-  const sheet = spreadsheet.getSheetByName(STRIP_BITMAP_SHEET_NAME);
-  if (!sheet) {
-    console.error(`${STRIP_BITMAP_SHEET_NAME} sheet not found - nothing to backfill from`);
-    return;
-  }
-
-  const bytes = readStripBitmapBytes(sheet);
-  console.log(`Chunked bitmap has ${countStripBits(bytes)} completed intervals`);
-
-  const legacy = ensureStripCompletionSheet(spreadsheet);
-  const rows = [];
-  for (let rowIdx = 0; rowIdx < STRIP_COMPLETION_ROWS; rowIdx++) {
-    let value = BigInt(0);
-    for (let byteInRow = 0; byteInRow < 8; byteInRow++) {
-      const byteIdx = rowIdx * 8 + byteInRow;
-      if (byteIdx >= STRIP_BITMAP_BYTES) break;
-      value |= BigInt(bytes[byteIdx] & 0xFF) << BigInt(byteInRow * 8);
-    }
-    rows.push([value.toString()]);
-  }
-
-  legacy.getRange(2, 1, STRIP_COMPLETION_ROWS, 1).setValues(rows);
-  console.log(`✅ Wrote ${STRIP_COMPLETION_ROWS} legacy rows`);
+  const sheet = spreadsheet.insertSheet(STRIP_BITMAP_SHEET_NAME);
+  sheet.getRange(1, 1).setValue('stripBitmapBase64');
+  writeStripBitmapBytes(sheet, new Array(STRIP_BITMAP_BYTES).fill(0));
+  console.log(`✅ Created ${STRIP_BITMAP_SHEET_NAME} with ${STRIP_CHUNK_ROWS} empty chunk rows`);
 }
 
 /**
