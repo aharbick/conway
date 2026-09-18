@@ -40,6 +40,45 @@ of magnitude slower.
 It's not feasible to use a bloom filter lookup to short-circuit computeNextGeneration faster than just 
 running the computations themselves.
 
+## Update 2026-09-18: it is feasible, with a different design
+
+The conclusion above is correct for the design measured here, and the reasoning is worth
+keeping. But three changes turn it around, and strip search now ships with a Bloom filter
+enabled by `--oracle`, measured at 2.28x on the phase-2 kernel and 1.92x end to end.
+
+What changed:
+
+1. **Polarity.** The attempt above emits a candidate on a *hit*, using the filter as a
+   positive test for long-lived patterns. That forces near-exactness, because every false
+   positive manufactures a spurious candidate - hence `p = 1e-08` and 3.2GB. The oracle
+   instead discards on a *miss*: absence from the cache proves the state lives fewer than
+   180 more generations, so the pattern cannot reach the target. A false positive then
+   costs nothing at all - the pattern simply keeps simulating exactly as it would have
+   without the filter.
+
+2. **Which makes the filter 100x smaller.** Tolerating 0.34% false positives instead of
+   1e-08 brings 19,676,112 keys down to **34MB**, and it is blocked: all k bits for a key
+   live in one 64-byte line, so a probe is one memory transaction instead of 3 scattered
+   ones over 3.2GB. That is the difference between a DRAM round trip and something that is
+   usually already in cache. The 150ns per check measured above was the 3.2GB working set,
+   not the idea.
+
+3. **And most probes disappear.** The cache's longest terminating state is 206 generations,
+   and it is exhaustive above 180, so *no* 7x7-coverable state can exceed 206. A pattern
+   that fits inside a 7x7 box at generation g is therefore capped at g + 206, which for a
+   target of 215 means anything covered by generation 8 can be discarded with **no lookup
+   at all**. That tier alone handles 70-80% of patterns; the filter only sees the rest.
+
+Also worth noting from the measurements: 98.2% of strip pairs eventually fit inside a 7x7
+box, 66% of them within six generations, and 78.1% of all generation-steps happen after that
+point. That is the size of the prize, and it is why the lookup is worth arranging carefully
+rather than abandoning.
+
+See `include/subgrid_bloom.h` for the filter format and the two bounds, and
+`data/README.md` for building and validating the artifact. The soundness argument rests on
+the cache being exhaustive, so `validate-subgrid-cache` re-derives the maximum and
+re-enumerates a slice of the 2^49 space to check for gaps.
+
 ## Analysis
 
 We built a program that read in our cache data, tested all cache entries for false negatives,

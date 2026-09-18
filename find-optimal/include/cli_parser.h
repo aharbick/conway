@@ -70,6 +70,9 @@ typedef struct ProgramArgs {
   std::string subgridCachePath;
   CycleDetectionAlgorithm cycleDetection;
   StripKernel stripKernel;       // Phase-2 kernel used by strip search
+  bool useOracle;                // Prune with the 7x7 Bloom filter (strip search only)
+  uint32_t oracleTarget;         // 0 = derive from the best known result + 1
+  std::string bloomFilePath;     // 7x7 Bloom filter artifact
   uint64_t compareFrameIdx;
   uint64_t subgridCacheBegin;
   int workerNum;

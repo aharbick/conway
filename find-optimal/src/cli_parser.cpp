@@ -37,6 +37,8 @@ static struct argp_option argp_options[] = {
     {0, 0, 0, 0, "Search options:", 2},
     {"cycle-detection", 'D', "ALGORITHM", 0, "Cycle detection algorithm: 'floyd' or 'nivasch' (default: 'floyd')", 2},
     {"strip-kernel", 'K', "KERNEL", 0, "Strip search combination kernel: 'fast' or 'legacy' (default: 'fast')", 2},
+    {"oracle", 'O', "TARGET", OPTION_ARG_OPTIONAL, "Strip search: skip patterns that cannot reach TARGET generations, using the 7x7 Bloom filter. Much faster, but only reports results at or above TARGET (every 64th middleIdx still runs exact for the histogram). Omit TARGET to use the best known result + 1.", 2},
+    {"bloom-file", 'B', "FILE", 0, "7x7 Bloom filter for --oracle (default: " DEFAULT_SUBGRID_BLOOM_PATH ").", 2},
     {"subgrid-cache-file", 'C', "FILE", 0, "Load 7x7 subgrid cache from FILE to use for early termination optimization.", 2},
     {"compute-subgrid-cache", 'c', "PATH", 0, "Compute 7x7 subgrid cache for all 2^49 patterns and save to disk at PATH.", 2},
     {"subgrid-cache-begin", 'b', "NUMBER", 0, "Starting pattern index for subgrid cache computation (for resuming).", 2},
@@ -121,6 +123,9 @@ static bool parseStripKernel(const char* arg, ProgramArgs* args) {
 
   if (str == "fast") {
     args->stripKernel = STRIP_KERNEL_FAST;
+  args->useOracle = false;
+  args->oracleTarget = 0;
+  args->bloomFilePath = DEFAULT_SUBGRID_BLOOM_PATH;
     return true;
   } else if (str == "legacy") {
     args->stripKernel = STRIP_KERNEL_LEGACY;
@@ -480,6 +485,24 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
       argp_failure(state, 1, 0, "Invalid strip kernel");
     }
     break;
+  case 'O':
+    a->useOracle = true;
+    if (arg && *arg != '\0') {
+      try {
+        unsigned long target = std::stoul(arg);
+        // Below 208 the no-lookup tier cannot fire at all, which defeats the point
+        if (target < 182 || target > 10000) {
+          argp_failure(state, 1, 0, "Oracle target must be between 182 and 10000");
+        }
+        a->oracleTarget = (uint32_t)target;
+      } catch (const std::exception&) {
+        argp_failure(state, 1, 0, "Invalid oracle target '%s'", arg);
+      }
+    }
+    break;
+  case 'B':
+    a->bloomFilePath = arg;
+    break;
   case 's':
     if (!parseSimulateType(arg, a)) {
       argp_failure(state, 1, 0, "Invalid simulate type");
@@ -577,6 +600,9 @@ void initializeDefaultArgs(ProgramArgs* args) {
   args->subgridCachePath = "";
   args->cycleDetection = CYCLE_DETECTION_FLOYD;
   args->stripKernel = STRIP_KERNEL_FAST;
+  args->useOracle = false;
+  args->oracleTarget = 0;
+  args->bloomFilePath = DEFAULT_SUBGRID_BLOOM_PATH;
   args->compareFrameIdx = 0;
   args->subgridCacheBegin = 0;
   args->workerNum = 1;

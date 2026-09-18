@@ -154,6 +154,33 @@ Due to the speed-of-light limit (1 cell/generation), regions separated by 4+ cel
 
 **Strategy 3 subsumes strategies 1 and 2**, so we only implement the most powerful version.
 
+#### Strategy 4: The 7x7 Oracle (~2.28x, `--oracle`)
+
+Measured on a 5090: 98.2% of strip pairs eventually fit inside a 7x7 box, 66% of them within
+six generations, and 78.1% of all generation-steps happen after that point. The 7x7 subgrid
+cache can decide those patterns without simulating them.
+
+The cache holds every 7x7-coverable 8x8 state with a terminating lifetime of 180 or more
+generations, and its longest is 206. Since it is exhaustive above its threshold, no
+7x7-coverable state can exceed 206 generations at all. For a target of T:
+
+* A pattern covered at generation g is capped at g + 206, so it can be discarded outright
+  when g <= T - 207. No lookup - this handles 70-80% of pairs.
+* A state absent from the cache lives fewer than 180 more generations, so the pattern can be
+  discarded when g <= T - 181 unless a 34MB Bloom filter says the state might be present.
+  This handles most of the rest; ~2% survive and run normally.
+
+The target defaults to one past the best known terminating pattern, so finding a longer one
+tightens the bound and speeds up the remainder of the search.
+
+This only reports patterns at or above the target, so it cannot supply an interval best for
+the histogram. Every 64th middleIdx therefore runs the exact kernel instead, which keeps a
+uniform sample of the distribution for about 2% of the throughput. Log lines carry
+`mode=oracle` or `mode=exact` to say which ran.
+
+See docs/BLOOM_FILTER.md for why an earlier attempt at this concluded the opposite, and
+include/subgrid_bloom.h for the bounds.
+
 ### Center 4x4 Symmetry Reduction (~7.7x additional)
 
 While we cannot apply full D4 symmetry to the entire middle block (since valid strips depend on the specific configuration), we *can* apply symmetry reduction to the **center 4x4 portion** of the middle block.

@@ -56,6 +56,25 @@
 // on the GPU.)
 #define STRIP_SEARCH_MAX_CANDIDATES (1ULL << 26)
 
+// 7x7 oracle for strip search (see include/subgrid_bloom.h)
+//
+// Patterns that fit inside a 7x7 box early cannot reach a high target, so most of phase 2's
+// work can be skipped when hunting for a new record. Measured 2.28x on a 5090; the launch
+// geometry differs from the plain fast kernel because lanes now refill every ~7 generations
+// instead of ~28 and need more warps in flight to cover it.
+#define STRIP_ORACLE_THREADS_PER_BLOCK 128
+#define STRIP_ORACLE_X_BLOCKS 1
+#define DEFAULT_SUBGRID_BLOOM_PATH "data/7x7subgrid-bloom.bin"
+//
+// The oracle only reports patterns at or above its target, so it cannot supply an interval
+// best for the histogram. Every Nth middleIdx therefore runs the exact kernel instead,
+// which keeps a uniform sample of the distribution for about 2% of the throughput.
+#define STRIP_ORACLE_HISTOGRAM_SAMPLE 64
+//
+// Used only when the best result is unavailable (--dont-save-results): one past the best
+// known terminating pattern as of 2026-09-18.
+#define STRIP_ORACLE_FALLBACK_TARGET 215
+
 // Subgrid cache constants
 #define SUBGRID_TOTAL_PATTERNS (1ULL << 49)  // 7x7 grid = 2^49 patterns
 #ifdef TOPOLOGY_TORUS

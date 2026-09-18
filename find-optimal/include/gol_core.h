@@ -421,6 +421,28 @@ __host__ __device__ static inline bool isCoverableBy7x7(uint64_t pattern) {
   return false;
 }
 
+// isCoverableBy7x7, reordered to fail on its first term, and true for the empty pattern.
+//
+// The four 7x7 positions are the product of two row choices and two column choices, so
+//   (A and C) or (A and D) or (B and C) or (B and D)  ==  (A or B) and (C or D)
+// where A/B are "row 7 empty" / "row 0 empty" and C/D are "last column empty" / "first
+// column empty". That makes this two tests instead of four, and putting rows first pays off
+// because dense early generations fail there - the common case when this runs on every
+// generation of the hot path.
+//
+// It differs from isCoverableBy7x7 on exactly one input: the empty pattern, which
+// isCoverableBy7x7 rejects by convention and this accepts. For the oracle that is both
+// harmless and useful - a pattern that has died cannot reach any positive target, so
+// treating it as coverable discards it a generation sooner than the cycle test would.
+// Callers that need the original's convention must not use this.
+__host__ __device__ static inline bool isCoverableBy7x7OrEmpty(uint64_t pattern) {
+  bool rows = ((pattern & 0xFF00000000000000ULL) == 0) || ((pattern & 0x00000000000000FFULL) == 0);
+  if (!rows) {
+    return false;
+  }
+  return ((pattern & GOL_8X8_LEFT_EDGE_MASK) == 0) || ((pattern & GOL_8X8_RIGHT_EDGE_MASK) == 0);
+}
+
 // Core 6-generation stepping and cycle detection logic
 // Used by both CPU tests and CUDA kernels
 __host__ __device__ static inline bool step6GenerationsAndCheck(uint64_t* g1, uint64_t pattern, uint16_t* generations,
