@@ -70,7 +70,14 @@ function withLock(operation) {
   } catch (error) {
     return sendJsonResponse(false, error.toString());
   } finally {
-    // Always release the lock
+    // Spreadsheet writes are buffered, and Apps Script does not flush them when a lock is
+    // released. Without this, the next execution can read a stale cell and overwrite it -
+    // which for a bitmap chunk means silently dropping a completed interval's bit.
+    try {
+      SpreadsheetApp.flush();
+    } catch (flushError) {
+      console.error(`flush before releasing the lock failed: ${flushError}`);
+    }
     lock.releaseLock();
   }
 }
@@ -576,6 +583,40 @@ function writeStripBitmapBytes(sheet, bytes) {
   sheet.getRange(2, 1, STRIP_CHUNK_ROWS, 1).setValues(rows);
 }
 
+// Base64 symbols in value order; index = the 6 bits the symbol encodes.
+const STRIP_B64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+let stripB64BitCounts = null;
+
+/**
+ * Count the set bits in a base64 string without decoding it.
+ *
+ * Each symbol carries 6 bits of the byte stream and encoders zero-fill the tail, so summing
+ * the symbols' bit counts is exactly the popcount of the encoded bytes; '=' padding adds
+ * nothing. That keeps the completion count derivable on the read path, where decoding
+ * 547KB would be far too slow.
+ *
+ * @param {string} encoded - Base64 text
+ * @returns {number} Number of set bits
+ */
+function countBitsInBase64(encoded) {
+  if (!stripB64BitCounts) {
+    stripB64BitCounts = new Uint8Array(128);
+    for (let value = 0; value < 64; value++) {
+      let bits = 0;
+      for (let b = 0; b < 6; b++) {
+        if (value & (1 << b)) bits++;
+      }
+      stripB64BitCounts[STRIP_B64_ALPHABET.charCodeAt(value)] = bits;
+    }
+  }
+
+  let count = 0;
+  for (let i = 0; i < encoded.length; i++) {
+    count += stripB64BitCounts[encoded.charCodeAt(i)];
+  }
+  return count;
+}
+
 /**
  * Read the cached completion count.
  * @param {Sheet} sheet - The chunked bitmap sheet
@@ -780,13 +821,21 @@ function stripCacheResponse(sheet) {
     bitmapBase64 += stored.startsWith(STRIP_CHUNK_PREFIX) ? stored.substring(STRIP_CHUNK_PREFIX.length) : stored;
   }
 
+  // Derive the count from the bitmap we are already returning, and correct C1 if it has
+  // drifted. C1 exists for dashboard formulas; deriving the number here means a lost
+  // increment fixes itself on the next read instead of persisting.
+  const completedIntervals = countBitsInBase64(bitmapBase64);
+  const cachedCount = readStripCompletedCount(sheet);
+  if (cachedCount !== completedIntervals) {
+    writeStripCompletedCount(sheet, completedIntervals);
+  }
+
   return sendJsonResponse(true, 'Strip cache retrieved successfully', {
     bitmap: bitmapBase64,
     totalIntervals: STRIP_TOTAL_INTERVALS,
     bitmapSize: STRIP_BITMAP_BYTES,
-    // Cached count, for cross-checking against the bitmap itself. null means it has not
-    // been seeded yet - run recountStripCompletions().
-    completedIntervals: readStripCompletedCount(sheet)
+    completedIntervals: completedIntervals,  // derived from the bitmap, always exact
+    cachedCount: cachedCount                 // what C1 held before this call, for drift checks
   });
 }
 
@@ -853,8 +902,8 @@ function initializeStripBitmapSheet() {
  * UTILITY FUNCTION: recompute the cached completion count in C1 from the bitmap.
  * Call this manually in the Apps Script console: recountStripCompletions()
  *
- * Needed once to seed the count, after restoring the sheet from a backup (importing over
- * the sheet wipes C1), and any time you want to confirm the count has not drifted.
+ * Rarely needed now that getCompleteStripCache corrects C1 on every read. Still useful
+ * right after restoring the sheet from a backup, since importing over the sheet wipes C1.
  */
 function recountStripCompletions() {
   const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);

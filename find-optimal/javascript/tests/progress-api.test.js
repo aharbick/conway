@@ -23,12 +23,17 @@ global.Utilities = {
   // Apps Script hands back SIGNED bytes; the code under test has to cope with that
   base64Decode: (s) => Array.from(Buffer.from(s, 'base64')).map((b) => (b > 127 ? b - 256 : b)),
 };
-global.SpreadsheetApp = {};
+global.SpreadsheetApp = { flush: () => lockEvents.push('flush') };
 global.ContentService = {
   MimeType: { JSON: 'json' },
   createTextOutput: (t) => ({ setMimeType: () => t }),
 };
-global.LockService = { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) };
+// Record the order of flush vs releaseLock: releasing a lock with writes still buffered
+// lets the next execution read a stale cell and overwrite it.
+const lockEvents = [];
+global.LockService = {
+  getScriptLock: () => ({ tryLock: () => true, releaseLock: () => lockEvents.push('release') }),
+};
 
 /** A sheet addressed by (row, col); column A holds the header plus the chunks. */
 function FakeSheet() {
@@ -52,6 +57,7 @@ const A = new Function(
   fs.readFileSync(apiPath, 'utf8') +
     '\nreturn {stripChunkLength, writeStripBitmapBytes, readStripBitmapBytes, countStripBits,' +
     ' setStripIntervalComplete, ensureStripBitmapSheet, readStripCompletedCount, handleRequest,' +
+    ' countBitsInBase64,' +
     ' writeStripCompletedCount, STRIP_BITMAP_BYTES, STRIP_CHUNK_ROWS, STRIP_COUNT_COL,' +
     ' STRIP_CHUNK_BYTES, STRIP_CHUNK_PREFIX, STRIP_BITMAP_SHEET_NAME, STRIP_MIDDLE_IDX_COUNT,' +
     ' STRIP_TOTAL_CENTERS};'
@@ -204,8 +210,12 @@ const served = new FakeSheet();
 A.writeStripBitmapBytes(served, migrated.slice());
 A.writeStripCompletedCount(served, totalBits);
 
-const withSheet = { openById: () => ({ getSheetByName: (n) => (n === A.STRIP_BITMAP_SHEET_NAME ? served : null) }) };
-const withoutSheet = { openById: () => ({ getSheetByName: () => null }) };
+const flushStub = () => lockEvents.push('flush');
+const withSheet = {
+  flush: flushStub,
+  openById: () => ({ getSheetByName: (n) => (n === A.STRIP_BITMAP_SHEET_NAME ? served : null) }),
+};
+const withoutSheet = { flush: flushStub, openById: () => ({ getSheetByName: () => null }) };
 const request = (params, spreadsheetApp = withSheet) => {
   global.SpreadsheetApp = spreadsheetApp;
   return JSON.parse(A.handleRequest({ parameter: { apiKey: 'test-key', ...params } }));
@@ -218,6 +228,24 @@ check('it returns the bitmap intact',
       cacheResp.success && Buffer.from(cacheResp.bitmap, 'base64').equals(bitmap));
 check('it reports the cached completion count', cacheResp.completedIntervals === totalBits,
       `${cacheResp.completedIntervals}`);
+
+// The server counts bits straight from base64; this must agree with decoding the bytes.
+check('base64 popcount matches a byte-level popcount',
+      A.countBitsInBase64(bitmap.toString('base64')) === totalBits,
+      `${A.countBitsInBase64(bitmap.toString('base64'))} vs ${totalBits}`);
+check('base64 popcount handles an empty string', A.countBitsInBase64('') === 0);
+check('base64 popcount ignores padding',
+      A.countBitsInBase64(Buffer.from([0xff]).toString('base64')) === 8,
+      Buffer.from([0xff]).toString('base64'));
+
+// A drifted C1 must be corrected by the next read rather than persisting
+served.getRange(1, A.STRIP_COUNT_COL).setValue(totalBits - 5);
+const healResp = request({ action: 'getCompleteStripCache' });
+check('a drifted C1 is reported as it was found', healResp.cachedCount === totalBits - 5,
+      `${healResp.cachedCount}`);
+check('the response count is derived, not the drifted cache', healResp.completedIntervals === totalBits);
+check('and C1 is corrected in place', A.readStripCompletedCount(served) === totalBits,
+      `C1=${A.readStripCompletedCount(served)}`);
 
 const incResp = request({ action: 'incrementStripCompletion', centerIdx: '839', middleIdx: '400' });
 check('incrementStripCompletion succeeds', incResp.success === true,
@@ -234,6 +262,12 @@ check('a missing bitmap sheet becomes a JSON error, not an empty bitmap',
       missing.success === false && /missing/i.test(missing.error || ''),
       missing.success ? 'returned success!' : '');
 check('and no bitmap is handed back in that case', missing.bitmap === undefined);
+
+// ------------------------------------------------- flush before unlocking -----
+lockEvents.length = 0;
+request({ action: 'incrementStripCompletion', centerIdx: '500', middleIdx: '7' });
+check('a locked write flushes before releasing the lock',
+      lockEvents.join(',') === 'flush,release', lockEvents.join(',') || '(nothing recorded)');
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

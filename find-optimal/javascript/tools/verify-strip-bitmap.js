@@ -104,14 +104,31 @@ function legacyCsvToBitmap(path) {
       break;
     }
   }
-  // C1 of the bitmap sheet caches this count for dashboard formulas. A second source of
-  // truth drifts silently unless something checks it, so check it.
-  if (body.completedIntervals === null || body.completedIntervals === undefined) {
-    console.log(`\nNOTE: the sheet's cached count (C1) is not set - run recountStripCompletions()`);
+  // Which count the response carries depends on the deployed version, so branch on the
+  // fields present rather than assuming.
+  if (body.cachedCount !== undefined) {
+    // Current version: completedIntervals is derived from the base64 on the server, and the
+    // read corrects C1. Counting the decoded bytes here checks the server's arithmetic by a
+    // different route, so the two should agree exactly.
+    check("server's base64 popcount matches an independent byte-level popcount",
+          body.completedIntervals === liveBits,
+          body.completedIntervals === liveBits ? `${liveBits}` : `server=${body.completedIntervals} vs ${liveBits}`);
+    if (body.cachedCount !== liveBits) {
+      console.log(`\nNOTE: C1 held ${body.cachedCount === null ? '(unset)' : body.cachedCount} vs ` +
+                  `${liveBits} in the bitmap - this read corrected it`);
+    }
+  } else if (body.completedIntervals !== undefined) {
+    // Older version: completedIntervals *is* the cached C1 value, with nothing correcting
+    // it, so a mismatch is drift to report rather than a failure.
+    if (body.completedIntervals !== liveBits) {
+      console.log(`\nNOTE: cached count in C1 is ${body.completedIntervals} vs ${liveBits} in the ` +
+                  `bitmap. The deployed script does not self-correct it - deploy the current ` +
+                  `progress-api.js, or run recountStripCompletions().`);
+    } else {
+      console.log(`\ncached count in C1 agrees with the bitmap: ${liveBits}`);
+    }
   } else {
-    check('cached count in C1 matches a popcount of the bitmap', body.completedIntervals === liveBits,
-          body.completedIntervals === liveBits ? `${body.completedIntervals}`
-            : `C1=${body.completedIntervals} vs bitmap=${liveBits} - run recountStripCompletions()`);
+    console.log(`\nNOTE: the deployed script returns no completion count`);
   }
 
   console.log(`\nlive: ${liveBits} intervals complete, first incomplete ${label(first)}, highest complete ${label(highest)}`);

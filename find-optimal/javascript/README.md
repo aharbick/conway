@@ -82,11 +82,24 @@ Row 1 of columns B and C holds a cached count of completed intervals:
 | **2** | `b64:////…` | | |
 
 `setStripIntervalComplete` bumps C1 only when a bit actually flips 0→1, so re-running an
-interval cannot inflate it. If C1 is missing or not a number - importing a CSV over the
-sheet wipes it - the next completion rebuilds it by counting the bitmap rather than
-restarting the count at 1. `recountStripCompletions()` recomputes it on demand, and
-`getCompleteStripCache` returns it as `completedIntervals` so `tools/verify-strip-bitmap.js`
-can check it against a popcount of the bitmap itself.
+interval cannot inflate it, and if C1 is missing or not a number - importing a CSV over the
+sheet wipes it - the next completion rebuilds it from the bitmap rather than restarting the
+count at 1.
+
+C1 is a cache, not the source of truth. `getCompleteStripCache` derives the count from the
+bitmap it is already returning and rewrites C1 when the two disagree, so a lost increment
+corrects itself on the next read instead of persisting. The count is derived by summing bit
+counts per base64 symbol rather than decoding 547KB: each symbol carries 6 bits and
+encoders zero-fill the tail, so the sum is exact. The response carries both
+`completedIntervals` (derived, always exact) and `cachedCount` (what C1 held beforehand),
+which is how `tools/verify-strip-bitmap.js` reports drift. `recountStripCompletions()` is
+still there for use right after a restore.
+
+Note that `withLock` calls `SpreadsheetApp.flush()` before releasing the lock. Apps Script
+buffers spreadsheet writes and does *not* flush them on release, so without it the next
+execution can read a stale cell and overwrite it - for a bitmap chunk that means silently
+dropping a completed interval. C1 was observed drifting 3 behind this way before the flush
+was added.
 
 Use it for dashboard formulas, e.g. in Strip Analysis:
 
