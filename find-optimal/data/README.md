@@ -27,6 +27,18 @@ cache's min and max generation counts (180 and 206) so the bounds the search der
 with the artifact instead of being hardcoded. See include/subgrid_bloom.h for why those two
 numbers are all the search needs.
 
+## Oracle progress (strip-completion-oracle.bin)
+
+Not in the repo, and not something to build: `--oracle` creates it on first run and writes
+it after every interval. It records which intervals were cleared of patterns at or above the
+target, which is the oracle's much weaker claim than the exhaustive completion bitmap in
+Google Sheets - see include/oracle_progress.h for why the two are kept apart.
+
+It is machine- and target-specific local state, so it is gitignored. Delete it to re-run
+intervals, or merge two of them with a bitwise OR if you partition the search across
+workers. The Bloom filter next to it is the opposite: a build artifact, committed, and
+required.
+
 ### Validating the cache
 
 The search's early-outs are only as sound as this cache, so it can be re-checked:

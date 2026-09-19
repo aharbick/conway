@@ -8,6 +8,13 @@
 
 # Temp directory for a disk-based request queue (for persistent retry)
 request-queue/
+request-queue-*/
+
+# Oracle-mode progress, written as the search runs (see include/oracle_progress.h).
+# Local state, not an artifact: it records which intervals hold nothing at or above the
+# target, which is machine- and target-specific. The Bloom filter next to it IS committed.
+data/strip-completion-oracle.bin
+data/*.bin.tmp
 
 # Don't allow pushing the uncompressed data
 data/7x7subgrid-cache.json
