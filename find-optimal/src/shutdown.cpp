@@ -20,8 +20,11 @@ void handleSignal(int) {
     _exit(130);
   }
 
+  // Deliberately does not promise a drain: most intervals queue nothing, so there is
+  // usually nothing to flush and drainGoogleRequestQueue returns silently. When there is
+  // something - a sampled exact interval, or a record - it announces itself.
   const char msg[] =
-      "\nShutting down: finishing the current middle block, then draining the upload queue."
+      "\nShutting down after the current middle block."
       " Press Ctrl-C again to exit immediately.\n";
   ssize_t ignored = write(STDERR_FILENO, msg, sizeof(msg) - 1);
   (void)ignored;
