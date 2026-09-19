@@ -254,7 +254,10 @@ __global__ void findCandidatesForStripBlockOracle(
     uint32_t numUniqueBottom,
     uint64_t* candidates,
     uint64_t* numCandidates,
-    OracleTierTable tiers
+    const uint32_t* __restrict__ bloomFilter,
+    uint16_t target,
+    uint16_t tier1Max,
+    uint16_t tier2Max
 ) {
   uint32_t topIdx = blockIdx.y;
   if (topIdx >= numUniqueTop) {
@@ -287,17 +290,13 @@ __global__ void findCandidatesForStripBlockOracle(
     generations++;
 
     // One oracle test per pattern, at the first generation it fits inside a 7x7 box
-    if (!probed && generations <= tiers.tier2Max && isCoverableBy7x7OrEmpty(g)) {
+    if (!probed && generations <= tier2Max && isCoverableBy7x7OrEmpty(g)) {
       probed = true;
-      if (generations <= tiers.tier1Max) {
-        active = false;  // capped at generations + the cache maximum, short of the target
+      if (generations <= tier1Max) {
+        active = false;
         continue;
       }
-      // Otherwise the pattern needs a state living target - generations more, which the
-      // most selective tier that covers that question can rule out. Covered early means
-      // needing a near-maximum state, and there are very few of those, so those lookups go
-      // to filters small enough to stay in cache.
-      if (!subgridBloomMightReach(tiers, g, generations)) {
+      if (!subgridBloomMaybe(bloomFilter, g)) {
         active = false;
         continue;
       }
@@ -312,7 +311,7 @@ __global__ void findCandidatesForStripBlockOracle(
     h2 = h1;
     h1 = g;
 
-    if (generations >= tiers.target) {
+    if (generations >= target) {
       uint64_t idx = atomicAdd((unsigned long long*)numCandidates, 1ULL);
       if (idx < STRIP_SEARCH_MAX_CANDIDATES) {
         candidates[idx] = pattern;
@@ -324,9 +323,8 @@ __global__ void findCandidatesForStripBlockOracle(
   }
 }
 
-// Load the 7x7 Bloom filters onto the device, or fail loudly. Returns the header so the
-// caller can derive the generation bounds and tier choices from the artifact rather than
-// from constants.
+// Load the 7x7 Bloom filter onto the device, or fail loudly. Returns the header so the
+// caller can derive the generation bounds from the artifact rather than from constants.
 __host__ static bool loadSubgridBloom(const std::string& path, SubgridBloomHeader* header,
                                       uint32_t** d_filter) {
   FILE* f = fopen(path.c_str(), "rb");
@@ -340,34 +338,35 @@ __host__ static bool loadSubgridBloom(const std::string& path, SubgridBloomHeade
 
   if (fread(header, sizeof(*header), 1, f) != 1 ||
       memcmp(header->magic, SUBGRID_BLOOM_MAGIC, 8) != 0 ||
-      header->version != SUBGRID_BLOOM_VERSION || header->blockBits != SUBGRID_BLOOM_BLOCK_BITS ||
-      header->k != SUBGRID_BLOOM_K || header->numTiers == 0 ||
-      header->numTiers > SUBGRID_BLOOM_MAX_TIERS || header->totalWords == 0) {
+      header->version != SUBGRID_BLOOM_VERSION || header->bitsLog != SUBGRID_BLOOM_BITS_LOG ||
+      header->blockBits != SUBGRID_BLOOM_BLOCK_BITS || header->k != SUBGRID_BLOOM_K) {
     Logger::out() << "[FATAL] " << path << " is not a filter this build understands"
                   << " - rebuild it with build-subgrid-bloom.\n";
     fclose(f);
     return false;
   }
 
-  std::vector<uint32_t> filter(header->totalWords);
-  if (fread(filter.data(), sizeof(uint32_t), header->totalWords, f) != header->totalWords) {
+  std::vector<uint32_t> filter(SUBGRID_BLOOM_WORDS);
+  if (fread(filter.data(), sizeof(uint32_t), SUBGRID_BLOOM_WORDS, f) != SUBGRID_BLOOM_WORDS) {
     Logger::out() << "[FATAL] " << path << " is truncated\n";
     fclose(f);
     return false;
   }
   fclose(f);
 
-  cudaCheckError(cudaMalloc(d_filter, header->totalWords * sizeof(uint32_t)));
-  cudaCheckError(cudaMemcpy(*d_filter, filter.data(), header->totalWords * sizeof(uint32_t),
-                            cudaMemcpyHostToDevice));
+  cudaCheckError(cudaMalloc(d_filter, SUBGRID_BLOOM_BYTES));
+  cudaCheckError(cudaMemcpy(*d_filter, filter.data(), SUBGRID_BLOOM_BYTES, cudaMemcpyHostToDevice));
   return true;
 }
 
 // Execute strip search for a single middle block using StripSearchMemory
 // Hash table is allocated locally and reused between top/bottom strip finding
-// The oracle's parameters, resolved from the filter's header. A null base disables it.
+// Parameters for the oracle, derived once from the filter's header
 struct OracleParams {
-  OracleTierTable table{};
+  const uint32_t* d_filter = nullptr;  // nullptr disables the oracle
+  uint16_t target = 0;
+  uint16_t tier1Max = 0;
+  uint16_t tier2Max = 0;
 };
 
 __host__ void executeStripSearchForBlock(
@@ -404,7 +403,7 @@ __host__ void executeStripSearchForBlock(
   cudaCheckError(cudaMemcpy(mem.d_numCandidates(), &zero64, sizeof(uint64_t), cudaMemcpyHostToDevice));
 
   if (*mem.h_numUniqueTop() > 0 && *mem.h_numUniqueBottom() > 0) {
-    if (oracle.table.base != nullptr) {
+    if (oracle.d_filter != nullptr) {
       dim3 grid(STRIP_ORACLE_X_BLOCKS, *mem.h_numUniqueTop());
       findCandidatesForStripBlockOracle<<<grid, STRIP_ORACLE_THREADS_PER_BLOCK>>>(
           middleBlock,
@@ -414,7 +413,10 @@ __host__ void executeStripSearchForBlock(
           *mem.h_numUniqueBottom(),
           mem.d_candidates(),
           mem.d_numCandidates(),
-          oracle.table);
+          oracle.d_filter,
+          oracle.target,
+          oracle.tier1Max,
+          oracle.tier2Max);
     } else if (stripKernel == STRIP_KERNEL_LEGACY) {
       findCandidatesForStripBlock<<<STRIP_SEARCH_COMBO_GRID_SIZE, STRIP_SEARCH_COMBO_THREADS_PER_BLOCK>>>(
           middleBlock,
@@ -505,16 +507,17 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
       target = (gBestGenerations > 0) ? (uint32_t)gBestGenerations + 1 : STRIP_ORACLE_FALLBACK_TARGET;
     }
 
-    subgridBloomBuildTierTable(header, target, &oracle.table);
-    oracle.table.base = d_bloomFilter;
+    oracle.target = (uint16_t)target;
+    oracle.tier1Max = (uint16_t)subgridBloomTier1Max(header, target);
+    oracle.tier2Max = (uint16_t)subgridBloomTier2Max(header, target);
+    oracle.d_filter = d_bloomFilter;
 
     Logger::out() << "7x7 oracle enabled: target=" << target << " generations"
                   << " (cache " << header.numKeys << " states, "
-                  << header.minGenerations << ".." << header.maxGenerations << " generations, "
-                  << header.numTiers << " filter tiers)\n";
+                  << header.minGenerations << ".." << header.maxGenerations << " generations)\n";
     Logger::out() << "  discarding a 7x7-coverable pattern needs no lookup up to generation "
-                  << oracle.table.tier1Max << ", and a filter miss up to generation "
-                  << oracle.table.tier2Max << "\n";
+                  << oracle.tier1Max << ", and a filter miss up to generation "
+                  << oracle.tier2Max << "\n";
     Logger::out() << "  every " << STRIP_ORACLE_HISTOGRAM_SAMPLE
                   << "th middleIdx still runs the exact kernel, to keep feeding the histogram\n";
 
@@ -527,7 +530,7 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
                   << ", NOT the shared completion bitmap: clearing an interval of patterns"
                   << " at or above the target is not the same as searching it exhaustively\n";
 
-    if (oracle.table.tier2Max == 0) {
+    if (oracle.tier2Max == 0) {
       Logger::out() << "[FATAL] target " << target << " is too low for the oracle to prune"
                     << " (needs > " << header.minGenerations + 1 << ")\n";
       cudaFree(d_hashTable);
@@ -558,21 +561,21 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
       if (!cli->dontSaveResults && isGoogleStripIntervalComplete(centerIdx, middleIdx)) {
         continue;
       }
-      if (oracle.table.base != nullptr && oracleProgress.isComplete(centerIdx, middleIdx)) {
+      if (oracle.d_filter != nullptr && oracleProgress.isComplete(centerIdx, middleIdx)) {
         continue;
       }
 
       // A new record raises the bar, which prunes harder and speeds up what is left. Only
       // ever upward: intervals already cleared at a lower target stay valid.
-      if (oracle.table.base != nullptr && cli->oracleTarget == 0 && gBestGenerations > 0 &&
-          (uint32_t)gBestGenerations + 1 > oracle.table.target) {
+      if (oracle.d_filter != nullptr && cli->oracleTarget == 0 && gBestGenerations > 0 &&
+          (uint32_t)gBestGenerations + 1 > oracle.target) {
         uint32_t raised = (uint32_t)gBestGenerations + 1;
-        const uint32_t* base = oracle.table.base;
-        subgridBloomBuildTierTable(bloomHeader, raised, &oracle.table);
-        oracle.table.base = base;
+        oracle.target = (uint16_t)raised;
+        oracle.tier1Max = (uint16_t)subgridBloomTier1Max(bloomHeader, raised);
+        oracle.tier2Max = (uint16_t)subgridBloomTier2Max(bloomHeader, raised);
         Logger::out() << "Oracle target raised to " << raised
-                      << " (no lookup up to generation " << oracle.table.tier1Max
-                      << ", filter miss up to " << oracle.table.tier2Max << ")\n";
+                      << " (no lookup up to generation " << oracle.tier1Max
+                      << ", filter miss up to " << oracle.tier2Max << ")\n";
       }
 
       // Process STRIP_SEARCH_MIDDLE_BLOCKS_PER_REPORT middle blocks for this middleIdx
@@ -581,7 +584,7 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
 
       // The oracle cannot report an interval best below its target, so sample the exact
       // kernel periodically to keep the histogram populated.
-      bool exactInterval = (oracle.table.base == nullptr) ||
+      bool exactInterval = (oracle.d_filter == nullptr) ||
                            (middleIdx % STRIP_ORACLE_HISTOGRAM_SAMPLE == 0);
       OracleParams intervalOracle = exactInterval ? OracleParams{} : oracle;
 
@@ -605,9 +608,9 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
       reportStripSearchResults(cli, intervalStartTime, centerIdx, middleIdx,
                                intervalBestGenerations, intervalBestPattern, exactInterval);
 
-      if (oracle.table.base != nullptr) {
+      if (oracle.d_filter != nullptr) {
         // Exact intervals satisfy the oracle's claim too, so they mark both
-        oracleProgress.markComplete(centerIdx, middleIdx, oracle.table.target);
+        oracleProgress.markComplete(centerIdx, middleIdx, oracle.target);
         oracleProgress.save();
       }
 
