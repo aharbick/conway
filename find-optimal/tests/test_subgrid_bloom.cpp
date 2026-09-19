@@ -9,14 +9,35 @@
 
 namespace {
 
+// The shipped artifact: 19,676,112 states, 180..206 generations, tiered
 SubgridBloomHeader realCacheHeader() {
-  // The shipped filter: 19,676,112 states, 180..206 generations
   SubgridBloomHeader h{};
   h.numKeys = 19676112;
   h.minGenerations = 180;
   h.maxGenerations = 206;
+  const uint32_t thresholds[] = {180, 188, 192, 196, 200, 204};
+  const uint64_t keys[] = {19676112, 1174848, 348416, 116408, 26288, 368};
+  uint64_t offset = 0;
+  for (uint32_t i = 0; i < 6; i++) {
+    h.tiers[i].threshold = thresholds[i];
+    h.tiers[i].keys = keys[i];
+    h.tiers[i].blocks = 1024;  // only the offsets and thresholds matter here
+    h.tiers[i].wordOffset = offset;
+    offset += 1024 * SUBGRID_BLOOM_WORDS_PER_BLOCK;
+  }
+  h.numTiers = 6;
+  h.totalWords = offset;
   return h;
 }
+
+// A standalone filter for the insert/query tests
+struct TestFilter {
+  explicit TestFilter(uint32_t blocks) : blocks(blocks), words(blocks * SUBGRID_BLOOM_WORDS_PER_BLOCK, 0u) {}
+  void insert(uint64_t key) { subgridBloomInsert(words.data(), blocks - 1u, key); }
+  bool maybe(uint64_t key) const { return subgridBloomMaybe(words.data(), blocks - 1u, key); }
+  uint32_t blocks;
+  std::vector<uint32_t> words;
+};
 
 }  // namespace
 
@@ -66,32 +87,77 @@ TEST(SubgridBloom, FastCoverabilityEdgeCases) {
 }
 
 TEST(SubgridBloom, NoFalseNegatives) {
-  std::vector<uint32_t> filter(SUBGRID_BLOOM_WORDS, 0u);
+  TestFilter filter(8192);
   std::mt19937_64 rng(999);
 
   std::vector<uint64_t> keys;
   for (int i = 0; i < 200000; i++) keys.push_back(rng());
-  for (uint64_t k : keys) subgridBloomInsert(filter.data(), k);
+  for (uint64_t k : keys) filter.insert(k);
 
   // A false negative would make the search discard a pattern that could beat the record
   for (uint64_t k : keys) {
-    ASSERT_TRUE(subgridBloomMaybe(filter.data(), k)) << "false negative for key " << k;
+    ASSERT_TRUE(filter.maybe(k)) << "false negative for key " << k;
   }
 }
 
-TEST(SubgridBloom, FalsePositiveRateIsLowAtTheRealLoad) {
-  // Same key count as the shipped cache would give, scaled down 100x along with the filter
-  // it is measured against would be wrong, so insert the real count instead
-  std::vector<uint32_t> filter(SUBGRID_BLOOM_WORDS, 0u);
+TEST(SubgridBloom, FalsePositiveRateIsLowAtTheDesignedLoad) {
+  // Sized the way the builder sizes a tier: SUBGRID_BLOOM_BITS_PER_KEY per key
+  const uint64_t n = 200000;
+  uint32_t blocks = 1;
+  while ((uint64_t)blocks * SUBGRID_BLOOM_BLOCK_BITS < n * SUBGRID_BLOOM_BITS_PER_KEY) blocks <<= 1;
+  TestFilter filter(blocks);
+
   std::mt19937_64 rng(4242);
-  for (uint64_t i = 0; i < 19676112; i++) subgridBloomInsert(filter.data(), rng());
+  for (uint64_t i = 0; i < n; i++) filter.insert(rng());
 
   uint64_t probes = 200000, positives = 0;
   for (uint64_t i = 0; i < probes; i++) {
-    if (subgridBloomMaybe(filter.data(), rng())) positives++;
+    if (filter.maybe(rng())) positives++;
   }
   double rate = (double)positives / probes;
   EXPECT_LT(rate, 0.01) << "false positive rate " << rate << " is high enough to cost speed";
+}
+
+// Each probe must use the most selective tier that still proves the pattern cannot reach
+// the target: covered early means needing a near-maximum state, and there are few of those.
+TEST(SubgridBloom, TierSelectionPicksTheSmallestFilterThatAnswers) {
+  SubgridBloomHeader h = realCacheHeader();
+  OracleTierTable table;
+  subgridBloomBuildTierTable(h, 215, &table);
+
+  EXPECT_EQ(table.tier1Max, 8u);
+  EXPECT_EQ(table.tier2Max, 34u);
+
+  // A pattern covered at generation 9 needs a state living 206 more generations, so the
+  // >=204 tier answers it; by generation 28 it needs only 187, so it falls to the widest.
+  EXPECT_EQ(h.tiers[subgridBloomTierForGeneration(table, 9)].threshold, 204u);
+  EXPECT_EQ(h.tiers[subgridBloomTierForGeneration(table, 12)].threshold, 200u);
+  EXPECT_EQ(h.tiers[subgridBloomTierForGeneration(table, 16)].threshold, 196u);
+  EXPECT_EQ(h.tiers[subgridBloomTierForGeneration(table, 20)].threshold, 192u);
+  EXPECT_EQ(h.tiers[subgridBloomTierForGeneration(table, 28)].threshold, 180u);
+
+  // Past the window no tier can decide anything
+  EXPECT_EQ(subgridBloomTierForGeneration(table, table.tier2Max + 1), -1);
+  EXPECT_EQ(subgridBloomTierForGeneration(table, 100), -1);
+}
+
+// Soundness of the selection: whatever tier a generation picks, a miss in it must prove the
+// pattern cannot reach the target. That means threshold <= target - generation.
+TEST(SubgridBloom, EveryTierChoiceIsSound) {
+  SubgridBloomHeader h = realCacheHeader();
+  for (uint32_t target : {215u, 216u, 220u, 260u}) {
+    OracleTierTable table;
+    subgridBloomBuildTierTable(h, target, &table);
+    for (uint32_t g = 1; g < 128; g++) {
+      int tier = subgridBloomTierForGeneration(table, g);
+      if (tier < 0) continue;
+      ASSERT_LE(g, table.tier2Max) << "a tier was offered past the decidable window";
+      uint32_t threshold = h.tiers[tier].threshold;
+      ASSERT_LE(threshold + g, target)
+          << "target " << target << ", generation " << g << ": a miss in the >=" << threshold
+          << " tier would not prove the pattern falls short";
+    }
+  }
 }
 
 TEST(SubgridBloom, TierBoundsForTheShippedCache) {

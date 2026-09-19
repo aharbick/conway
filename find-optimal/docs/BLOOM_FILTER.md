@@ -74,6 +74,41 @@ box, 66% of them within six generations, and 78.1% of all generation-steps happe
 point. That is the size of the prize, and it is why the lookup is worth arranging carefully
 rather than abandoning.
 
+### Tiering the filter: a 3% win, not the 30% predicted
+
+The artifact carries six filters rather than one, each over the cache states at or above a
+threshold, and a lookup uses the most selective one that still answers its question. A
+pattern covered at generation 9 hunting for 215 needs a state living 206 more generations
+and there are sixteen of those, so it probes a 4KB filter instead of the 34MB one:
+
+```
+gen  9-11: the >=204 filter,     368 keys, 0.004 MB
+gen 12-15: the >=200 filter,  26,288 keys, 0.07 MB
+gen 16-19: the >=196 filter, 116,408 keys, 0.26 MB
+gen 24-34: the >=180 filter,  19.7M keys, 33.55 MB   (rare)
+```
+
+The prediction was ~1.3x, from observing that target 215 runs at 135.7ms per middle block
+against 97.9ms at target 230 - a target high enough that tier 1 absorbs nearly everything
+and almost no probes happen at all. Attributing that gap to the cost of probing 34MB was
+wrong twice over:
+
+* **The arithmetic.** Tier 1 already handles ~80% of patterns with no lookup, so a middle
+  block makes ~163M probes, not 908M. Even at DRAM speed that is ~10GB, a tenth of what the
+  estimate assumed.
+* **The measurement.** A controlled A/B - same binary, same code path, only the artifact
+  differing - puts one tier at 167/164/166 G/s and six at 170/170/175. Consistent, and
+  worth keeping, but 3%.
+
+So the target-215-vs-230 gap is not about filter size. What remains between them is that
+18% of patterns take the probe branch at all, and the divergence that costs. It closes on
+its own as records are found and the target rises.
+
+One implementation note worth keeping: choosing the tier by predicating across all of them,
+to avoid a per-lane index into the parameter bank, measured *slower* (161-164 G/s) than just
+resolving the tier per generation on the host and indexing. The extra work landed on every
+probe while the lookup it replaced was cheap.
+
 See `include/subgrid_bloom.h` for the filter format and the two bounds, and
 `data/README.md` for building and validating the artifact. The soundness argument rests on
 the cache being exhaustive, so `validate-subgrid-cache` re-derives the maximum and

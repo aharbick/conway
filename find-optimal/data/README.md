@@ -14,17 +14,21 @@ cat 7x7subgrid-cache.json.gz.part_* | gzip -dc > 7x7subgrid-cache.json
 
 ## 7x7 Bloom filter (7x7subgrid-bloom.bin)
 
-A 34MB blocked Bloom filter over the cache keys, used by strip search to discard patterns
-that cannot reach its target. Rebuild it whenever the cache changes:
+Six blocked Bloom filters over the cache keys, one per lifetime threshold, used by strip
+search to discard patterns that cannot reach its target. A lookup uses the most selective
+tier that still answers its question, which for patterns covered early is a few KB rather
+than the full 33MB. Rebuild it whenever the cache changes:
 
 ```
 cat 7x7subgrid-cache.json.gz.part_* | gzip -dc \
   | ../build/build-subgrid-bloom 7x7subgrid-bloom.bin
 ```
 
-The tool refuses to write a filter with any false negative, and the header carries the
-cache's min and max generation counts (180 and 206) so the bounds the search derives travel
-with the artifact instead of being hardcoded. See include/subgrid_bloom.h for why those two
+Pass a comma-separated threshold list as a second argument to choose the tiers (the default
+is 180,188,192,196,200,204; a single value reproduces one flat filter). The tool refuses to
+write a filter with any false negative, and the header carries the cache's min and max
+generation counts (180 and 206) so the bounds the search derives travel with the artifact
+instead of being hardcoded. See include/subgrid_bloom.h for why those two
 numbers are all the search needs.
 
 ### Validating the cache
