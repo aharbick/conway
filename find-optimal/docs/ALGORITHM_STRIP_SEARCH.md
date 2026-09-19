@@ -178,6 +178,18 @@ the histogram. Every 64th middleIdx therefore runs the exact kernel instead, whi
 uniform sample of the distribution for about 2% of the throughput. Log lines carry
 `mode=oracle` or `mode=exact` to say which ran.
 
+An interval that found nothing at or above the target omits the `bestGenerations`,
+`bestPattern` and `bestPatternBin` tokens rather than reporting zeros:
+
+```
+timestamp=..., centerIdx=904, middleIdx=63, patternsPerSec=1,580,903,717,494, mode=oracle
+timestamp=..., centerIdx=904, middleIdx=64, bestGenerations=202, bestPattern=..., bestPatternBin=..., patternsPerSec=394,414,088,105, mode=exact
+```
+
+`bestGenerations=0` would be a claim rather than an absence - the interval does have a best,
+the oracle simply never measured it - and in a log where almost nothing reaches the target,
+the lines that did would otherwise be invisible.
+
 #### Completion is tracked separately
 
 The two modes establish different things, so they record completion in different places:

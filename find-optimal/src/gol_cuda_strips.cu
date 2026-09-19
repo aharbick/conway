@@ -661,15 +661,25 @@ __host__ void reportStripSearchResults(ProgramArgs *cli, double intervalStartTim
   char bestPatternBin[BINARY_STRING_BUFFER_SIZE] = {'\0'};
   asBinary(bestPattern, bestPatternBin);
 
-  Logger::out() << "timestamp=" << time(NULL)
-                << ", centerIdx=" << centerIdx
-                << ", middleIdx=" << middleIdx
-                << ", bestGenerations=" << bestGenerations
-                << ", bestPattern=" << bestPattern
-                << ", bestPatternBin=" << bestPatternBin
-                << ", patternsPerSec=" << formatWithCommas(patternsPerSec)
-                << ", mode=" << (exactInterval ? "exact" : "oracle")
-                << "\n";
+  Logger& out = Logger::out();
+  out << "timestamp=" << time(NULL)
+      << ", centerIdx=" << centerIdx
+      << ", middleIdx=" << middleIdx;
+
+  // Report a best only when there is one. In oracle mode there usually is not, and
+  // "bestGenerations=0" would be a claim rather than an absence: the interval does have a
+  // best, the oracle simply never measured it, having discarded everything below its target
+  // without looking. Omitting the tokens also keeps the lines that did find something
+  // visible in a log where almost nothing does.
+  if (bestGenerations > 0) {
+    out << ", bestGenerations=" << bestGenerations
+        << ", bestPattern=" << bestPattern
+        << ", bestPatternBin=" << bestPatternBin;
+  }
+
+  out << ", patternsPerSec=" << formatWithCommas(patternsPerSec)
+      << ", mode=" << (exactInterval ? "exact" : "oracle")
+      << "\n";
 
   // Save to Google Sheets if appropriate
   if (!cli->dontSaveResults) {
