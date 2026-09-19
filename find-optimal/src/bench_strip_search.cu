@@ -1,20 +1,31 @@
-// Benchmark harness for strip search: times each phase on real middle blocks and
-// compares phase-2 kernel variants against the production kernel, checking that every
-// variant produces an identical candidate set.
+// Benchmark harness for strip search: times each phase on real middle blocks, compares the
+// phase-2 kernels, and measures properties of the search itself.
 //
-//   ./build/bench-strip-search [centerIdx] [middleIdx] [numBlocks] [threads] [xblocks] [hist] [onlyVariant]
+//   ./build/bench-strip-search [centerIdx] [middleIdx] [numBlocks] [threads] [xblocks] [stats] [variant] [target]
 //
-// e.g.  ./build/bench-strip-search 836 380 3 32 1 1          # all variants + lifetime histogram
-//       ./build/bench-strip-search 836 380 1 64 4 0 v2       # sweep one variant's launch config
+//   ./build/bench-strip-search 839 200 1 128 1 1            # everything, with instrumentation
+//   ./build/bench-strip-search 839 200 3 32 1 0 fast        # sweep one kernel's launch config
 //
-// Variants: v0 = legacy kernel (one thread per top strip), v1 = 2D grid with one pair per
-// thread, v2 = 2D grid + lane repacking (this is --strip-kernel=fast), v3xN = v2 plus
-// N-wide ILP. Measured on a 5090: v2 is 4.8x-54x faster than v0 depending on how many
-// unique top strips the middle block has.
+// Kernels: legacy (one thread per top strip), fast (--strip-kernel=fast), oracle (--oracle).
+// Every variant's candidate set is diffed against the legacy kernel, except the oracle's,
+// which legitimately reports only patterns at or above its target.
 //
-// NOTE: the kernels here are copies of the ones in gol_cuda_strips.cu, kept local so this
-// harness links without the Google Sheets/curl dependencies. If you change a production
-// kernel, mirror it here.
+// The oracle variant loads the shipping filter from data/7x7subgrid-bloom.bin, so what is
+// measured and validated is what the search actually runs. Override with BENCH_BLOOM_FILE.
+//
+// The instrumentation is the more durable half of this tool, since it measures the problem
+// rather than a particular kernel:
+//
+//   k_validateOracle  exact lifetime of every pair in a middle block, against the oracle's
+//                     decision - the check that it never discards a pattern that reaches
+//                     the target
+//   k_coverage        how soon patterns fit inside a 7x7 box, and how much work happens
+//                     after that point
+//   k_lifetimes       distribution of how long patterns survive
+//   k_throughput      pure generation throughput with no branching, as a ceiling to compare
+//                     the real kernels against
+//   k_cacheDepth      how many entries a subgrid cache at a lower threshold would need
+//
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
@@ -25,6 +36,7 @@
 
 #include "center4x4_utils.h"
 #include "constants.h"
+#include "subgrid_bloom.h"
 
 #define CHECK(x) do { cudaError_t e = (x); if (e != cudaSuccess) { \
   printf("CUDA error %s at %s:%d\n", cudaGetErrorString(e), __FILE__, __LINE__); exit(1);} } while (0)
@@ -67,64 +79,6 @@ __global__ void findUniqueBottomStrips(uint32_t middleBlock, uint16_t* uniqueStr
   }
 }
 
-// ------------------------------------------------------------- 7x7 oracle --
-//
-// Every 7x7-coverable 8x8 state with a terminating lifetime >= 180 is in the subgrid
-// cache, and the longest one there is 206 generations. So a pattern that first fits inside
-// a 7x7 box at generation g can never exceed g + 206 generations in total, and a state
-// absent from the cache lives fewer than 180 more. That gives two sound early-outs when
-// hunting for patterns above a target T:
-//
-//   tier 1: coverable at g <= T - 207  ->  discard. No lookup at all.
-//   tier 2: coverable at g <= T - 181  ->  discard unless the state is in the cache.
-//
-// Tier 2 needs a membership test, and a cache-resident blocked Bloom filter is enough: a
-// false positive only means the pattern keeps simulating as it would have anyway, so the
-// filter can be small and lossy without affecting correctness.
-#define BLOOM_BITS_LOG 28                        // 2^28 bits = 32MB
-#define BLOOM_BLOCK_BITS 512                     // one 64-byte cache line per probe
-#define BLOOM_NUM_BLOCKS (1u << (BLOOM_BITS_LOG - 9))
-#define BLOOM_K 6
-#define SUBGRID_MAX_GENERATIONS 206              // longest terminating 7x7-coverable state
-
-__host__ __device__ static inline uint64_t bloomHash(uint64_t key) {
-  key = (key ^ (key >> 30)) * 0xBF58476D1CE4E5B9ULL;
-  key = (key ^ (key >> 27)) * 0x94D049BB133111EBULL;
-  return key ^ (key >> 31);
-}
-
-// Bit positions for one key, all inside a single 512-bit block
-__host__ __device__ static inline void bloomSlots(uint64_t key, uint32_t& blockIdx, uint32_t bits[BLOOM_K]) {
-  uint64_t h = bloomHash(key);
-  blockIdx = (uint32_t)(h >> 40) & (BLOOM_NUM_BLOCKS - 1);
-  uint32_t a = (uint32_t)h;
-  uint32_t b = (uint32_t)(h >> 20) | 1u;  // odd, so the stride never degenerates
-#pragma unroll
-  for (int i = 0; i < BLOOM_K; i++) {
-    bits[i] = (a + i * b) & (BLOOM_BLOCK_BITS - 1);
-  }
-}
-
-static inline void bloomInsert(uint32_t* filter, uint64_t key) {
-  uint32_t blk, bits[BLOOM_K];
-  bloomSlots(key, blk, bits);
-  uint32_t* words = filter + (size_t)blk * (BLOOM_BLOCK_BITS / 32);
-  for (int i = 0; i < BLOOM_K; i++) {
-    words[bits[i] >> 5] |= 1u << (bits[i] & 31);
-  }
-}
-
-__device__ static inline bool bloomMaybe(const uint32_t* __restrict__ filter, uint64_t key) {
-  uint32_t blk, bits[BLOOM_K];
-  bloomSlots(key, blk, bits);
-  const uint32_t* words = filter + (size_t)blk * (BLOOM_BLOCK_BITS / 32);
-#pragma unroll
-  for (int i = 0; i < BLOOM_K; i++) {
-    if (!((words[bits[i] >> 5] >> (bits[i] & 31)) & 1u)) return false;
-  }
-  return true;
-}
-
 // ------------------------------------------------------- phase 2 variants --
 
 // v0: current production kernel, verbatim.
@@ -155,38 +109,6 @@ __global__ void v0_baseline(uint32_t middleBlock, const uint16_t* uniqueTopStrip
           if (idx < STRIP_SEARCH_MAX_CANDIDATES) candidates[idx] = pattern;
           break;
         }
-      }
-    }
-  }
-}
-
-// v1: 2D grid, one (top,bottom) pair per thread. blockIdx.y = top strip index.
-__global__ void v1_pair_per_thread(uint32_t middleBlock, const uint16_t* uniqueTopStrips,
-                                   const uint16_t* uniqueBottomStrips, uint32_t numUniqueTop,
-                                   uint32_t numUniqueBottom, uint64_t* candidates,
-                                   uint64_t* numCandidates) {
-  uint32_t topIdx = blockIdx.y;
-  if (topIdx >= numUniqueTop) return;
-  uint64_t base = (uint64_t)uniqueTopStrips[topIdx] | ((uint64_t)middleBlock << 16);
-
-  for (uint32_t bottomIdx = blockIdx.x * blockDim.x + threadIdx.x; bottomIdx < numUniqueBottom;
-       bottomIdx += gridDim.x * blockDim.x) {
-    uint64_t pattern = base | ((uint64_t)uniqueBottomStrips[bottomIdx] << 48);
-    uint64_t g1 = pattern;
-    uint16_t generations = 0;
-    while (generations < FAST_SEARCH_MAX_GENERATIONS) {
-      generations += 6;
-      uint64_t g2 = computeNextGeneration8x8(g1);
-      uint64_t g3 = computeNextGeneration8x8(g2);
-      uint64_t g4 = computeNextGeneration8x8(g3);
-      uint64_t g5 = computeNextGeneration8x8(g4);
-      uint64_t g6 = computeNextGeneration8x8(g5);
-      g1 = computeNextGeneration8x8(g6);
-      if ((g1 == g2) || (g1 == g3) || (g1 == g4)) break;
-      if (generations >= MIN_CANDIDATE_GENERATIONS) {
-        uint64_t idx = atomicAdd((unsigned long long*)numCandidates, 1ULL);
-        if (idx < STRIP_SEARCH_MAX_CANDIDATES) candidates[idx] = pattern;
-        break;
       }
     }
   }
@@ -237,138 +159,6 @@ __global__ void v2_repack(uint32_t middleBlock, const uint16_t* uniqueTopStrips,
   }
 }
 
-// v3: repacking + 2-wide ILP (two independent patterns per thread interleaved).
-template <int W>
-__global__ void v3_repack_ilp(uint32_t middleBlock, const uint16_t* uniqueTopStrips,
-                              const uint16_t* uniqueBottomStrips, uint32_t numUniqueTop,
-                              uint32_t numUniqueBottom, uint64_t* candidates, uint64_t* numCandidates) {
-  uint32_t topIdx = blockIdx.y;
-  if (topIdx >= numUniqueTop) return;
-  uint64_t base = (uint64_t)uniqueTopStrips[topIdx] | ((uint64_t)middleBlock << 16);
-
-  uint32_t stride = gridDim.x * blockDim.x;
-  uint32_t next = blockIdx.x * blockDim.x + threadIdx.x;
-
-  uint64_t pattern[W], g1[W];
-  uint16_t gens[W];
-  bool active[W];
-#pragma unroll
-  for (int w = 0; w < W; w++) { active[w] = false; pattern[w] = 0; g1[w] = 0; gens[w] = 0; }
-
-  int live = 0;
-  while (true) {
-    live = 0;
-#pragma unroll
-    for (int w = 0; w < W; w++) {
-      if (!active[w] && next < numUniqueBottom) {
-        pattern[w] = base | ((uint64_t)uniqueBottomStrips[next] << 48);
-        next += stride;
-        g1[w] = pattern[w];
-        gens[w] = 0;
-        active[w] = true;
-      }
-      if (active[w]) live++;
-    }
-    if (live == 0) break;
-
-    uint64_t g2[W], g3[W], g4[W];
-#pragma unroll
-    for (int w = 0; w < W; w++) {
-      g2[w] = computeNextGeneration8x8(g1[w]);
-    }
-#pragma unroll
-    for (int w = 0; w < W; w++) g3[w] = computeNextGeneration8x8(g2[w]);
-#pragma unroll
-    for (int w = 0; w < W; w++) g4[w] = computeNextGeneration8x8(g3[w]);
-#pragma unroll
-    for (int w = 0; w < W; w++) g1[w] = computeNextGeneration8x8(g4[w]);
-#pragma unroll
-    for (int w = 0; w < W; w++) g1[w] = computeNextGeneration8x8(g1[w]);
-#pragma unroll
-    for (int w = 0; w < W; w++) g1[w] = computeNextGeneration8x8(g1[w]);
-
-#pragma unroll
-    for (int w = 0; w < W; w++) {
-      if (!active[w]) continue;
-      gens[w] += 6;
-      if ((g1[w] == g2[w]) || (g1[w] == g3[w]) || (g1[w] == g4[w])) {
-        active[w] = false;
-      } else if (gens[w] >= MIN_CANDIDATE_GENERATIONS) {
-        uint64_t idx = atomicAdd((unsigned long long*)numCandidates, 1ULL);
-        if (idx < STRIP_SEARCH_MAX_CANDIDATES) candidates[idx] = pattern[w];
-        active[w] = false;
-      } else if (gens[w] >= FAST_SEARCH_MAX_GENERATIONS) {
-        active[w] = false;
-      }
-    }
-  }
-}
-
-// v4/v5: v2 plus the 7x7 oracle. tier1Max/tier2Max are the highest generation at which
-// each early-out is sound for the target; pass tier2Max = 0 (and filter = nullptr) to
-// measure tier 1 alone.
-__global__ void v5_oracle(uint32_t middleBlock, const uint16_t* uniqueTopStrips,
-                          const uint16_t* uniqueBottomStrips, uint32_t numUniqueTop,
-                          uint32_t numUniqueBottom, uint64_t* candidates, uint64_t* numCandidates,
-                          const uint32_t* __restrict__ filter, uint16_t target,
-                          uint16_t tier1Max, uint16_t tier2Max) {
-  uint32_t topIdx = blockIdx.y;
-  if (topIdx >= numUniqueTop) return;
-  uint64_t base = (uint64_t)uniqueTopStrips[topIdx] | ((uint64_t)middleBlock << 16);
-
-  uint32_t stride = gridDim.x * blockDim.x;
-  uint32_t bottomIdx = blockIdx.x * blockDim.x + threadIdx.x;
-
-  uint64_t pattern = 0, g = 0;
-  uint16_t gens = 0;
-  bool active = false, probed = false;
-
-  while (true) {
-    if (!active) {
-      if (bottomIdx >= numUniqueBottom) break;
-      pattern = base | ((uint64_t)uniqueBottomStrips[bottomIdx] << 48);
-      bottomIdx += stride;
-      g = pattern;
-      gens = 0;
-      active = true;
-      probed = false;
-    }
-
-    uint64_t prev[3];
-#pragma unroll
-    for (int step = 0; step < 6; step++) {
-      g = computeNextGeneration8x8(g);
-      gens++;
-      if (step < 3) prev[step] = g;
-
-      // One oracle test per pattern, at the first generation it fits a 7x7 box
-      if (!probed && gens <= tier2Max && isCoverableBy7x7(g)) {
-        probed = true;
-        if (gens <= tier1Max) {
-          active = false;  // cannot exceed gens + 206, so cannot reach the target
-          break;
-        }
-        if (filter != nullptr && !bloomMaybe(filter, g)) {
-          active = false;  // lives < 180 more, so cannot reach the target
-          break;
-        }
-      }
-    }
-    if (!active) continue;
-
-    // Same cycle test as the production kernel: g is 6 generations on from its start
-    if ((g == prev[0]) || (g == prev[1]) || (g == prev[2])) {
-      active = false;
-    } else if (gens >= target) {
-      uint64_t idx = atomicAdd((unsigned long long*)numCandidates, 1ULL);
-      if (idx < STRIP_SEARCH_MAX_CANDIDATES) candidates[idx] = pattern;
-      active = false;
-    } else if (gens >= FAST_SEARCH_MAX_GENERATIONS) {
-      active = false;
-    }
-  }
-}
-
 // v6: the oracle, with the loop restructured for it.
 //
 // v5 kept v2's shape - six generations, then decide - which was fine when patterns ran ~28
@@ -385,7 +175,7 @@ __device__ static inline bool coverable7x7Fast(uint64_t g) {
   return ((g & 0x8080808080808080ULL) == 0) || ((g & 0x0101010101010101ULL) == 0);
 }
 
-__global__ void v6_oracle_fused(uint32_t middleBlock, const uint16_t* uniqueTopStrips,
+__global__ void oracleKernel(uint32_t middleBlock, const uint16_t* uniqueTopStrips,
                                 const uint16_t* uniqueBottomStrips, uint32_t numUniqueTop,
                                 uint32_t numUniqueBottom, uint64_t* candidates,
                                 uint64_t* numCandidates, const uint32_t* __restrict__ filter,
@@ -423,7 +213,7 @@ __global__ void v6_oracle_fused(uint32_t middleBlock, const uint16_t* uniqueTopS
         active = false;
         continue;
       }
-      if (filter != nullptr && !bloomMaybe(filter, g)) {
+      if (filter != nullptr && !subgridBloomMaybe(filter, g)) {
         active = false;
         continue;
       }
@@ -444,94 +234,6 @@ __global__ void v6_oracle_fused(uint32_t middleBlock, const uint16_t* uniqueTopS
       active = false;
     } else if (gens >= FAST_SEARCH_MAX_GENERATIONS) {
       active = false;
-    }
-  }
-}
-
-// v7: v6, with the cycle test deferred past the oracle window.
-//
-// While the oracle window is open, the cycle test is nearly dead weight: a pattern that
-// settles into a still life or a blinker fits inside a 7x7 box, so tier 1 discards it
-// anyway. The only patterns it would catch early are ones that both cycle before
-// generation tier2Max and never fit a 7x7 box, which is a fraction of the 1.8% that are
-// never coverable - a rounding error against six fewer instructions on every generation of
-// the hot path. The history is still maintained so the test is exact once it turns on.
-template <int W>
-__global__ void v7_oracle_lean(uint32_t middleBlock, const uint16_t* uniqueTopStrips,
-                               const uint16_t* uniqueBottomStrips, uint32_t numUniqueTop,
-                               uint32_t numUniqueBottom, uint64_t* candidates,
-                               uint64_t* numCandidates, const uint32_t* __restrict__ filter,
-                               uint16_t target, uint16_t tier1Max, uint16_t tier2Max) {
-  uint32_t topIdx = blockIdx.y;
-  if (topIdx >= numUniqueTop) return;
-  uint64_t base = (uint64_t)uniqueTopStrips[topIdx] | ((uint64_t)middleBlock << 16);
-
-  uint32_t stride = gridDim.x * blockDim.x;
-  uint32_t next = blockIdx.x * blockDim.x + threadIdx.x;
-
-  uint64_t pattern[W], g[W], h1[W], h2[W], h3[W];
-  uint16_t gens[W];
-  bool active[W], probed[W];
-#pragma unroll
-  for (int w = 0; w < W; w++) {
-    active[w] = false;
-    probed[w] = false;
-    pattern[w] = g[w] = h1[w] = h2[w] = h3[w] = 0;
-    gens[w] = 0;
-  }
-
-  while (true) {
-    int live = 0;
-#pragma unroll
-    for (int w = 0; w < W; w++) {
-      if (!active[w] && next < numUniqueBottom) {
-        pattern[w] = base | ((uint64_t)uniqueBottomStrips[next] << 48);
-        next += stride;
-        g[w] = pattern[w];
-        gens[w] = 0;
-        h1[w] = h2[w] = h3[w] = 0;
-        active[w] = true;
-        probed[w] = false;
-      }
-      if (active[w]) live++;
-    }
-    if (live == 0) break;
-
-#pragma unroll
-    for (int w = 0; w < W; w++) {
-      if (!active[w]) continue;
-
-      g[w] = computeNextGeneration8x8(g[w]);
-      gens[w]++;
-
-      if (!probed[w] && gens[w] <= tier2Max && coverable7x7Fast(g[w])) {
-        probed[w] = true;
-        if (gens[w] <= tier1Max) {
-          active[w] = false;
-          continue;
-        }
-        if (filter != nullptr && !bloomMaybe(filter, g[w])) {
-          active[w] = false;
-          continue;
-        }
-      }
-
-      // Only compare once the oracle can no longer decide it
-      if (gens[w] > tier2Max && (g[w] == h1[w] || g[w] == h2[w] || g[w] == h3[w])) {
-        active[w] = false;
-        continue;
-      }
-      h3[w] = h2[w];
-      h2[w] = h1[w];
-      h1[w] = g[w];
-
-      if (gens[w] >= target) {
-        uint64_t idx = atomicAdd((unsigned long long*)numCandidates, 1ULL);
-        if (idx < STRIP_SEARCH_MAX_CANDIDATES) candidates[idx] = pattern[w];
-        active[w] = false;
-      } else if (gens[w] >= FAST_SEARCH_MAX_GENERATIONS) {
-        active[w] = false;
-      }
     }
   }
 }
@@ -560,7 +262,7 @@ __global__ void k_validateOracle(uint32_t middleBlock, const uint16_t* uniqueTop
       g = computeNextGeneration8x8(g);
       if (isCoverableBy7x7(g)) {
         if (gen <= tier1Max) decision = 1;
-        else if (filter != nullptr && !bloomMaybe(filter, g)) decision = 2;
+        else if (filter != nullptr && !subgridBloomMaybe(filter, g)) decision = 2;
         break;
       }
     }
@@ -763,38 +465,38 @@ static uint16_t g_target = 215;         // beat the current record of 214
 static uint16_t g_tier1Max = 0;         // target - 207
 static uint16_t g_tier2Max = 0;         // target - 181
 
-// Build the blocked Bloom filter from the subgrid cache keys.
+// Load the shipping Bloom filter, so what is measured and validated here is the artifact
+// the search actually uses - not a second copy that can drift away from it.
 static bool loadOracle(const char* path) {
   FILE* f = fopen(path, "rb");
   if (!f) {
-    printf("oracle: %s not found, skipping tier-2 variants\n", path);
+    printf("oracle: %s not found, skipping the oracle variant\n", path);
     return false;
   }
-  fseek(f, 0, SEEK_END);
-  long bytes = ftell(f);
-  fseek(f, 0, SEEK_SET);
-  size_t n = bytes / sizeof(uint64_t);
 
-  const size_t words = (1ull << BLOOM_BITS_LOG) / 32;
-  std::vector<uint32_t> filter(words, 0u);
-  std::vector<uint64_t> keys(1 << 20);
-  size_t read = 0;
-  while (read < n) {
-    size_t chunk = keys.size() < (n - read) ? keys.size() : (n - read);
-    if (fread(keys.data(), sizeof(uint64_t), chunk, f) != chunk) break;
-    for (size_t i = 0; i < chunk; i++) bloomInsert(filter.data(), keys[i]);
-    read += chunk;
+  SubgridBloomHeader h{};
+  if (fread(&h, sizeof(h), 1, f) != 1 || memcmp(h.magic, SUBGRID_BLOOM_MAGIC, 8) != 0 ||
+      h.version != SUBGRID_BLOOM_VERSION) {
+    printf("oracle: %s is not a filter this build understands\n", path);
+    fclose(f);
+    return false;
+  }
+
+  std::vector<uint32_t> filter(SUBGRID_BLOOM_WORDS);
+  if (fread(filter.data(), sizeof(uint32_t), SUBGRID_BLOOM_WORDS, f) != SUBGRID_BLOOM_WORDS) {
+    printf("oracle: %s is truncated\n", path);
+    fclose(f);
+    return false;
   }
   fclose(f);
 
-  size_t set = 0;
-  for (uint32_t w : filter) set += __builtin_popcount(w);
-  double fill = (double)set / (words * 32.0);
-  printf("oracle: %zu keys -> %.0f MB filter, %.1f%% of bits set, est. false positive %.3f%%\n",
-         read, (words * 4.0) / 1e6, 100.0 * fill, 100.0 * pow(fill, BLOOM_K));
+  g_tier1Max = (uint16_t)subgridBloomTier1Max(h, g_target);
+  g_tier2Max = (uint16_t)subgridBloomTier2Max(h, g_target);
+  printf("oracle: %s, %llu states, %u..%u generations\n", path, (unsigned long long)h.numKeys,
+         h.minGenerations, h.maxGenerations);
 
-  CHECK(cudaMalloc(&g_dFilter, words * sizeof(uint32_t)));
-  CHECK(cudaMemcpy(g_dFilter, filter.data(), words * sizeof(uint32_t), cudaMemcpyHostToDevice));
+  CHECK(cudaMalloc(&g_dFilter, SUBGRID_BLOOM_BYTES));
+  CHECK(cudaMemcpy(g_dFilter, filter.data(), SUBGRID_BLOOM_BYTES, cudaMemcpyHostToDevice));
   return true;
 }
 
@@ -825,51 +527,16 @@ static std::vector<uint64_t> runVariant(const std::string& name, Buffers& b, uin
   CHECK(cudaEventRecord(t0));
 
   dim3 grid2d((unsigned)xblocks, nTop);
-  if (name == "v0") {
+  if (name == "legacy") {
     v0_baseline<<<STRIP_SEARCH_COMBO_GRID_SIZE, STRIP_SEARCH_COMBO_THREADS_PER_BLOCK>>>(
         middleBlock, b.d_top, b.d_bottom, nTop, nBottom, b.d_candidates, b.d_numCandidates);
-  } else if (name == "v1") {
-    dim3 g((nBottom + threads - 1) / threads, nTop);
-    v1_pair_per_thread<<<g, threads>>>(middleBlock, b.d_top, b.d_bottom, nTop, nBottom,
-                                       b.d_candidates, b.d_numCandidates);
-  } else if (name == "v2") {
+  } else if (name == "fast") {
     v2_repack<<<grid2d, threads>>>(middleBlock, b.d_top, b.d_bottom, nTop, nBottom, b.d_candidates,
                                    b.d_numCandidates);
-  } else if (name == "v3x2") {
-    v3_repack_ilp<2><<<grid2d, threads>>>(middleBlock, b.d_top, b.d_bottom, nTop, nBottom,
-                                          b.d_candidates, b.d_numCandidates);
-  } else if (name == "v3x4") {
-    v3_repack_ilp<4><<<grid2d, threads>>>(middleBlock, b.d_top, b.d_bottom, nTop, nBottom,
-                                          b.d_candidates, b.d_numCandidates);
-  } else if (name == "v4") {
-    // tier 1 only: no filter, no memory traffic
-    v5_oracle<<<grid2d, threads>>>(middleBlock, b.d_top, b.d_bottom, nTop, nBottom,
-                                   b.d_candidates, b.d_numCandidates, nullptr, g_target,
-                                   g_tier1Max, g_tier1Max);
-  } else if (name == "v5") {
-    v5_oracle<<<grid2d, threads>>>(middleBlock, b.d_top, b.d_bottom, nTop, nBottom,
-                                   b.d_candidates, b.d_numCandidates, g_dFilter, g_target,
-                                   g_tier1Max, g_tier2Max);
-  } else if (name == "v6") {
-    v6_oracle_fused<<<grid2d, threads>>>(middleBlock, b.d_top, b.d_bottom, nTop, nBottom,
-                                         b.d_candidates, b.d_numCandidates, g_dFilter, g_target,
-                                         g_tier1Max, g_tier2Max);
-  } else if (name == "v7") {
-    v7_oracle_lean<1><<<grid2d, threads>>>(middleBlock, b.d_top, b.d_bottom, nTop, nBottom,
-                                           b.d_candidates, b.d_numCandidates, g_dFilter, g_target,
-                                           g_tier1Max, g_tier2Max);
-  } else if (name == "v7x2") {
-    v7_oracle_lean<2><<<grid2d, threads>>>(middleBlock, b.d_top, b.d_bottom, nTop, nBottom,
-                                           b.d_candidates, b.d_numCandidates, g_dFilter, g_target,
-                                           g_tier1Max, g_tier2Max);
-  } else if (name == "v7x4") {
-    v7_oracle_lean<4><<<grid2d, threads>>>(middleBlock, b.d_top, b.d_bottom, nTop, nBottom,
-                                           b.d_candidates, b.d_numCandidates, g_dFilter, g_target,
-                                           g_tier1Max, g_tier2Max);
-  } else if (name == "v6t1") {
-    v6_oracle_fused<<<grid2d, threads>>>(middleBlock, b.d_top, b.d_bottom, nTop, nBottom,
-                                         b.d_candidates, b.d_numCandidates, nullptr, g_target,
-                                         g_tier1Max, g_tier1Max);
+  } else if (name == "oracle") {
+    oracleKernel<<<grid2d, threads>>>(middleBlock, b.d_top, b.d_bottom, nTop, nBottom,
+                                      b.d_candidates, b.d_numCandidates, g_dFilter, g_target,
+                                      g_tier1Max, g_tier2Max);
   }
   CHECK(cudaEventRecord(t1));
   CHECK(cudaEventSynchronize(t1));
@@ -900,7 +567,7 @@ int main(int argc, char** argv) {
   g_tier2Max = (g_target > 181) ? (uint16_t)(g_target - 181) : 0;
   printf("oracle target=%u generations -> tier1 discards coverage at gen<=%u, "
          "tier2 at gen<=%u\n", g_target, g_tier1Max, g_tier2Max);
-  loadOracle(getenv("BENCH_ORACLE_KEYS") ? getenv("BENCH_ORACLE_KEYS") : "/tmp/subgrid-keys.bin");
+  loadOracle(getenv("BENCH_BLOOM_FILE") ? getenv("BENCH_BLOOM_FILE") : DEFAULT_SUBGRID_BLOOM_PATH);
 
   initializeUnique4x4Centers();
   uint16_t center4x4 = get4x4CenterByIndex(centerIdx);
@@ -951,7 +618,7 @@ int main(int argc, char** argv) {
       float ms = 0;
       std::vector<uint64_t> got = runVariant(variants[v], b, middleBlock, nTop, nBottom, ms, threads, xblocks);
       totals[v] += ms;
-      bool isOracle = (v >= 5);
+      bool isOracle = (v == 2);
       if (ref.empty() && !isOracle) ref = got;
       const char* ok = isOracle ? "(target-filtered)" : (got == ref ? "ok" : "MISMATCH");
       printf("  %-5s %8.2f ms  candidates=%zu  %s\n", variants[v], ms, got.size(), ok);
