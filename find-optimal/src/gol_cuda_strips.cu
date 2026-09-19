@@ -8,6 +8,7 @@
 #include "gol_memory.h"
 #include "logging.h"
 #include "oracle_progress.h"
+#include "shutdown.h"
 #include "subgrid_bloom.h"
 
 #ifdef __NVCC__
@@ -589,6 +590,9 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
       OracleParams intervalOracle = exactInterval ? OracleParams{} : oracle;
 
       for (uint32_t blockOffset = blockStart; blockOffset < blockEnd; blockOffset++) {
+        if (shutdownRequested()) {
+          break;  // finish this middle block, then abandon the interval unreported
+        }
         uint16_t leftEar = blockOffset / CENTER_4X4_TOTAL_EAR_VALUES;
         uint16_t rightEar = blockOffset % CENTER_4X4_TOTAL_EAR_VALUES;
         uint32_t middleBlock = reconstructMiddleBlock(center4x4, (uint8_t)leftEar, (uint8_t)rightEar);
@@ -601,6 +605,14 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
           intervalBestPattern = *mem.h_bestPattern();
           updateBestGenerations((int)intervalBestGenerations);
         }
+      }
+
+      // An interval interrupted part way through has not been searched, so it must not be
+      // reported or recorded - leaving it unmarked means the next run redoes it.
+      if (shutdownRequested()) {
+        Logger::out() << "Stopped before finishing centerIdx=" << centerIdx
+                      << ", middleIdx=" << middleIdx << "; it will be searched again\n";
+        break;
       }
 
       // Report at end of each middleIdx. Only an exact interval may claim exhaustive
@@ -618,6 +630,9 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
       intervalStartTime = getHighResCurrentTime();
       intervalBestGenerations = 0;
       intervalBestPattern = 0;
+    }
+    if (shutdownRequested()) {
+      break;
     }
   }
 

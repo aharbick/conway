@@ -63,9 +63,10 @@ int executeMainSearch(ProgramArgs* cli) {
 
   search(cli);
 
-  // Wait for any async upload threads to complete (only if we're saving results)
+  // Make sure everything the search recorded actually reaches the spreadsheet before we
+  // exit, rather than waiting a fixed few seconds and hoping.
   if (!cli->dontSaveResults) {
-    std::this_thread::sleep_for(std::chrono::seconds(10));
+    drainGoogleRequestQueue(300);
   }
 
   return 0;

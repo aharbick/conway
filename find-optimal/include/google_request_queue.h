@@ -176,6 +176,11 @@ static void queueGoogleStripCompletion(uint32_t centerIdx, uint32_t middleIdx) {
 }
 
 // Get count of pending queued requests
+// Wait for the queue to empty, or for it to stop making progress. Used before exiting so
+// completions and summaries reach the spreadsheet rather than waiting for some later run.
+// Returns the number of requests still queued.
+static size_t drainGoogleRequestQueue(int maxSeconds, bool (*keepWaiting)() = nullptr);
+
 static size_t getGoogleRequestQueueCount() {
   return globalRequestQueue.getPendingCount();
 }
@@ -183,6 +188,54 @@ static size_t getGoogleRequestQueueCount() {
 // Check if queue is enabled
 static bool isGoogleRequestQueueEnabled() {
   return globalRequestQueue.isEnabled();
+}
+
+static size_t drainGoogleRequestQueue(int maxSeconds, bool (*keepWaiting)()) {
+  if (!isGoogleRequestQueueEnabled()) {
+    return 0;
+  }
+
+  size_t lastCount = getGoogleRequestQueueCount();
+  if (lastCount == 0) {
+    return 0;
+  }
+
+  Logger::out() << "Draining upload queue: " << lastCount << " requests pending\n";
+
+  int stable = 0;
+  for (int elapsed = 0; elapsed < maxSeconds; elapsed++) {
+    if (keepWaiting != nullptr && !keepWaiting()) {
+      break;
+    }
+
+    size_t count = getGoogleRequestQueueCount();
+    if (count == 0) {
+      Logger::out() << "Upload queue drained\n";
+      return 0;
+    }
+
+    // Requests that keep failing are retried with backoff, so a count that stops moving
+    // means waiting longer will not help - they stay on disk for the next run.
+    if (count == lastCount) {
+      if (++stable >= 30) {
+        Logger::out() << count << " requests could not be sent and remain queued for the"
+                      << " next run\n";
+        return count;
+      }
+    } else {
+      stable = 0;
+      Logger::out() << "Draining upload queue: " << count << " requests pending\n";
+    }
+    lastCount = count;
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
+
+  size_t remaining = getGoogleRequestQueueCount();
+  if (remaining > 0) {
+    Logger::out() << remaining << " requests still queued after " << maxSeconds
+                  << "s, leaving them for the next run\n";
+  }
+  return remaining;
 }
 
 #endif

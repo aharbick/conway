@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "api_test_handlers.h"
+#include "shutdown.h"
 #include "center4x4_utils.h"
 #include "cli_parser.h"
 #include "constants.h"
@@ -56,6 +57,9 @@ int main(int argc, char** argv) {
 #else
   Logger::out() << "Topology: Box/Plane (non-wrapping boundaries)\n";
 #endif
+
+  // Stop cleanly on Ctrl-C so queued uploads are not stranded
+  installShutdownHandler();
 
   // Handle Google Sheets configuration
   if (cli->dontSaveResults) {
