@@ -178,6 +178,32 @@ the histogram. Every 64th middleIdx therefore runs the exact kernel instead, whi
 uniform sample of the distribution for about 2% of the throughput. Log lines carry
 `mode=oracle` or `mode=exact` to say which ran.
 
+#### Completion is tracked separately
+
+The two modes establish different things, so they record completion in different places:
+
+| | exact interval | oracle interval |
+|---|---|---|
+| Google Sheets bitmap | marked | **not marked** |
+| local oracle bitmap (`--oracle-progress`) | marked | marked |
+| histogram row | yes | only a new record |
+
+The Sheets bitmap means "searched exhaustively at the candidate threshold, and its best
+recorded" - that is what a full run resumes from and what the histogram is built on. An
+oracle interval has established only that nothing there reaches the target. If oracle runs
+marked the Sheets bitmap, a later exhaustive run would skip those intervals as done and
+their distribution data would be lost for good.
+
+So an oracle run can cover the whole space without disturbing the exhaustive record, which
+stays exactly where it was and keeps growing slowly from the sampled intervals. Skipping
+works off either bitmap, since an exhaustively searched interval is also settled for the
+oracle's purposes. The local file is 547KB, written atomically, and merging two of them is
+a bitwise OR - partitioned workers can each keep their own.
+
+A new record raises the target mid-run, which prunes harder: measured 135.7ms at target 215
+against 97.9ms at 230 on the same middle block, saturating there. Most of that gap is the
+cost of Bloom probes, which a higher target converts into free tier-1 discards.
+
 See docs/BLOOM_FILTER.md for why an earlier attempt at this concluded the opposite, and
 include/subgrid_bloom.h for the bounds.
 

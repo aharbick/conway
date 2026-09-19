@@ -39,6 +39,7 @@ static struct argp_option argp_options[] = {
     {"strip-kernel", 'K', "KERNEL", 0, "Strip search combination kernel: 'fast' or 'legacy' (default: 'fast')", 2},
     {"oracle", 'O', "TARGET", OPTION_ARG_OPTIONAL, "Strip search: skip patterns that cannot reach TARGET generations, using the 7x7 Bloom filter. Much faster, but only reports results at or above TARGET (every 64th middleIdx still runs exact for the histogram). Omit TARGET to use the best known result + 1.", 2},
     {"bloom-file", 'B', "FILE", 0, "7x7 Bloom filter for --oracle (default: " DEFAULT_SUBGRID_BLOOM_PATH ").", 2},
+    {"oracle-progress", 'P', "FILE", 0, "Where --oracle records completed intervals (default: " DEFAULT_ORACLE_PROGRESS_PATH "). Kept out of Google Sheets so it cannot be confused with exhaustive coverage.", 2},
     {"subgrid-cache-file", 'C', "FILE", 0, "Load 7x7 subgrid cache from FILE to use for early termination optimization.", 2},
     {"compute-subgrid-cache", 'c', "PATH", 0, "Compute 7x7 subgrid cache for all 2^49 patterns and save to disk at PATH.", 2},
     {"subgrid-cache-begin", 'b', "NUMBER", 0, "Starting pattern index for subgrid cache computation (for resuming).", 2},
@@ -123,9 +124,6 @@ static bool parseStripKernel(const char* arg, ProgramArgs* args) {
 
   if (str == "fast") {
     args->stripKernel = STRIP_KERNEL_FAST;
-  args->useOracle = false;
-  args->oracleTarget = 0;
-  args->bloomFilePath = DEFAULT_SUBGRID_BLOOM_PATH;
     return true;
   } else if (str == "legacy") {
     args->stripKernel = STRIP_KERNEL_LEGACY;
@@ -503,6 +501,9 @@ static error_t parseArgpOptions(int key, char* arg, struct argp_state* state) {
   case 'B':
     a->bloomFilePath = arg;
     break;
+  case 'P':
+    a->oracleProgressPath = arg;
+    break;
   case 's':
     if (!parseSimulateType(arg, a)) {
       argp_failure(state, 1, 0, "Invalid simulate type");
@@ -603,6 +604,7 @@ void initializeDefaultArgs(ProgramArgs* args) {
   args->useOracle = false;
   args->oracleTarget = 0;
   args->bloomFilePath = DEFAULT_SUBGRID_BLOOM_PATH;
+  args->oracleProgressPath = DEFAULT_ORACLE_PROGRESS_PATH;
   args->compareFrameIdx = 0;
   args->subgridCacheBegin = 0;
   args->workerNum = 1;

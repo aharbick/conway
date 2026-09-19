@@ -73,6 +73,7 @@ typedef struct ProgramArgs {
   bool useOracle;                // Prune with the 7x7 Bloom filter (strip search only)
   uint32_t oracleTarget;         // 0 = derive from the best known result + 1
   std::string bloomFilePath;     // 7x7 Bloom filter artifact
+  std::string oracleProgressPath;  // Oracle-mode completion bitmap (kept out of Sheets)
   uint64_t compareFrameIdx;
   uint64_t subgridCacheBegin;
   int workerNum;

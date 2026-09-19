@@ -65,6 +65,7 @@
 #define STRIP_ORACLE_THREADS_PER_BLOCK 128
 #define STRIP_ORACLE_X_BLOCKS 1
 #define DEFAULT_SUBGRID_BLOOM_PATH "data/7x7subgrid-bloom.bin"
+#define DEFAULT_ORACLE_PROGRESS_PATH "data/strip-completion-oracle.bin"
 //
 // The oracle only reports patterns at or above its target, so it cannot supply an interval
 // best for the histogram. Every Nth middleIdx therefore runs the exact kernel instead,

@@ -7,6 +7,7 @@
 #include "gol.h"
 #include "gol_memory.h"
 #include "logging.h"
+#include "oracle_progress.h"
 #include "subgrid_bloom.h"
 
 #ifdef __NVCC__
@@ -491,9 +492,11 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
   // terminating pattern, so finding a longer one automatically tightens - and speeds up -
   // the rest of the search.
   OracleParams oracle;
+  OracleProgress oracleProgress;
   uint32_t* d_bloomFilter = nullptr;
+  SubgridBloomHeader bloomHeader{};
   if (cli->useOracle) {
-    SubgridBloomHeader header{};
+    SubgridBloomHeader& header = bloomHeader;
     if (!loadSubgridBloom(cli->bloomFilePath, &header, &d_bloomFilter)) {
       cudaFree(d_hashTable);
       return;
@@ -517,6 +520,15 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
                   << oracle.tier2Max << "\n";
     Logger::out() << "  every " << STRIP_ORACLE_HISTOGRAM_SAMPLE
                   << "th middleIdx still runs the exact kernel, to keep feeding the histogram\n";
+
+    if (!oracleProgress.load(cli->oracleProgressPath, target)) {
+      cudaFree(d_hashTable);
+      cudaFree(d_bloomFilter);
+      return;
+    }
+    Logger::out() << "  completed intervals go to " << cli->oracleProgressPath
+                  << ", NOT the shared completion bitmap: clearing an interval of patterns"
+                  << " at or above the target is not the same as searching it exhaustively\n";
 
     if (oracle.tier2Max == 0) {
       Logger::out() << "[FATAL] target " << target << " is too low for the oracle to prune"
@@ -543,9 +555,27 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
 
     // middleIdx 0-511, each covers 128 middle blocks
     for (uint32_t middleIdx = thisMiddleStart; middleIdx < thisMiddleEnd; middleIdx++) {
-      // Skip already-completed intervals (unless --dont-save-results is set)
+      // Skip already-completed intervals (unless --dont-save-results is set). An interval
+      // searched exhaustively is also settled for the oracle - its best was recorded, and it
+      // was below the target - so either bitmap is enough to skip it.
       if (!cli->dontSaveResults && isGoogleStripIntervalComplete(centerIdx, middleIdx)) {
         continue;
+      }
+      if (oracle.d_filter != nullptr && oracleProgress.isComplete(centerIdx, middleIdx)) {
+        continue;
+      }
+
+      // A new record raises the bar, which prunes harder and speeds up what is left. Only
+      // ever upward: intervals already cleared at a lower target stay valid.
+      if (oracle.d_filter != nullptr && cli->oracleTarget == 0 && gBestGenerations > 0 &&
+          (uint32_t)gBestGenerations + 1 > oracle.target) {
+        uint32_t raised = (uint32_t)gBestGenerations + 1;
+        oracle.target = (uint16_t)raised;
+        oracle.tier1Max = (uint16_t)subgridBloomTier1Max(bloomHeader, raised);
+        oracle.tier2Max = (uint16_t)subgridBloomTier2Max(bloomHeader, raised);
+        Logger::out() << "Oracle target raised to " << raised
+                      << " (no lookup up to generation " << oracle.tier1Max
+                      << ", filter miss up to " << oracle.tier2Max << ")\n";
       }
 
       // Process STRIP_SEARCH_MIDDLE_BLOCKS_PER_REPORT middle blocks for this middleIdx
@@ -573,9 +603,16 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
         }
       }
 
-      // Report at end of each middleIdx
+      // Report at end of each middleIdx. Only an exact interval may claim exhaustive
+      // completion; an oracle interval records itself in the local bitmap instead.
       reportStripSearchResults(cli, intervalStartTime, centerIdx, middleIdx,
                                intervalBestGenerations, intervalBestPattern, exactInterval);
+
+      if (oracle.d_filter != nullptr) {
+        // Exact intervals satisfy the oracle's claim too, so they mark both
+        oracleProgress.markComplete(centerIdx, middleIdx, oracle.target);
+        oracleProgress.save();
+      }
 
       // Reset interval tracking
       intervalStartTime = getHighResCurrentTime();
@@ -585,6 +622,7 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
   }
 
   // Cleanup (StripSearchMemory handles its own cleanup via RAII)
+  oracleProgress.save();
   cudaFree(d_hashTable);
   if (d_bloomFilter != nullptr) {
     cudaFree(d_bloomFilter);
@@ -623,7 +661,15 @@ __host__ void reportStripSearchResults(ProgramArgs *cli, double intervalStartTim
     // Track completion for every interval, including the ones where nothing survived long
     // enough to report. Gating this on bestGenerations > 0 left those intervals forever
     // unmarked, so every run resumed at the earliest one and redid the work behind it.
-    queueGoogleStripCompletion(centerIdx, middleIdx);
+    //
+    // Only exact intervals may claim this, though. The shared bitmap means "searched
+    // exhaustively and its best recorded", which is what a full run resumes from and what
+    // feeds the histogram; an oracle interval has established only that nothing there
+    // reaches the target. Marking those here would make a later exhaustive run skip them
+    // and lose their distribution data for good.
+    if (exactInterval) {
+      queueGoogleStripCompletion(centerIdx, middleIdx);
+    }
 
     if (bestGenerations > 0) {
       // Record summary data for histogram
