@@ -110,13 +110,17 @@ function duration(sec,   d, h, m) {
 
 # Cells are collected per column, then printed row by row. Padding is computed from the
 # plain text because the colour codes are invisible but still count toward a string length.
-function add(col, label, value, colour) {
+function add(col, label, coloured, plain) {
   rows[col]++
   lab[col, rows[col]] = label
-  val[col, rows[col]] = value
-  hue[col, rows[col]] = (colour == "") ? cyan : colour
+  val[col, rows[col]] = coloured
+  txt[col, rows[col]] = (plain == "") ? coloured : plain
   if (rows[col] > maxRows) maxRows = rows[col]
 }
+
+# Ordinary value, and one worth picking out of the table at a glance
+function plainCell(col, label, value)  { add(col, label, cyan value reset, value) }
+function boldCell(col, label, value)   { add(col, label, bold cyan value reset, value) }
 
 function centred(text, width,   left) {
   left = int((width - length(text)) / 2)
@@ -145,10 +149,10 @@ function emit(   c, r, out, plain, padding) {
     out = ""
     for (c = 1; c <= 3; c++) {
       if (r <= rows[c]) {
-        plain = sprintf("%-" L[c] "s %s", lab[c, r], val[c, r])
+        plain = sprintf("%-" L[c] "s %s", lab[c, r], txt[c, r])
         padding = W[c] + 2 - length(plain)
         if (padding < 1) padding = 1
-        out = out dim sprintf("%-" L[c] "s", lab[c, r]) reset " " hue[c, r] val[c, r] reset \
+        out = out dim sprintf("%-" L[c] "s", lab[c, r]) reset " " val[c, r] \
               sprintf("%" padding "s", "")
       } else {
         out = out sprintf("%" (W[c] + 2) "s", "")
@@ -212,20 +216,22 @@ END {
   perInterval = 4214880325120
 
   TITLE[1] = "SEARCH"; W[1] = 38; L[1] = 8
-  TITLE[2] = "PACE";   W[2] = 38; L[2] = 9
-  TITLE[3] = "SPEED";  W[3] = 26; L[3] = 8
+  TITLE[2] = "PACE";   W[2] = 34; L[2] = 9
+  TITLE[3] = "SPEED";  W[3] = 27; L[3] = 9
 
-  add(1, "complete", sprintf("%.2f%% (%s done, %s left)", 100.0 * position / total,
-      brief(position), brief(remaining)))
-  add(1, "center", sprintf("%s of %s (mid %s)", commas(lastCenter), commas(centers),
-      commas(lastMiddle)))
+  pctDone = sprintf("%.2f%%", 100.0 * position / total)
+  rest = sprintf(" (%s done, %s left)", brief(position), brief(remaining))
+  add(1, "complete", bold cyan pctDone reset cyan rest reset, pctDone rest)
+  plainCell(1, "center", sprintf("%s of %s", commas(lastCenter), commas(centers)))
+  plainCell(1, "middle", sprintf("%s of %s", commas(lastMiddle), commas(middles)))
 
   if (high > 0 && bestSeen > high) {
-    add(1, "best", sprintf("%d NEW RECORD at %s", bestSeen, bestAt), green)
+    value = sprintf("%d NEW RECORD at %s", bestSeen, bestAt)
+    add(1, "best", bold green value reset, value)
   } else if (high > 0) {
-    add(1, "best", sprintf("%d", high))
+    boldCell(1, "best", sprintf("%d", high))
   } else if (bestSeen > 0) {
-    add(1, "best", sprintf("%d at %s", bestSeen, bestAt))
+    boldCell(1, "best", sprintf("%d at %s", bestSeen, bestAt))
   }
 
   if (bestCount > 0) {
@@ -233,15 +239,15 @@ END {
     for (i = 0; i < 3 && i < bestCount; i++) {
       recents = recents (recents == "" ? "" : ", ") lastBest[(bestCount - i) % 3]
     }
-    add(1, "last", recents)
+    plainCell(1, "last", recents)
   }
 
   if (exact + oracle > 0) {
-    add(2, "intervals", sprintf("%s (%s / %s exact)", commas(n), commas(oracle), commas(exact)))
+    plainCell(2, "intervals", sprintf("%s (%s / %s exact)", commas(n), commas(oracle), commas(exact)))
   } else {
-    add(2, "intervals", commas(n))
+    plainCell(2, "intervals", commas(n))
   }
-  add(2, "elapsed", duration(active) (restarts > 0 ? sprintf(", %d restarts", restarts) : ""))
+  plainCell(2, "elapsed", duration(active) (restarts > 0 ? sprintf(", %d restarts", restarts) : ""))
 
   if (active > 0 && n > 1) {
     rate = (n - 1) * 3600.0 / active          # intervals per hour
@@ -253,28 +259,30 @@ END {
       if (last > oldest) recentRate = (recent - 1) * 3600.0 / (last - oldest)
     }
 
-    add(2, "rate", sprintf("%s/hr", commas(rate)))
-    # Work over time, not the mean or median of the per-interval rates: a slow interval
-    # takes disproportionate time while contributing one sample, so those run optimistic.
-    add(2, "effective", sprintf("%s/s", human(effective)))
-    add(2, "eta", duration(remaining / rate * 3600.0))
+    plainCell(2, "rate", sprintf("%s intervals/hr", commas(rate)))
+    boldCell(2, "eta", duration(remaining / rate * 3600.0))
     if (recentRate > 0) {
-      add(2, "recent", duration(remaining / recentRate * 3600.0))
+      boldCell(2, "recent", duration(remaining / recentRate * 3600.0))
     }
   }
 
   if (k > 0) {
     median = (k % 2) ? sortedPps[(k + 1) / 2] : (sortedPps[k / 2] + sortedPps[k / 2 + 1]) / 2
-    add(3, "median", human(median) "/s")
+
+    # Total work over total time, which is what the eta divides by. It sits below the median
+    # on purpose: a slow interval eats disproportionate time while contributing one sample,
+    # so the median always reads higher and an eta derived from it comes out optimistic.
+    if (active > 0) plainCell(3, "sustained", sprintf("%s/s", human(n * perInterval / active)))
+    plainCell(3, "median", human(median) "/s")
     if (p > recent) {
       window = 0
       for (i = p - recent + 1; i <= p; i++) window += ordered[i]
       window /= recent
       pct = (median > 0) ? (window - median) * 100.0 / median : 0
-      add(3, sprintf("last%d", recent), sprintf("%s/s %+.0f%%", human(window), pct),
-          (pct >= 0 ? green : yellow))
+      value = sprintf("%s/s %+.0f%%", human(window), pct)
+      add(3, sprintf("last%d", recent), (pct >= 0 ? green : yellow) value reset, value)
     }
-    add(3, "max", human(sortedPps[k]) "/s")
+    plainCell(3, "max", human(sortedPps[k]) "/s")
   }
 
   emit()
