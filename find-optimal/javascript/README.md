@@ -23,8 +23,15 @@ the rest of the endpoints use, and delivers through `MailApp` from the account t
 script. `tools/pattern-progress-stats --notify` calls it when the search crosses a whole
 percent, finds a new best, or a day has passed.
 
-**Set `MAIL_DEFAULT_RECIPIENT` before deploying** - it is empty by default and nothing is
-sent until it has an address. Recipients are an allowlist on purpose: the API key travels in
+Setting it up takes two steps, and both are needed:
+
+1. **Set `MAIL_DEFAULT_RECIPIENT`** at the top of `progress-api.js`. It is empty by default
+   and nothing is sent until it has an address.
+2. **Run `authorizeMail()` from the editor**, then redeploy as a new version. Apps Script
+   grants scopes when a function runs in the editor and you accept the consent prompt, not
+   when a web app is deployed - so a deployment made before `MailApp` appeared in this file
+   has no `script.send_mail` scope, and `sendMail` fails with a permissions exception no
+   matter how many times it is redeployed. Recipients are an allowlist on purpose: the API key travels in
 a query string and lives in a workstation `.envrc`, so anyone holding it could otherwise
 send mail from the owning Google account to anywhere. `MAIL_ALLOWED_RECIPIENTS` widens it.
 

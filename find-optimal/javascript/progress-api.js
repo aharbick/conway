@@ -298,6 +298,30 @@ function googleSendMail(e) {
 }
 
 /**
+ * SETUP: run this once from the Apps Script editor, before using sendMail.
+ *
+ * Apps Script grants OAuth scopes when a function runs in the editor and you accept the
+ * consent prompt - not when a web app is deployed. A deployment made before MailApp
+ * appeared in this file therefore carries no script.send_mail scope, and every sendMail
+ * fails with a permissions exception however many times it is redeployed.
+ *
+ * Running this asks for the missing scope and proves the address works. Redeploy as a new
+ * version afterwards so /exec runs with it.
+ */
+function authorizeMail() {
+  if (!MAIL_DEFAULT_RECIPIENT) {
+    throw new Error('Set MAIL_DEFAULT_RECIPIENT at the top of this file first');
+  }
+  MailApp.sendEmail({
+    to: MAIL_DEFAULT_RECIPIENT,
+    subject: 'find-optimal: mail authorized',
+    body: 'progress-api.js can send mail now.\n\nRemaining quota today: ' +
+          MailApp.getRemainingDailyQuota() + ' messages.',
+  });
+  console.log('Sent a test message to ' + MAIL_DEFAULT_RECIPIENT);
+}
+
+/**
  * Adds progress data to the Google Sheet
  */
 function googleSendProgress(e, spreadsheetId) {
