@@ -182,9 +182,14 @@ An interval that found nothing at or above the target omits the `bestGenerations
 `bestPattern` and `bestPatternBin` tokens rather than reporting zeros:
 
 ```
-timestamp=..., centerIdx=904, middleIdx=63, patternsPerSec=1,580,903,717,494, mode=oracle
-timestamp=..., centerIdx=904, middleIdx=64, bestGenerations=202, bestPattern=..., bestPatternBin=..., patternsPerSec=394,414,088,105, mode=exact
+timestamp=..., centerIdx=906, middleIdx=63, highGenerations=214, patternsPerSec=669,840,542,603, mode=oracle
+timestamp=..., centerIdx=906, middleIdx=64, bestGenerations=202, bestPattern=..., bestPatternBin=..., highGenerations=214, patternsPerSec=157,467,947,296, mode=exact
 ```
+
+`highGenerations` is the record the run was searching against, so the target was one past
+it. It appears on every line of an oracle run, including the sampled exact ones, because the
+bar rises as soon as a record lands - a line that did not carry it would not say what it had
+been measured against. A run without `--oracle` has no bar and omits the token.
 
 `bestGenerations=0` would be a claim rather than an absence - the interval does have a best,
 the oracle simply never measured it - and in a log where almost nothing reaches the target,

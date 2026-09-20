@@ -21,7 +21,7 @@ extern __global__ void processCandidates(uint64_t *candidates, uint64_t *numCand
 __host__ void reportStripSearchResults(ProgramArgs *cli, double intervalStartTime,
                                        uint32_t centerIdx, uint32_t middleIdx,
                                        uint64_t bestGenerations, uint64_t bestPattern,
-                                       bool exactInterval);
+                                       bool exactInterval, uint32_t highGenerations);
 
 // Helper: Add strip to output if signature is unique (using hash table with CityHash)
 __device__ static inline void addIfUnique(
@@ -618,7 +618,8 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
       // Report at end of each middleIdx. Only an exact interval may claim exhaustive
       // completion; an oracle interval records itself in the local bitmap instead.
       reportStripSearchResults(cli, intervalStartTime, centerIdx, middleIdx,
-                               intervalBestGenerations, intervalBestPattern, exactInterval);
+                               intervalBestGenerations, intervalBestPattern, exactInterval,
+                               (oracle.d_filter != nullptr) ? (uint32_t)oracle.target - 1 : 0);
 
       if (oracle.d_filter != nullptr) {
         // Exact intervals satisfy the oracle's claim too, so they mark both
@@ -648,7 +649,7 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
 __host__ void reportStripSearchResults(ProgramArgs *cli, double intervalStartTime,
                                        uint32_t centerIdx, uint32_t middleIdx,
                                        uint64_t bestGenerations, uint64_t bestPattern,
-                                       bool exactInterval) {
+                                       bool exactInterval, uint32_t highGenerations) {
   double elapsed = getHighResCurrentTime() - intervalStartTime;
 
   // Calculate patterns per middleIdx interval:
@@ -675,6 +676,13 @@ __host__ void reportStripSearchResults(ProgramArgs *cli, double intervalStartTim
     out << ", bestGenerations=" << bestGenerations
         << ", bestPattern=" << bestPattern
         << ", bestPatternBin=" << bestPatternBin;
+  }
+
+  // The bar this interval was searched against. Worth recording on every line of an oracle
+  // run, including its sampled exact intervals, because the bar rises the moment a record
+  // lands - so without it a line does not say what it was measured against.
+  if (highGenerations > 0) {
+    out << ", highGenerations=" << highGenerations;
   }
 
   out << ", patternsPerSec=" << formatWithCommas(patternsPerSec)
