@@ -14,6 +14,8 @@
 # slowdown is visible while watching rather than being buried in a lifetime average.
 #
 #   STATS_RECENT=50 tools/stats     # size of that recent window (default 100)
+#
+# Colour is off when stdout is not a terminal; NO_COLOR forces it off and CLICOLOR_FORCE on.
 
 set -o pipefail
 
@@ -35,9 +37,30 @@ fi
 
 recent=${STATS_RECENT:-100}
 
+# Colour follows the usual conventions: off when stdout is not a terminal, so piping or
+# redirecting never emits escape codes. NO_COLOR forces it off, CLICOLOR_FORCE forces it on.
+# watch needs both: -c to render the codes, and --color here to emit them into its pipe.
+usecolor=0
+case "${stats_color:-auto}" in
+  always) usecolor=1 ;;
+  never)  usecolor=0 ;;
+  *)      if [ -n "${NO_COLOR:-}" ]; then usecolor=0
+          elif [ -n "${CLICOLOR_FORCE:-}" ]; then usecolor=1
+          elif [ -t 1 ]; then usecolor=1
+          fi ;;
+esac
+
+if [ "$usecolor" = 1 ]; then
+  dim=$'\033[2m'; cyan=$'\033[36m'
+  green=$'\033[32m'; yellow=$'\033[33m'; reset=$'\033[0m'
+else
+  dim=""; cyan=""; green=""; yellow=""; reset=""
+fi
+
 # Extremes and the median want the values sorted; the latest and the recent window want them
 # in the order they arrived. Sorting once here beats sorting inside awk.
-awk -v recent="$recent" '
+awk -v recent="$recent" -v dim="$dim" -v cyan="$cyan" -v green="$green" \
+    -v yellow="$yellow" -v reset="$reset" '
 function human(v,   units, i, a) {
   split(" ,K,M,G,T,P,E", units, ",")
   i = 1
@@ -64,8 +87,9 @@ function commas(v,   s, out, len, i) {
   return out
 }
 
-function row(label, value) {
-  printf "%14s  %s\n", label, value
+function row(label, value, note) {
+  if (note == "") printf "%-11s %s%s%s\n", label, cyan, value, reset
+  else            printf "%-11s %s%-12s%s %s%s%s\n", label, cyan, value, reset, dim, note, reset
 }
 
 FNR == NR { ordered[++n] = $1 + 0; sum += $1; next }
@@ -90,7 +114,8 @@ END {
     for (i = n - recent + 1; i <= n; i++) window += ordered[i]
     window /= recent
     delta = (mean > 0) ? (window - mean) * 100.0 / mean : 0
-    row(sprintf("last %d", recent), sprintf("%s  (%+.0f%% vs mean)", human(window), delta))
+    row(sprintf("last %d", recent), human(window),
+        sprintf("(%s%+.0f%%%s vs mean)", (delta >= 0 ? green : yellow), delta, dim))
   }
 }
 ' <(printf '%s\n' "$numbers") <(printf '%s\n' "$numbers" | sort -g)
