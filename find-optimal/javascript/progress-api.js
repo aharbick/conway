@@ -27,7 +27,7 @@ const STRIP_BESTS_HEADERS = ['centerIdx', 'middleIdx', 'bestGenerations', 'bestP
 // It is a constant rather than a lookup of the script owner because Session.getEffectiveUser
 // needs the userinfo.email scope, which a web app deployment does not carry - asking for it
 // would mean re-authorizing the whole script to learn an address that is known anyway.
-const MAIL_DEFAULT_RECIPIENT = '';
+const MAIL_DEFAULT_RECIPIENT = 'aharbick@aharbick.com';
 
 // Extra addresses sendMail may deliver to. The default recipient is always allowed; anything
 // else has to be listed here, so a leaked API key cannot turn this into an open relay.
