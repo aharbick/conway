@@ -1,42 +1,96 @@
 #!/bin/bash
+#
+# Summarize a stream of numbers.
+#
+#   tools/stats 1 2 3
+#   grep -o 'patternsPerSec=[0-9,]*' run.log | sed 's/.*=//' | tools/stats
+#
+# Large values are scaled (K/M/G/T/P), so 762782341667 reads as 762.78 G rather than being
+# counted by eye. Thousands separators are stripped and anything that is not a number is
+# skipped, so trailing commas and stray labels in a pipeline do not corrupt the result.
+#
+# Input order is assumed to be chronological, which it is when reading a log: alongside the
+# usual summary it reports the latest value and the mean of the most recent samples, so a
+# slowdown is visible while watching rather than being buried in a lifetime average.
+#
+#   STATS_RECENT=50 tools/stats     # size of that recent window (default 100)
 
-# Check if input is provided via command line arguments or stdin
+set -o pipefail
+
 if [ "$#" -gt 0 ]; then
-  # Use command line arguments as input
-  input="$@"
+  input="$*"
 else
-  # Read from stdin if no arguments are provided
-  input=$(cat /dev/stdin)
+  input=$(cat)
 fi
 
-# Use awk to calculate statistics
-echo "$input" | awk '
-BEGIN {
-  min = ""
-  max = ""
-  sum = 0
-  count = 0
-}
-{
-  for (i=1; i<=NF; i++) {
-    if (min == "" || $i < min) {
-      min = $i
-    }
-    if (max == "" || $i > max) {
-      max = $i
-    }
-    sum += $i
-    count++
-  }
-}
-END {
-  if (count > 0) {
-    avg = sum / count
-    printf("Minimum: %f\n", min)
-    printf("Maximum: %f\n", max)
-    printf("Average: %f\n", avg)
-  } else {
-    print "No numbers provided."
-  }
-}'
+numbers=$(printf '%s\n' "$input" |
+  tr -d ',' |
+  tr -s '[:space:]' '\n' |
+  grep -E '^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?$')
 
+if [ -z "$numbers" ]; then
+  echo "No numbers provided."
+  exit 1
+fi
+
+recent=${STATS_RECENT:-100}
+
+# Extremes and the median want the values sorted; the latest and the recent window want them
+# in the order they arrived. Sorting once here beats sorting inside awk.
+awk -v recent="$recent" '
+function human(v,   units, i, a) {
+  split(" ,K,M,G,T,P,E", units, ",")
+  i = 1
+  a = (v < 0 ? -v : v)
+  while (a >= 1000 && i < 7) {
+    v /= 1000
+    a /= 1000
+    i++
+  }
+  if (i == 1) {
+    return (v == int(v)) ? sprintf("%d", v) : sprintf("%.2f", v)
+  }
+  return sprintf("%.2f %s", v, units[i])
+}
+
+function commas(v,   s, out, len, i) {
+  s = sprintf("%d", v)
+  len = length(s)
+  out = ""
+  for (i = 1; i <= len; i++) {
+    out = out substr(s, i, 1)
+    if ((len - i) % 3 == 0 && i < len) out = out ","
+  }
+  return out
+}
+
+function row(label, value) {
+  printf "%14s  %s\n", label, value
+}
+
+FNR == NR { ordered[++n] = $1 + 0; sum += $1; next }
+          { sorted[++m] = $1 + 0 }
+
+END {
+  if (n == 0) exit 1
+
+  mean = sum / n
+  median = (m % 2) ? sorted[(m + 1) / 2] : (sorted[m / 2] + sorted[m / 2 + 1]) / 2
+
+  row("samples", commas(n))
+  row("latest", human(ordered[n]))
+  row("mean", human(mean))
+  row("median", human(median))
+  row("min", human(sorted[1]))
+  row("max", human(sorted[m]))
+
+  # Only worth showing once there is enough history for it to differ from the mean
+  if (n > recent) {
+    window = 0
+    for (i = n - recent + 1; i <= n; i++) window += ordered[i]
+    window /= recent
+    delta = (mean > 0) ? (window - mean) * 100.0 / mean : 0
+    row(sprintf("last %d", recent), sprintf("%s  (%+.0f%% vs mean)", human(window), delta))
+  }
+}
+' <(printf '%s\n' "$numbers") <(printf '%s\n' "$numbers" | sort -g)
