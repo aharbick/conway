@@ -5,6 +5,7 @@
 #   tools/pattern-progress-stats logs/find-optimal-5090-oracle.log
 #   tools/pattern-progress-stats --watch logs/find-optimal-5090-oracle.log
 #   tools/pattern-progress-stats --watch=5 logs/...      # refresh every 5s
+#   tools/pattern-progress-stats --rescan logs/...       # rebuild the counters from scratch
 #
 # --watch redraws in place, which is simpler than wrapping this in watch(1): the script
 # keeps its terminal, so colour works without watch -c and without forcing codes into a pipe.
@@ -20,16 +21,27 @@
 #
 # Restarts are handled by ignoring gaps longer than STATS_GAP seconds (default 600) when
 # measuring elapsed time, so downtime between runs does not depress the rate.
+#
+# A finished search leaves 4.4m lines behind, and re-reading that every few seconds would
+# take longer than the refresh interval. So the whole-run counters - the interval count, the
+# elapsed time, the restarts, the best seen - live in a small cache under
+# $XDG_CACHE_HOME/pattern-progress-stats, advanced by only the bytes appended since the last
+# render, and everything else is computed from the tail of the log. The cache rebuilds
+# itself if the log is rotated or truncated, and --rescan forces it.
+#
+#   STATS_WINDOW_MB=20   how much of the tail the median, max and plot see (default 20)
 
 set -o pipefail
 
 want_color=auto
 interval=0
 nograph=
+rescan=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --color)     want_color=always; shift ;;
     --no-graph)  nograph=1; shift ;;
+    --rescan)    rescan=1; shift ;;
     --no-color)  want_color=never;  shift ;;
     --watch)     interval=10; shift ;;
     --watch=*)   interval="${1#--watch=}"; shift ;;
@@ -42,7 +54,8 @@ done
 
 log=${1:-}
 if [ -z "$log" ]; then
-  echo "usage: $(basename "$0") [--watch[=SECONDS]] [--no-graph] [--color|--no-color] <logfile>" >&2
+  echo "usage: $(basename "$0") [--watch[=SECONDS]] [--no-graph] [--rescan]" \
+       "[--color|--no-color] <logfile>" >&2
   exit 2
 fi
 if [ ! -r "$log" ]; then
@@ -58,6 +71,7 @@ centers=${STATS_CENTERS:-8548}
 middles=${STATS_MIDDLES:-512}
 gap=${STATS_GAP:-600}
 recent=${STATS_RECENT:-100}
+window=$(( ${STATS_WINDOW_MB:-20} * 1000000 ))
 
 # Colour follows the usual conventions: off when stdout is not a terminal, so piping or
 # redirecting never emits escape codes. NO_COLOR forces it off, CLICOLOR_FORCE on. Decided
@@ -104,7 +118,9 @@ render() {
   awk -v centers="$centers" -v middles="$middles" -v gap="$gap" -v recent="$recent" \
       -v bold="$bold" -v dim="$dim" -v cyan="$cyan" -v green="$green" -v yellow="$yellow" \
       -v reset="$reset" -v hi_="$hi" -v found="$found" -v nograph="$nograph" \
-      -v plotH="$plotH" '
+      -v plotH="$plotH" -v windowed="$windowed" \
+      -v totalN="$stN" -v totalActive="$stActive" -v totalRestarts="$stRestarts" \
+      -v totalBest="$stBest" -v totalBestAt="$stBestAt" '
 function commas(v,   s, out, len, i) {
   s = sprintf("%d", v); len = length(s); out = ""
   for (i = 1; i <= len; i++) {
@@ -259,22 +275,30 @@ function emit(   c, r, out, plain, padding) {
   }
 }
 
-# First input is the log in order; second is the patternsPerSec values sorted, for the
-# median and the maximum without sorting inside awk.
+# First input is the tail window of the log in order; second is its patternsPerSec values
+# sorted, for the median and the maximum without sorting inside awk. Everything derived here
+# describes the window. The whole-run counters arrive as totalN/totalActive/totalRestarts,
+# accumulated once per line by the state cache, so nothing here has to see the whole log.
+function field(line, name, width,   v) {
+  if (!match(line, name "=[0-9,]+")) return 0
+  v = substr(line, RSTART + width + 1, RLENGTH - width - 1)
+  gsub(/,/, "", v)
+  return v + 0
+}
+
 FNR == NR {
-  if (match($0, /timestamp=[0-9]+/))  ts     = substr($0, RSTART + 10, RLENGTH - 10) + 0
-  if (match($0, /centerIdx=[0-9]+/))  center = substr($0, RSTART + 10, RLENGTH - 10) + 0
-  if (match($0, /middleIdx=[0-9]+/))  middle = substr($0, RSTART + 10, RLENGTH - 10) + 0
-  if (match($0, /highGenerations=[0-9]+/)) high = substr($0, RSTART + 16, RLENGTH - 16) + 0
+  # Only what every line contributes is parsed per line: the position and the target come
+  # from the last line alone, and pulling them out here instead would cost three more
+  # regexes across the whole window for one line worth of answer.
+  # These stay literal: a regex built from a variable is recompiled on every line, which
+  # costs more than the three matches it would save.
+  if (match($0, /timestamp=[0-9]+/)) ts = substr($0, RSTART + 10, RLENGTH - 10) + 0
 
   # Only intervals that were fully searched report a best, so these are the histogram
   # samples. Zero means nothing survived long enough, which is not a sample worth showing.
   if (match($0, /bestGenerations=[0-9]+/)) {
     best = substr($0, RSTART + 16, RLENGTH - 16) + 0
-    if (best > 0) {
-      lastBest[++bestCount % 3] = best
-      if (best > bestSeen) { bestSeen = best; bestAt = sprintf("%d:%d", center, middle) }
-    }
+    if (best > 0) lastBest[++bestCount % 3] = best
   }
 
   if (match($0, /patternsPerSec=[0-9,]+/)) {
@@ -284,25 +308,21 @@ FNR == NR {
     tsOf[p] = ts
   }
 
-  n++
-  if (n > 1) {
-    delta = ts - prev
-    if (delta >= 0 && delta <= gap) active += delta
-    else if (delta > gap) restarts++
-  }
-  prev = ts; last = ts; lastCenter = center; lastMiddle = middle
-
-  if ($0 ~ /mode=exact/) exact++
-  else if ($0 ~ /mode=oracle/) oracle++
-
-  win[n % recent] = ts
+  wn++
+  last = ts
+  lastLine = $0
+  win[wn % recent] = ts
   next
 }
 
 { sortedPps[++k] = $1 + 0 }
 
 END {
-  if (n == 0) { print "no interval lines in the log"; exit 1 }
+  if (wn == 0) { print "no interval lines in the log"; exit 1 }
+
+  lastCenter = field(lastLine, "centerIdx", 9)
+  lastMiddle = field(lastLine, "middleIdx", 9)
+  high       = field(lastLine, "highGenerations", 15)
 
   total = centers * middles
   position = lastCenter * middles + lastMiddle
@@ -325,13 +345,13 @@ END {
   plainCell(1, "center", sprintf("%s of %s", commas(lastCenter), commas(centers)))
   plainCell(1, "middle", sprintf("%s of %s", commas(lastMiddle), commas(middles)))
 
-  if (high > 0 && bestSeen > high) {
-    value = sprintf("%d NEW RECORD at %s", bestSeen, bestAt)
+  if (high > 0 && totalBest > high) {
+    value = sprintf("%d NEW RECORD at %s", totalBest, totalBestAt)
     add(1, "best", found value reset, value)
   } else if (high > 0) {
     boldCell(1, "best", sprintf("%d", high))
-  } else if (bestSeen > 0) {
-    boldCell(1, "best", sprintf("%d at %s", bestSeen, bestAt))
+  } else if (totalBest > 0) {
+    boldCell(1, "best", sprintf("%d at %s", totalBest, totalBestAt))
   }
 
   if (bestCount > 0) {
@@ -342,15 +362,16 @@ END {
     plainCell(1, "last", recents)
   }
 
-  plainCell(2, "this log", sprintf("%s of %s done", commas(n), brief(position)))
-  plainCell(2, "elapsed", duration(active) (restarts > 0 ? sprintf(", %d restarts", restarts) : ""))
+  plainCell(2, "this log", sprintf("%s of %s done", commas(totalN), brief(position)))
+  plainCell(2, "elapsed",
+            duration(totalActive) (totalRestarts > 0 ? sprintf(", %d restarts", totalRestarts) : ""))
 
-  if (active > 0 && n > 1) {
-    rate = (n - 1) * 3600.0 / active          # intervals per hour
+  if (totalActive > 0 && totalN > 1) {
+    rate = (totalN - 1) * 3600.0 / totalActive   # intervals per hour
 
     recentRate = 0
-    if (n > recent) {
-      oldest = win[(n + 1) % recent]
+    if (wn > recent) {
+      oldest = win[(wn + 1) % recent]
       if (last > oldest) recentRate = (recent - 1) * 3600.0 / (last - oldest)
     }
 
@@ -367,7 +388,9 @@ END {
     # Total work over total time, which is what the eta divides by. It sits below the median
     # on purpose: a slow interval eats disproportionate time while contributing one sample,
     # so the median always reads higher and an eta derived from it comes out optimistic.
-    if (active > 0) plainCell(3, "sustained", sprintf("%s/s", human(n * perInterval / active)))
+    if (totalActive > 0) {
+      plainCell(3, "sustained", sprintf("%s/s", human(totalN * perInterval / totalActive)))
+    }
     plainCell(3, "median", human(median) "/s")
     if (p > recent) {
       window = 0
@@ -381,18 +404,150 @@ END {
   }
 
   emit()
+
+  # The cumulative figures are exact however big the log gets, but median, last100, max and
+  # the graph only see the tail window, so say so rather than let them look whole-run.
+  if (windowed && wn < totalN) {
+    printf "%smedian, last%d, max and the plot cover the last %s intervals;" \
+           " the rest is the whole log%s\n", dim, recent, commas(wn), reset
+  }
+
   if (!nograph) graph(W[1] + W[2] + W[3] + 4, plotH + 0)
 }
 ' "$1" "$2"
 }
 
-prepare() {
-  grep 'timestamp=' "$log" > "$tmplog"
-  grep -o 'patternsPerSec=[0-9,]*' "$log" | sed 's/.*=//' | tr -d ',' | sort -g > "$tmppps"
+# Whole-run counters, carried across renders so a growing log costs a constant amount per
+# tick. Without this the script re-reads the whole file every time: 42ms at 4k lines, but
+# 6.8s at a million and ~26s at the 4.4m lines a finished search would leave behind, which
+# is longer than the watch interval. The cache is advanced by the bytes appended since the
+# last render, so a tick reads the handful of lines that are actually new.
+#
+# It holds only what cannot be recovered from the tail of the log: the interval count, the
+# active seconds, the restart count, the last timestamp (to continue the gap arithmetic
+# across the chunk boundary) and the best generations seen. Everything else - the median,
+# the maximum, the plot - is recomputed from the window each time.
+statefile=""
+stN=0; stActive=0; stRestarts=0; stPrev=0; stBest=0; stBestAt="-"; stOffset=0
+
+state_path() {
+  local dir="${XDG_CACHE_HOME:-$HOME/.cache}/pattern-progress-stats"
+  mkdir -p "$dir" 2>/dev/null || return 1
+  # One state file per log, named after its absolute path with the separators flattened
+  local key
+  key=$(cd "$(dirname "$log")" 2>/dev/null && printf '%s/%s' "$PWD" "$(basename "$log")")
+  printf '%s/%s.state' "$dir" "$(printf '%s' "${key#/}" | tr '/ ' '__')"
 }
 
-tmplog=$(mktemp) && tmppps=$(mktemp) || exit 1
-trap 'rm -f "$tmplog" "$tmppps"' EXIT
+# A log that shrank or changed identity is a different log: start over rather than carry
+# counters that no longer describe it.
+load_state() {
+  local inode size
+  inode=$(stat -c %i "$log" 2>/dev/null) || return
+  size=$(stat -c %s "$log" 2>/dev/null) || return
+  [ -r "$statefile" ] || return
+  # shellcheck disable=SC1090
+  . "$statefile" 2>/dev/null || return
+  if [ "${stVersion:-0}" != 1 ] || [ "${stInode:-0}" != "$inode" ] || \
+     [ "${stOffset:-0}" -gt "$size" ]; then
+    stN=0; stActive=0; stRestarts=0; stPrev=0; stBest=0; stBestAt="-"; stOffset=0
+  fi
+}
+
+save_state() {
+  local tmp="$statefile.$$"
+  {
+    printf 'stVersion=1\nstInode=%s\nstOffset=%s\n' "$1" "$2"
+    printf 'stN=%s\nstActive=%s\nstRestarts=%s\nstPrev=%s\n' \
+           "$stN" "$stActive" "$stRestarts" "$stPrev"
+    printf 'stBest=%s\nstBestAt=%s\n' "$stBest" "$stBestAt"
+  } > "$tmp" && mv -f "$tmp" "$statefile"
+}
+
+# Fold the bytes appended since the last render into the counters.
+advance_state() {
+  local inode size chunk bytes partial
+  inode=$(stat -c %i "$log" 2>/dev/null) || return
+  size=$(stat -c %s "$log" 2>/dev/null) || return
+  [ "$size" -le "$stOffset" ] && return
+
+  chunk="$tmpchunk"
+  tail -c "+$((stOffset + 1))" "$log" > "$chunk" || return
+  bytes=$(wc -c < "$chunk")
+
+  # The search may be mid-line: leave the partial line for the next render rather than
+  # counting half an interval and then counting its other half again.
+  if [ -n "$(tail -c 1 "$chunk")" ]; then
+    partial=$(awk 'END { print length($0) }' "$chunk")
+    bytes=$((bytes - partial))
+    [ "$bytes" -le 0 ] && return
+    head -c "$bytes" "$chunk" > "$chunk.t" && mv -f "$chunk.t" "$chunk"
+  fi
+
+  read -r stN stActive stRestarts stPrev stBest stBestAt <<EOF
+$(awk -v n="$stN" -v active="$stActive" -v restarts="$stRestarts" -v prev="$stPrev" \
+      -v best="$stBest" -v bestAt="$stBestAt" -v gap="$gap" '
+/timestamp=/ {
+  if (!match($0, /timestamp=[0-9]+/)) next
+  ts = substr($0, RSTART + 10, RLENGTH - 10) + 0
+
+  # Gaps longer than STATS_GAP are downtime between runs, not time spent searching
+  if (n > 0) {
+    d = ts - prev
+    if (d >= 0 && d <= gap) active += d
+    else if (d > gap) restarts++
+  }
+  prev = ts
+  n++
+
+  if (match($0, /bestGenerations=[0-9]+/)) {
+    b = substr($0, RSTART + 16, RLENGTH - 16) + 0
+    if (b > best) {
+      best = b
+      c = m = 0
+      if (match($0, /centerIdx=[0-9]+/)) c = substr($0, RSTART + 10, RLENGTH - 10) + 0
+      if (match($0, /middleIdx=[0-9]+/)) m = substr($0, RSTART + 10, RLENGTH - 10) + 0
+      bestAt = c ":" m
+    }
+  }
+}
+END { print n, active, restarts, prev, best, (bestAt == "" ? "-" : bestAt) }' "$chunk")
+EOF
+
+  save_state "$inode" "$((stOffset + bytes))"
+  stOffset=$((stOffset + bytes))
+}
+
+# The sample statistics and the plot read the tail of the log rather than all of it. The
+# window is large enough to cover weeks of intervals, and the report says when it bites.
+windowed=0
+prepare() {
+  local size
+  advance_state
+
+  size=$(stat -c %s "$log" 2>/dev/null || echo 0)
+  if [ "$size" -gt "$window" ]; then
+    windowed=1
+    # tail -c lands mid-line, so drop the first one
+    tail -c "$window" "$log" | tail -n +2 | grep 'timestamp=' > "$tmplog"
+  else
+    windowed=0
+    grep 'timestamp=' "$log" > "$tmplog"
+  fi
+
+  # sort -n rather than -g: these are plain integers once the commas are gone, and the
+  # general-numeric comparison is more than twice as slow for the same answer
+  grep -o 'patternsPerSec=[0-9,]*' "$tmplog" | sed 's/.*=//' | tr -d ',' | sort -n > "$tmppps"
+}
+
+tmplog=$(mktemp) && tmppps=$(mktemp) && tmpchunk=$(mktemp) || exit 1
+trap 'rm -f "$tmplog" "$tmppps" "$tmpchunk" "$tmpchunk.t"' EXIT
+
+statefile=$(state_path) || statefile=""
+if [ -n "$statefile" ]; then
+  [ -n "$rescan" ] && rm -f "$statefile"
+  load_state
+fi
 
 if [ "$interval" -eq 0 ]; then
   prepare
@@ -402,7 +557,7 @@ fi
 
 # Redraw in place: home the cursor and clear below it, so a shorter report cannot leave
 # stale lines behind and the screen does not flash the way a full clear does.
-trap 'printf "\033[?25h\n"; rm -f "$tmplog" "$tmppps"; exit 0' INT TERM
+trap 'printf "\033[?25h\n"; rm -f "$tmplog" "$tmppps" "$tmpchunk" "$tmpchunk.t"; exit 0' INT TERM
 printf '\033[?25l'
 while true; do
   prepare
