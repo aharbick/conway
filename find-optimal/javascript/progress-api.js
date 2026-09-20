@@ -346,7 +346,8 @@ function authorizeMail(to) {
   MailApp.sendEmail(message);
   const after = MailApp.getRemainingDailyQuota();
 
-  console.log('Sent to ' + recipient);
+  console.log('Sent to ' + recipient +
+              (MAIL_SENDER_ALIAS ? ' from ' + MAIL_SENDER_ALIAS : ' from this account'));
   console.log('Quota ' + before + ' -> ' + after +
               (after < before ? ' (accepted by Google)'
                               : ' (UNCHANGED - it was not actually sent)'));
@@ -355,6 +356,11 @@ function authorizeMail(to) {
   if (!MAIL_SENDER_ALIAS) {
     console.log('Landing under Sent rather than Inbox means the sender and the recipient' +
                 ' are the same account: set MAIL_SENDER_ALIAS, or send somewhere else.');
+  } else {
+    console.log('If the From line still shows this account, Gmail did not accept the alias.' +
+                ' MailApp ignores an unverified one silently - check it is listed under' +
+                ' Gmail, Settings, Accounts, "Send mail as", on the account owning this' +
+                ' script, and that this file has been redeployed as a new version.');
   }
 }
 
