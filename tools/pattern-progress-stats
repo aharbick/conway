@@ -85,6 +85,12 @@ function commas(v,   s, out, len, i) {
   return out
 }
 
+function brief(v) {
+  if (v < 1000) return sprintf("%d", v)
+  if (v < 1000000) return sprintf("%.0fk", v / 1000)
+  return sprintf("%.1fm", v / 1000000)
+}
+
 function human(v,   units, i, a) {
   split(" ,K,M,G,T,P", units, ",")
   i = 1; a = (v < 0 ? -v : v)
@@ -96,13 +102,18 @@ function duration(sec,   d, h, m) {
   d = int(sec / 86400); sec -= d * 86400
   h = int(sec / 3600);  sec -= h * 3600
   m = int(sec / 60)
+  if (d >= 10) return sprintf("%dd", d)
   if (d > 0) return sprintf("%dd %dh", d, h)
   if (h > 0) return sprintf("%dh %dm", h, m)
   return sprintf("%dm", m)
 }
 
-function row(label, value) { printf "  %-11s %s%s%s\n", label, cyan, value, reset }
-function head(t)           { printf "%s%s%s\n", bold, toupper(t), reset }
+function field(label, value) {
+  if (label == "") return sprintf("%s%s%s", cyan, value, reset)
+  return sprintf("%s%s%s %s%s%s", dim, label, reset, cyan, value, reset)
+}
+
+function line(head, fields) { printf "%s%-7s%s %s\n", bold, toupper(head), reset, fields }
 
 # First input is the log in order; second is the patternsPerSec values sorted, for the
 # median and the maximum without sorting inside awk.
@@ -151,47 +162,36 @@ END {
   total = centers * middles
   position = lastCenter * middles + lastMiddle
   remaining = total - position
+  sep = sprintf("%s  ·  %s", dim, reset)
 
   # 2^64 / (8548 * 512): what the search calls one interval of the space, and what its
   # patternsPerSec is measured against
   perInterval = 4214880325120
 
-  head("search")
-  row("complete", sprintf("%.2f%% (%s of %s intervals, %s remaining)",
-      100.0 * position / total, commas(position), commas(total), commas(remaining)))
-  row("position", sprintf("center %s of %s, middleIdx %s",
-      commas(lastCenter), commas(centers), commas(lastMiddle)))
+  out = field("", sprintf("%.2f%% (%s done, %s left)", 100.0 * position / total,
+              brief(position), brief(remaining)))
+  out = out sep field("at", sprintf("%d:%d of %s", lastCenter, lastMiddle, commas(centers)))
 
-  if (high > 0) {
-    if (bestSeen > high) {
-      printf "  %-11s %s%s%d generations, NEW RECORD at %s (previous bar %d)%s\n",
-             "record", bold, green, bestSeen, bestAt, high, reset
-    } else {
-      row("record", sprintf("%d generations, nothing above it found yet", high))
-    }
+  if (high > 0 && bestSeen > high) {
+    out = out sep sprintf("%s%sNEW RECORD %d at %s%s", bold, green, bestSeen, bestAt, reset)
+  } else if (high > 0) {
+    out = out sep field("record", sprintf("%d", high))
   } else if (bestSeen > 0) {
-    row("record", sprintf("%d generations, best found, at %s", bestSeen, bestAt))
-  }
-
-  printf "\n"
-  head("pace")
-  if (exact + oracle > 0) {
-    row("intervals", sprintf("%s (%s oracle, %s exact: fully searched, feeding the histogram)",
-        commas(n), commas(oracle), commas(exact)))
-  } else {
-    row("intervals", sprintf("%s (exhaustive run, every interval fully searched)", commas(n)))
+    out = out sep field("record", sprintf("%d at %s", bestSeen, bestAt))
   }
 
   if (bestCount > 0) {
-    line = ""
+    recents = ""
     for (i = 0; i < 3 && i < bestCount; i++) {
-      line = line (line == "" ? "" : ", ") lastBest[(bestCount - i) % 3]
+      recents = recents (recents == "" ? "" : ",") lastBest[(bestCount - i) % 3]
     }
-    row("last 3", sprintf("%s generations, most recent fully searched intervals", line))
+    out = out sep field("last", recents)
   }
+  line("search", out)
 
-  row("elapsed", sprintf("%s of running time%s", duration(active),
-      (restarts > 0 ? sprintf(", %d restart(s) excluded", restarts) : "")))
+  modes = (exact + oracle > 0) ? sprintf(" (%s oracle, %s exact)", commas(oracle), commas(exact)) : ""
+  out = field("", sprintf("%s%s", commas(n), modes))
+  out = out sep field("", duration(active))
 
   if (active > 0 && n > 1) {
     rate = (n - 1) * 3600.0 / active          # intervals per hour
@@ -203,33 +203,29 @@ END {
       if (last > oldest) recentRate = (recent - 1) * 3600.0 / (last - oldest)
     }
 
-    row("rate", sprintf("%s intervals/hour = %s/sec effective", commas(rate), human(effective)))
+    out = out sep field("", sprintf("%s/hr = %s/s", commas(rate), human(effective)))
 
-    # The effective rate is work over time, which is what predicts a finish. The mean or
-    # median of the per-interval rates does not: a slow interval takes disproportionate time
-    # while contributing one sample, so both of those run optimistic.
-    if (recentRate > 0) {
-      row("eta", sprintf("%s at that rate (%s at the last-%d rate)",
-          duration(remaining / rate * 3600.0), duration(remaining / recentRate * 3600.0), recent))
-    } else {
-      row("eta", duration(remaining / rate * 3600.0))
-    }
+    # Work over time, not the mean or median of the per-interval rates: a slow interval
+    # takes disproportionate time while contributing one sample, so those run optimistic.
+    eta = sprintf("%s", duration(remaining / rate * 3600.0))
+    if (recentRate > 0) eta = eta sprintf(" (%s recent)", duration(remaining / recentRate * 3600.0))
+    out = out sep field("eta", eta)
   }
+  line("pace", out)
 
   if (k > 0) {
     median = (k % 2) ? sortedPps[(k + 1) / 2] : (sortedPps[k / 2] + sortedPps[k / 2 + 1]) / 2
-    printf "\n"
-    head("patterns/sec")
-    row("median", human(median))
+    out = field("median", human(median) "/s")
     if (p > recent) {
       window = 0
       for (i = p - recent + 1; i <= p; i++) window += ordered[i]
       window /= recent
       pct = (median > 0) ? (window - median) * 100.0 / median : 0
-      printf "  %-11s %s%s%s %s(%s%+.0f%%%s vs median)%s\n", sprintf("last %d", recent),
-             cyan, human(window), reset, dim, (pct >= 0 ? green : yellow), pct, dim, reset
+      out = out sep field(sprintf("last%d", recent),
+            sprintf("%s/s %s%+.0f%%%s", human(window), (pct >= 0 ? green : yellow), pct, reset))
     }
-    row("max", human(sortedPps[k]))
+    out = out sep field("max", human(sortedPps[k]) "/s")
+    line("speed", out)
   }
 }
 ' "$1" "$2"
