@@ -27,6 +27,11 @@ const STRIP_BESTS_HEADERS = ['centerIdx', 'middleIdx', 'bestGenerations', 'bestP
 // It is a constant rather than a lookup of the script owner because Session.getEffectiveUser
 // needs the userinfo.email scope, which a web app deployment does not carry - asking for it
 // would mean re-authorizing the whole script to learn an address that is known anyway.
+// The display name on the From line. A message from the account to itself is easy to lose
+// among everything else it sends; this gives Gmail something distinctive to filter on, which
+// is how these end up reliably in the inbox rather than archived or in a category tab.
+const MAIL_SENDER_NAME = 'find-optimal';
+
 const MAIL_DEFAULT_RECIPIENT = 'aharbick@aharbick.com';
 
 // Extra addresses sendMail may deliver to. The default recipient is always allowed; anything
@@ -293,7 +298,7 @@ function googleSendMail(e) {
     return sendJsonResponse(false, 'Daily mail quota exhausted');
   }
 
-  MailApp.sendEmail({ to: to, subject: subject, body: body });
+  MailApp.sendEmail({ to: to, subject: subject, body: body, name: MAIL_SENDER_NAME });
   return sendJsonResponse(true, 'Mail sent', { to: to, quotaRemaining: remaining - 1 });
 }
 
@@ -323,6 +328,7 @@ function authorizeMail(to) {
     to: recipient,
     subject: 'find-optimal: mail authorized ' + stamp,
     body: 'progress-api.js can send mail now.\n\nSent at ' + stamp + ' to ' + recipient,
+    name: MAIL_SENDER_NAME,
   });
   const after = MailApp.getRemainingDailyQuota();
 
