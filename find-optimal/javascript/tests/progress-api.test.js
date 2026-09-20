@@ -53,10 +53,11 @@ function FakeSheet() {
 // see this file's locals, and a variable here could stand in for one the script failed to
 // declare - exactly the bug that shipped in e05ccb6. Only the stubbed globals resolve.
 const apiPath = path.join(__dirname, '..', 'progress-api.js');
+const MAIL_RECIPIENT_LINE = /const MAIL_DEFAULT_RECIPIENT = '[^']*';/;
+const MAIL_RECIPIENT_TEST = "const MAIL_DEFAULT_RECIPIENT = 'owner@example.com';";
 const A = new Function(
-  fs.readFileSync(apiPath, 'utf8')
-    .replace("const MAIL_DEFAULT_RECIPIENT = '';",
-             "const MAIL_DEFAULT_RECIPIENT = 'owner@example.com';") +
+  // Whatever address the deployed copy carries, the tests run against a fixed one
+  fs.readFileSync(apiPath, 'utf8').replace(MAIL_RECIPIENT_LINE, MAIL_RECIPIENT_TEST) +
     '\nreturn {stripChunkLength, writeStripBitmapBytes, readStripBitmapBytes, countStripBits,' +
     ' setStripIntervalComplete, ensureStripBitmapSheet, readStripCompletedCount, handleRequest,' +
     ' countBitsInBase64,' +
@@ -336,7 +337,7 @@ check('the default recipient may be named explicitly',
 
 // Sending to nobody would look like it worked while quietly going nowhere
 const unset = new Function(
-  fs.readFileSync(apiPath, 'utf8').replace("const MAIL_DEFAULT_RECIPIENT = 'owner@example.com';",
+  fs.readFileSync(apiPath, 'utf8').replace(MAIL_RECIPIENT_LINE,
                                            "const MAIL_DEFAULT_RECIPIENT = '';") +
     '\nreturn {handleRequest};')();
 const nobody = JSON.parse(unset.handleRequest(
