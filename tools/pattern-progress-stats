@@ -68,14 +68,16 @@ esac
 if [ "$usecolor" = 1 ]; then
   bold=$'\033[1m'; dim=$'\033[2m'; cyan=$'\033[36m'
   green=$'\033[32m'; yellow=$'\033[33m'; reset=$'\033[0m'
+  hi=$'\033[1;93m'        # bright yellow: the few values worth finding at a glance
+  found=$'\033[1;92m'     # bright green: a new record
 else
-  bold=""; dim=""; cyan=""; green=""; yellow=""; reset=""
+  bold=""; dim=""; cyan=""; green=""; yellow=""; reset=""; hi=""; found=""
 fi
 
 render() {
   awk -v centers="$centers" -v middles="$middles" -v gap="$gap" -v recent="$recent" \
       -v bold="$bold" -v dim="$dim" -v cyan="$cyan" -v green="$green" -v yellow="$yellow" \
-      -v reset="$reset" '
+      -v reset="$reset" -v hi="$hi" -v found="$found" '
 function commas(v,   s, out, len, i) {
   s = sprintf("%d", v); len = length(s); out = ""
   for (i = 1; i <= len; i++) {
@@ -98,13 +100,16 @@ function human(v,   units, i, a) {
   return (i == 1) ? sprintf("%.0f", v) : sprintf("%.2f %s", v, units[i])
 }
 
-function duration(sec,   d, h, m) {
+function duration(sec,   d, h, m, y, mo) {
   d = int(sec / 86400); sec -= d * 86400
   h = int(sec / 3600);  sec -= h * 3600
   m = int(sec / 60)
-  if (d >= 10) return sprintf("%dd", d)
-  if (d > 0) return sprintf("%dd %dh", d, h)
-  if (h > 0) return sprintf("%dh %dm", h, m)
+  # 30.44 days, the mean month, so a year lands on twelve of them
+  if (d >= 365) { y = int(d / 365.25); mo = int((d - y * 365.25) / 30.44); return sprintf("%dy %dmo", y, mo) }
+  if (d >= 60)  { mo = int(d / 30.44); return sprintf("%dmo %dd", mo, int(d - mo * 30.44)) }
+  if (d >= 10)  return sprintf("%dd", d)
+  if (d > 0)    return sprintf("%dd %dh", d, h)
+  if (h > 0)    return sprintf("%dh %dm", h, m)
   return sprintf("%dm", m)
 }
 
@@ -120,7 +125,7 @@ function add(col, label, coloured, plain) {
 
 # Ordinary value, and one worth picking out of the table at a glance
 function plainCell(col, label, value)  { add(col, label, cyan value reset, value) }
-function boldCell(col, label, value)   { add(col, label, bold cyan value reset, value) }
+function boldCell(col, label, value)   { add(col, label, hi value reset, value) }
 
 function centred(text, width,   left) {
   left = int((width - length(text)) / 2)
@@ -221,13 +226,13 @@ END {
 
   pctDone = sprintf("%.2f%%", 100.0 * position / total)
   rest = sprintf(" (%s done, %s left)", brief(position), brief(remaining))
-  add(1, "complete", bold cyan pctDone reset cyan rest reset, pctDone rest)
+  add(1, "complete", hi pctDone reset cyan rest reset, pctDone rest)
   plainCell(1, "center", sprintf("%s of %s", commas(lastCenter), commas(centers)))
   plainCell(1, "middle", sprintf("%s of %s", commas(lastMiddle), commas(middles)))
 
   if (high > 0 && bestSeen > high) {
     value = sprintf("%d NEW RECORD at %s", bestSeen, bestAt)
-    add(1, "best", bold green value reset, value)
+    add(1, "best", found value reset, value)
   } else if (high > 0) {
     boldCell(1, "best", sprintf("%d", high))
   } else if (bestSeen > 0) {
@@ -260,9 +265,9 @@ END {
     }
 
     plainCell(2, "rate", sprintf("%s intervals/hr", commas(rate)))
-    boldCell(2, "eta", duration(remaining / rate * 3600.0))
+    boldCell(2, "eta sust", duration(remaining / rate * 3600.0))
     if (recentRate > 0) {
-      boldCell(2, "recent", duration(remaining / recentRate * 3600.0))
+      boldCell(2, "eta last", duration(remaining / recentRate * 3600.0))
     }
   }
 
