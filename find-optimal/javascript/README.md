@@ -16,6 +16,23 @@ javascript/
 into the editor. Everything under `tools/` and `tests/` runs locally with Node and is never
 deployed.
 
+## Mail notifications
+
+`sendMail` lets the search mail a report without any new credentials: it reuses the API key
+the rest of the endpoints use, and delivers through `MailApp` from the account that owns the
+script. `tools/pattern-progress-stats --notify` calls it when the search crosses a whole
+percent, finds a new best, or a day has passed.
+
+**Set `MAIL_DEFAULT_RECIPIENT` before deploying** - it is empty by default and nothing is
+sent until it has an address. Recipients are an allowlist on purpose: the API key travels in
+a query string and lives in a workstation `.envrc`, so anyone holding it could otherwise
+send mail from the owning Google account to anywhere. `MAIL_ALLOWED_RECIPIENTS` widens it.
+
+The recipient is a constant rather than a lookup of the script owner because
+`Session.getEffectiveUser()` needs the `userinfo.email` scope, which a web app deployment
+does not carry - requesting it would mean re-authorizing the whole script to learn an
+address that is already known.
+
 ## Sheet renames
 
 The writers look a sheet up by name and create it when it is missing, so renaming a

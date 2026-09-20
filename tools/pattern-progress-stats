@@ -694,10 +694,13 @@ load_credentials() {
   [ -n "${GOOGLE_WEBAPP_URL:-}" ] && [ -n "${GOOGLE_API_KEY:-}" ]
 }
 
-# -L because an Apps Script web app answers a POST with a redirect to googleusercontent
+# An Apps Script web app answers the POST with a 302 to script.googleusercontent.com, where
+# the result is fetched with a GET, so -L is needed and -X POST must not be: -X pins the
+# method across the redirect and that endpoint answers a POST with 405. --data-urlencode
+# already makes this a POST, which is what the body needs - the report is too big for a URL.
 send_mail() {
   local subject=$1 bodyfile=$2 response
-  response=$(curl -fsSL -X POST "$GOOGLE_WEBAPP_URL" \
+  response=$(curl -fsSL "$GOOGLE_WEBAPP_URL" \
     --data-urlencode "apiKey=$GOOGLE_API_KEY" \
     --data-urlencode "action=sendMail" \
     --data-urlencode "subject=$subject" \

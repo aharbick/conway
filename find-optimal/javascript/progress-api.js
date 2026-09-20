@@ -22,7 +22,14 @@ const STRIP_BESTS_LEGACY_NAMES = ['Strip Progress'];
 const FRAME_BESTS_HEADERS = ['frameIdx', 'kernelIdx', 'bestGenerations', 'bestPattern'];
 const STRIP_BESTS_HEADERS = ['centerIdx', 'middleIdx', 'bestGenerations', 'bestPattern'];
 
-// Extra addresses sendMail may deliver to. The script owner is always allowed; anything
+// Where sendMail delivers. Set this to your own address; nothing is sent until you do.
+//
+// It is a constant rather than a lookup of the script owner because Session.getEffectiveUser
+// needs the userinfo.email scope, which a web app deployment does not carry - asking for it
+// would mean re-authorizing the whole script to learn an address that is known anyway.
+const MAIL_DEFAULT_RECIPIENT = '';
+
+// Extra addresses sendMail may deliver to. The default recipient is always allowed; anything
 // else has to be listed here, so a leaked API key cannot turn this into an open relay.
 const MAIL_ALLOWED_RECIPIENTS = [];
 
@@ -256,8 +263,8 @@ function handleRequest(e) {
  * Recipients are restricted deliberately. The API key travels in a query string, is stored
  * in a .envrc on a workstation and is shared by every caller, so it is not a secret worth
  * betting an open relay on: anyone holding it could otherwise send mail from this Google
- * account to anywhere. Leaving `to` off sends to the owner, which is all the search needs,
- * and MAIL_ALLOWED_RECIPIENTS is the only way to widen that.
+ * account to anywhere. Leaving `to` off sends to MAIL_DEFAULT_RECIPIENT, which is all the
+ * search needs, and MAIL_ALLOWED_RECIPIENTS is the only way to widen that.
  */
 function googleSendMail(e) {
   const data = e.parameter;
@@ -268,11 +275,16 @@ function googleSendMail(e) {
     return sendJsonResponse(false, 'Missing required parameters: subject and/or body');
   }
 
-  const owner = Session.getEffectiveUser().getEmail();
-  const to = data.to || owner;
-  const allowed = [owner].concat(MAIL_ALLOWED_RECIPIENTS).map((a) => a.toLowerCase());
+  const allowed = [MAIL_DEFAULT_RECIPIENT].concat(MAIL_ALLOWED_RECIPIENTS)
+                    .filter((a) => a).map((a) => a.toLowerCase());
+  if (allowed.length === 0) {
+    return sendJsonResponse(false,
+      'No recipient configured: set MAIL_DEFAULT_RECIPIENT in progress-api.js and redeploy');
+  }
+
+  const to = data.to || MAIL_DEFAULT_RECIPIENT;
   if (allowed.indexOf(to.toLowerCase()) === -1) {
-    return sendJsonResponse(false, `Recipient not allowed: add it to MAIL_ALLOWED_RECIPIENTS`);
+    return sendJsonResponse(false, 'Recipient not allowed: add it to MAIL_ALLOWED_RECIPIENTS');
   }
 
   // A quota failure is the interesting case - silence would look like a working notifier

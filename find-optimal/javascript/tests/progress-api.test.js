@@ -54,7 +54,9 @@ function FakeSheet() {
 // declare - exactly the bug that shipped in e05ccb6. Only the stubbed globals resolve.
 const apiPath = path.join(__dirname, '..', 'progress-api.js');
 const A = new Function(
-  fs.readFileSync(apiPath, 'utf8') +
+  fs.readFileSync(apiPath, 'utf8')
+    .replace("const MAIL_DEFAULT_RECIPIENT = '';",
+             "const MAIL_DEFAULT_RECIPIENT = 'owner@example.com';") +
     '\nreturn {stripChunkLength, writeStripBitmapBytes, readStripBitmapBytes, countStripBits,' +
     ' setStripIntervalComplete, ensureStripBitmapSheet, readStripCompletedCount, handleRequest,' +
     ' countBitsInBase64,' +
@@ -308,7 +310,6 @@ check('with neither name present a fresh sheet is still created',
 // the part worth testing: the API key rides in a query string and is not secret enough to
 // back an open relay.
 const sent = [];
-global.Session = { getEffectiveUser: () => ({ getEmail: () => 'owner@example.com' }) };
 global.MailApp = {
   getRemainingDailyQuota: () => mailQuota,
   sendEmail: (opts) => sent.push(opts),
@@ -317,7 +318,8 @@ let mailQuota = 100;
 
 const ok = request({ action: 'sendMail', subject: 'hello', body: 'world' });
 check('sendMail succeeds', ok.success === true, ok.error || '');
-check('it defaults to the script owner', sent.length === 1 && sent[0].to === 'owner@example.com',
+check('it defaults to the configured recipient',
+      sent.length === 1 && sent[0].to === 'owner@example.com',
       sent.length ? sent[0].to : '(nothing sent)');
 check('subject and body are passed through',
       sent[0].subject === 'hello' && sent[0].body === 'world');
@@ -328,9 +330,20 @@ check('an unlisted recipient is refused',
       stranger.success ? 'it sent!' : '');
 check('and nothing was sent in that case', sent.length === 1);
 
-check('the owner may be named explicitly',
+check('the default recipient may be named explicitly',
       request({ action: 'sendMail', subject: 's', body: 'b', to: 'OWNER@example.com' }).success === true,
       'case-insensitive match');
+
+// Sending to nobody would look like it worked while quietly going nowhere
+const unset = new Function(
+  fs.readFileSync(apiPath, 'utf8').replace("const MAIL_DEFAULT_RECIPIENT = 'owner@example.com';",
+                                           "const MAIL_DEFAULT_RECIPIENT = '';") +
+    '\nreturn {handleRequest};')();
+const nobody = JSON.parse(unset.handleRequest(
+  { parameter: { apiKey: 'test-key', action: 'sendMail', subject: 's', body: 'b' } }));
+check('an unconfigured recipient is refused with a usable message',
+      nobody.success === false && /MAIL_DEFAULT_RECIPIENT/.test(nobody.error || ''),
+      nobody.error || '');
 
 const empty = request({ action: 'sendMail' });
 check('an empty message is refused', empty.success === false);
