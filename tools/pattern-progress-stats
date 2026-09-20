@@ -108,12 +108,56 @@ function duration(sec,   d, h, m) {
   return sprintf("%dm", m)
 }
 
-function field(label, value) {
-  if (label == "") return sprintf("%s%s%s", cyan, value, reset)
-  return sprintf("%s%s%s %s%s%s", dim, label, reset, cyan, value, reset)
+# Cells are collected per column, then printed row by row. Padding is computed from the
+# plain text because the colour codes are invisible but still count toward a string length.
+function add(col, label, value, colour) {
+  rows[col]++
+  lab[col, rows[col]] = label
+  val[col, rows[col]] = value
+  hue[col, rows[col]] = (colour == "") ? cyan : colour
+  if (rows[col] > maxRows) maxRows = rows[col]
 }
 
-function line(head, fields) { printf "%s%-7s%s %s\n", bold, toupper(head), reset, fields }
+function centred(text, width,   left) {
+  left = int((width - length(text)) / 2)
+  if (left < 0) left = 0
+  return sprintf("%" (left + length(text)) "s%" (width - left - length(text)) "s", text, "")
+}
+
+function rule(width,   s, i) {
+  s = ""
+  for (i = 0; i < width; i++) s = s "-"
+  return s
+}
+
+function emit(   c, r, out, plain, padding) {
+  out = ""
+  for (c = 1; c <= 3; c++) out = out centred(TITLE[c], W[c]) "  "
+  sub(/ +$/, "", out)
+  printf "%s%s%s\n", bold, out, reset
+
+  out = ""
+  for (c = 1; c <= 3; c++) out = out rule(W[c]) "  "
+  sub(/ +$/, "", out)
+  printf "%s%s%s\n", dim, out, reset
+
+  for (r = 1; r <= maxRows; r++) {
+    out = ""
+    for (c = 1; c <= 3; c++) {
+      if (r <= rows[c]) {
+        plain = sprintf("%-" L[c] "s %s", lab[c, r], val[c, r])
+        padding = W[c] + 2 - length(plain)
+        if (padding < 1) padding = 1
+        out = out dim sprintf("%-" L[c] "s", lab[c, r]) reset " " hue[c, r] val[c, r] reset \
+              sprintf("%" padding "s", "")
+      } else {
+        out = out sprintf("%" (W[c] + 2) "s", "")
+      }
+    }
+    sub(/ +$/, "", out)
+    print out
+  }
+}
 
 # First input is the log in order; second is the patternsPerSec values sorted, for the
 # median and the maximum without sorting inside awk.
@@ -162,36 +206,42 @@ END {
   total = centers * middles
   position = lastCenter * middles + lastMiddle
   remaining = total - position
-  sep = sprintf("%s  ·  %s", dim, reset)
 
   # 2^64 / (8548 * 512): what the search calls one interval of the space, and what its
   # patternsPerSec is measured against
   perInterval = 4214880325120
 
-  out = field("", sprintf("%.2f%% (%s done, %s left)", 100.0 * position / total,
-              brief(position), brief(remaining)))
-  out = out sep field("at", sprintf("%d:%d of %s", lastCenter, lastMiddle, commas(centers)))
+  TITLE[1] = "SEARCH"; W[1] = 38; L[1] = 8
+  TITLE[2] = "PACE";   W[2] = 38; L[2] = 9
+  TITLE[3] = "SPEED";  W[3] = 26; L[3] = 8
+
+  add(1, "complete", sprintf("%.2f%% (%s done, %s left)", 100.0 * position / total,
+      brief(position), brief(remaining)))
+  add(1, "center", sprintf("%s of %s (mid %s)", commas(lastCenter), commas(centers),
+      commas(lastMiddle)))
 
   if (high > 0 && bestSeen > high) {
-    out = out sep sprintf("%s%sNEW RECORD %d at %s%s", bold, green, bestSeen, bestAt, reset)
+    add(1, "best", sprintf("%d NEW RECORD at %s", bestSeen, bestAt), green)
   } else if (high > 0) {
-    out = out sep field("record", sprintf("%d", high))
+    add(1, "best", sprintf("%d", high))
   } else if (bestSeen > 0) {
-    out = out sep field("record", sprintf("%d at %s", bestSeen, bestAt))
+    add(1, "best", sprintf("%d at %s", bestSeen, bestAt))
   }
 
   if (bestCount > 0) {
     recents = ""
     for (i = 0; i < 3 && i < bestCount; i++) {
-      recents = recents (recents == "" ? "" : ",") lastBest[(bestCount - i) % 3]
+      recents = recents (recents == "" ? "" : ", ") lastBest[(bestCount - i) % 3]
     }
-    out = out sep field("last", recents)
+    add(1, "last", recents)
   }
-  line("search", out)
 
-  modes = (exact + oracle > 0) ? sprintf(" (%s oracle, %s exact)", commas(oracle), commas(exact)) : ""
-  out = field("", sprintf("%s%s", commas(n), modes))
-  out = out sep field("", duration(active))
+  if (exact + oracle > 0) {
+    add(2, "intervals", sprintf("%s (%s / %s exact)", commas(n), commas(oracle), commas(exact)))
+  } else {
+    add(2, "intervals", commas(n))
+  }
+  add(2, "elapsed", duration(active) (restarts > 0 ? sprintf(", %d restarts", restarts) : ""))
 
   if (active > 0 && n > 1) {
     rate = (n - 1) * 3600.0 / active          # intervals per hour
@@ -203,30 +253,31 @@ END {
       if (last > oldest) recentRate = (recent - 1) * 3600.0 / (last - oldest)
     }
 
-    out = out sep field("", sprintf("%s/hr = %s/s", commas(rate), human(effective)))
-
+    add(2, "rate", sprintf("%s/hr", commas(rate)))
     # Work over time, not the mean or median of the per-interval rates: a slow interval
     # takes disproportionate time while contributing one sample, so those run optimistic.
-    eta = sprintf("%s", duration(remaining / rate * 3600.0))
-    if (recentRate > 0) eta = eta sprintf(" (%s recent)", duration(remaining / recentRate * 3600.0))
-    out = out sep field("eta", eta)
+    add(2, "effective", sprintf("%s/s", human(effective)))
+    add(2, "eta", duration(remaining / rate * 3600.0))
+    if (recentRate > 0) {
+      add(2, "recent", duration(remaining / recentRate * 3600.0))
+    }
   }
-  line("pace", out)
 
   if (k > 0) {
     median = (k % 2) ? sortedPps[(k + 1) / 2] : (sortedPps[k / 2] + sortedPps[k / 2 + 1]) / 2
-    out = field("median", human(median) "/s")
+    add(3, "median", human(median) "/s")
     if (p > recent) {
       window = 0
       for (i = p - recent + 1; i <= p; i++) window += ordered[i]
       window /= recent
       pct = (median > 0) ? (window - median) * 100.0 / median : 0
-      out = out sep field(sprintf("last%d", recent),
-            sprintf("%s/s %s%+.0f%%%s", human(window), (pct >= 0 ? green : yellow), pct, reset))
+      add(3, sprintf("last%d", recent), sprintf("%s/s %+.0f%%", human(window), pct),
+          (pct >= 0 ? green : yellow))
     }
-    out = out sep field("max", human(sortedPps[k]) "/s")
-    line("speed", out)
+    add(3, "max", human(sortedPps[k]) "/s")
   }
+
+  emit()
 }
 ' "$1" "$2"
 }
