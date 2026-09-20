@@ -27,10 +27,20 @@ const STRIP_BESTS_HEADERS = ['centerIdx', 'middleIdx', 'bestGenerations', 'bestP
 // It is a constant rather than a lookup of the script owner because Session.getEffectiveUser
 // needs the userinfo.email scope, which a web app deployment does not carry - asking for it
 // would mean re-authorizing the whole script to learn an address that is known anyway.
-// The display name on the From line. A message from the account to itself is easy to lose
-// among everything else it sends; this gives Gmail something distinctive to filter on, which
-// is how these end up reliably in the inbox rather than archived or in a category tab.
+// The display name on the From line, so these are easy to spot and to filter on.
 const MAIL_SENDER_NAME = 'find-optimal';
+
+// Address to send FROM, when it must differ from the recipient.
+//
+// Gmail files a message whose sender is the same account as its recipient under Sent and
+// delivers no inbox copy - it reads as something you sent, not something you received, and
+// no filter can intervene because there was no inbox delivery to act on. Sending from a
+// different address avoids that entirely.
+//
+// It must be an alias the sending account has verified: Gmail settings, Accounts, "Send
+// mail as". Anything else is rejected. Leave it empty to send from the account itself,
+// which is fine as long as MAIL_DEFAULT_RECIPIENT is some other mailbox.
+const MAIL_SENDER_ALIAS = '';
 
 const MAIL_DEFAULT_RECIPIENT = 'aharbick@aharbick.com';
 
@@ -298,7 +308,9 @@ function googleSendMail(e) {
     return sendJsonResponse(false, 'Daily mail quota exhausted');
   }
 
-  MailApp.sendEmail({ to: to, subject: subject, body: body, name: MAIL_SENDER_NAME });
+  const message = { to: to, subject: subject, body: body, name: MAIL_SENDER_NAME };
+  if (MAIL_SENDER_ALIAS) message.from = MAIL_SENDER_ALIAS;
+  MailApp.sendEmail(message);
   return sendJsonResponse(true, 'Mail sent', { to: to, quotaRemaining: remaining - 1 });
 }
 
@@ -324,20 +336,26 @@ function authorizeMail(to) {
   // filtered at the far end looks exactly like a send that worked.
   const before = MailApp.getRemainingDailyQuota();
   const stamp = new Date().toISOString();
-  MailApp.sendEmail({
+  const message = {
     to: recipient,
     subject: 'find-optimal: mail authorized ' + stamp,
     body: 'progress-api.js can send mail now.\n\nSent at ' + stamp + ' to ' + recipient,
     name: MAIL_SENDER_NAME,
-  });
+  };
+  if (MAIL_SENDER_ALIAS) message.from = MAIL_SENDER_ALIAS;
+  MailApp.sendEmail(message);
   const after = MailApp.getRemainingDailyQuota();
 
   console.log('Sent to ' + recipient);
   console.log('Quota ' + before + ' -> ' + after +
               (after < before ? ' (accepted by Google)'
                               : ' (UNCHANGED - it was not actually sent)'));
-  console.log('MailApp keeps no copy in Sent. If nothing arrives, search All Mail and Spam' +
-              ' for: subject:"find-optimal: mail authorized ' + stamp + '"');
+  console.log('Search for it with: in:anywhere subject:"find-optimal: mail authorized ' +
+              stamp + '"');
+  if (!MAIL_SENDER_ALIAS) {
+    console.log('Landing under Sent rather than Inbox means the sender and the recipient' +
+                ' are the same account: set MAIL_SENDER_ALIAS, or send somewhere else.');
+  }
 }
 
 /**
