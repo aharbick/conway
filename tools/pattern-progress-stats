@@ -149,21 +149,31 @@ END {
   row("position", sprintf("%d:%d", lastCenter, lastMiddle),
       sprintf("center %s of %s", commas(lastCenter), commas(centers)))
 
-  if (bestSeen > 0) {
-    if (high > 0 && bestSeen > high) {
-      printf "  %-11s %s%s%d generations%s %s*** BEATS %d, at %s ***%s\n",
-             "bestGens", bold, green, bestSeen, reset, green, high, bestAt, reset
+  # The record is the bar an oracle run is beating, which is the best known result - not the
+  # best this log happened to observe. Only the sampled exact intervals report a best at all,
+  # 51 of 3,302 in a typical oracle run, so their maximum says nothing about the search and
+  # belongs with the other sample statistics rather than here.
+  if (high > 0) {
+    if (bestSeen > high) {
+      printf "  %-11s %s%s%d generations%s %s*** NEW RECORD at %s, previous bar %d ***%s\n",
+             "record", bold, green, bestSeen, reset, green, bestAt, high, reset
     } else {
-      note = sprintf("at %s", bestAt)
-      if (high > 0) note = note sprintf(", against a bar of %d", high)
-      row("bestGens", sprintf("%d generations", bestSeen), note)
+      row("record", sprintf("%d generations", high), "the bar; nothing above it found yet")
     }
+  } else if (bestSeen > 0) {
+    # An exhaustive log has no bar, and there every interval reports its best, so the
+    # maximum really is the best found
+    row("record", sprintf("%d generations", bestSeen), sprintf("best found, at %s", bestAt))
   }
 
   printf "\n%space%s\n", bold, reset
   modeNote = "no mode recorded, so an exhaustive run"
   if (exact + oracle > 0) modeNote = sprintf("%s exact, %s oracle", commas(exact), commas(oracle))
   row("intervals", commas(n), modeNote)
+  if (high > 0 && bestSeen > 0 && bestSeen <= high) {
+    row("best sample", sprintf("%d generations", bestSeen),
+        sprintf("at %s, highest of the %s exact intervals", bestAt, commas(exact)))
+  }
   row("elapsed", duration(active),
       (restarts > 0 ? sprintf("%d restart(s) excluded", restarts) : "running time"))
 
