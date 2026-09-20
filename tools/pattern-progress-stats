@@ -9,9 +9,14 @@
 # --watch redraws in place, which is simpler than wrapping this in watch(1): the script
 # keeps its terminal, so colour works without watch -c and without forcing codes into a pipe.
 #
+# The unit throughout is an interval: one centerIdx:middleIdx pair, which is one line in the
+# log, 128 middle blocks of work, and about 4.2 trillion patterns of the space. There are
+# 8548 x 512 of them.
+#
 # The search walks centerIdx 0..8547 in order, and middleIdx 0..511 within each, so the
 # current position is itself the progress: everything behind it is either searched or was
-# skipped as already complete. Percentages are of the whole space, not of this run.
+# skipped as already complete. Percentages are of the whole space, so they count what
+# earlier runs did as well - "this log" is the part this one contributed.
 #
 # Restarts are handled by ignoring gaps longer than STATS_GAP seconds (default 600) when
 # measuring elapsed time, so downtime between runs does not depress the rate.
@@ -247,11 +252,7 @@ END {
     plainCell(1, "last", recents)
   }
 
-  if (exact + oracle > 0) {
-    plainCell(2, "intervals", sprintf("%s (%s / %s exact)", commas(n), commas(oracle), commas(exact)))
-  } else {
-    plainCell(2, "intervals", commas(n))
-  }
+  plainCell(2, "this log", sprintf("%s of %s done", commas(n), brief(position)))
   plainCell(2, "elapsed", duration(active) (restarts > 0 ? sprintf(", %d restarts", restarts) : ""))
 
   if (active > 0 && n > 1) {
@@ -264,7 +265,7 @@ END {
       if (last > oldest) recentRate = (recent - 1) * 3600.0 / (last - oldest)
     }
 
-    plainCell(2, "rate", sprintf("%s intervals/hr", commas(rate)))
+    plainCell(2, "rate", sprintf("%s/hr", commas(rate)))
     boldCell(2, "eta sust", duration(remaining / rate * 3600.0))
     if (recentRate > 0) {
       boldCell(2, "eta last", duration(remaining / recentRate * 3600.0))
