@@ -303,6 +303,49 @@ A.getOrCreateSheet(bookNone, A.STRIP_BESTS_SHEET_NAME, A.STRIP_BESTS_LEGACY_NAME
 check('with neither name present a fresh sheet is still created',
       bookNone.inserted.join(',') === A.STRIP_BESTS_SHEET_NAME);
 
+// ----------------------------------------------------------- sendMail ---------
+// The endpoint can send mail from the owner's Google account, so the recipient guard is
+// the part worth testing: the API key rides in a query string and is not secret enough to
+// back an open relay.
+const sent = [];
+global.Session = { getEffectiveUser: () => ({ getEmail: () => 'owner@example.com' }) };
+global.MailApp = {
+  getRemainingDailyQuota: () => mailQuota,
+  sendEmail: (opts) => sent.push(opts),
+};
+let mailQuota = 100;
+
+const ok = request({ action: 'sendMail', subject: 'hello', body: 'world' });
+check('sendMail succeeds', ok.success === true, ok.error || '');
+check('it defaults to the script owner', sent.length === 1 && sent[0].to === 'owner@example.com',
+      sent.length ? sent[0].to : '(nothing sent)');
+check('subject and body are passed through',
+      sent[0].subject === 'hello' && sent[0].body === 'world');
+
+const stranger = request({ action: 'sendMail', subject: 's', body: 'b', to: 'someone@else.com' });
+check('an unlisted recipient is refused',
+      stranger.success === false && /not allowed/i.test(stranger.error || ''),
+      stranger.success ? 'it sent!' : '');
+check('and nothing was sent in that case', sent.length === 1);
+
+check('the owner may be named explicitly',
+      request({ action: 'sendMail', subject: 's', body: 'b', to: 'OWNER@example.com' }).success === true,
+      'case-insensitive match');
+
+const empty = request({ action: 'sendMail' });
+check('an empty message is refused', empty.success === false);
+
+mailQuota = 0;
+const over = request({ action: 'sendMail', subject: 's', body: 'b' });
+check('an exhausted quota is reported, not swallowed',
+      over.success === false && /quota/i.test(over.error || ''));
+mailQuota = 100;
+
+check('a bad API key never reaches MailApp',
+      JSON.parse(A.handleRequest({ parameter: { apiKey: 'wrong', action: 'sendMail',
+                                                subject: 's', body: 'b' } })).success === false &&
+        sent.length === 2);
+
 // ------------------------------------------------- flush before unlocking -----
 lockEvents.length = 0;
 request({ action: 'incrementStripCompletion', centerIdx: '500', middleIdx: '7' });

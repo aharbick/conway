@@ -22,6 +22,10 @@ const STRIP_BESTS_LEGACY_NAMES = ['Strip Progress'];
 const FRAME_BESTS_HEADERS = ['frameIdx', 'kernelIdx', 'bestGenerations', 'bestPattern'];
 const STRIP_BESTS_HEADERS = ['centerIdx', 'middleIdx', 'bestGenerations', 'bestPattern'];
 
+// Extra addresses sendMail may deliver to. The script owner is always allowed; anything
+// else has to be listed here, so a leaked API key cannot turn this into an open relay.
+const MAIL_ALLOWED_RECIPIENTS = [];
+
 const LOCK_TIMEOUT_MS = 30000; // 30 seconds timeout for locks
 
 // Spreadsheet ID for our Progress data
@@ -236,12 +240,49 @@ function handleRequest(e) {
         return googleGetCompleteStripCache(e, SPREADSHEET_ID);
       case 'incrementStripCompletion':
         return googleIncrementStripCompletion(e, SPREADSHEET_ID);
+      case 'sendMail':
+        return googleSendMail(e);
       default:
-        return sendJsonResponse(false, 'Invalid action. Valid actions: sendProgress, sendSummaryData, getBestResult, getCompleteFrameCache, sendStripProgress, sendStripSummaryData, getCompleteStripCache, incrementStripCompletion');
+        return sendJsonResponse(false, 'Invalid action. Valid actions: sendProgress, sendSummaryData, getBestResult, getCompleteFrameCache, sendStripProgress, sendStripSummaryData, getCompleteStripCache, incrementStripCompletion, sendMail');
     }
   } catch (error) {
     return sendJsonResponse(false, error.toString());
   }
+}
+
+/**
+ * Sends a notification mail on behalf of the account that owns this script.
+ *
+ * Recipients are restricted deliberately. The API key travels in a query string, is stored
+ * in a .envrc on a workstation and is shared by every caller, so it is not a secret worth
+ * betting an open relay on: anyone holding it could otherwise send mail from this Google
+ * account to anywhere. Leaving `to` off sends to the owner, which is all the search needs,
+ * and MAIL_ALLOWED_RECIPIENTS is the only way to widen that.
+ */
+function googleSendMail(e) {
+  const data = e.parameter;
+  const subject = data.subject || '';
+  const body = data.body || '';
+
+  if (!subject && !body) {
+    return sendJsonResponse(false, 'Missing required parameters: subject and/or body');
+  }
+
+  const owner = Session.getEffectiveUser().getEmail();
+  const to = data.to || owner;
+  const allowed = [owner].concat(MAIL_ALLOWED_RECIPIENTS).map((a) => a.toLowerCase());
+  if (allowed.indexOf(to.toLowerCase()) === -1) {
+    return sendJsonResponse(false, `Recipient not allowed: add it to MAIL_ALLOWED_RECIPIENTS`);
+  }
+
+  // A quota failure is the interesting case - silence would look like a working notifier
+  const remaining = MailApp.getRemainingDailyQuota();
+  if (remaining <= 0) {
+    return sendJsonResponse(false, 'Daily mail quota exhausted');
+  }
+
+  MailApp.sendEmail({ to: to, subject: subject, body: body });
+  return sendJsonResponse(true, 'Mail sent', { to: to, quotaRemaining: remaining - 1 });
 }
 
 /**

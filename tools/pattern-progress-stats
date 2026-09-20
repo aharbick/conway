@@ -38,6 +38,32 @@
 #
 #   STATS_WINDOW_MB=20   how much of the tail the median, max and last100 see (default 20)
 #   STATS_PLOT_N=2000    intervals the plot covers (default: 20 per column, so about 1800)
+#
+# Mail. --notify evaluates three triggers and sends what fired: the next whole percent, a
+# new best, and a daily summary. The mailed report covers the last 24 hours rather than the
+# last hundred intervals, since the screen already shows the recent window.
+#
+#   tools/pattern-progress-stats --notify logs/...     # for a timer; sends only what fired
+#   tools/pattern-progress-stats --mail-now logs/...   # send one right now, to test
+#
+# A first --notify records where things stand and stays quiet, so it does not announce a
+# percentage and a record that were both reached weeks ago. What has been announced lives in
+# a .notify file beside the counter cache, and a trigger is only recorded once its mail is
+# away - a failed send stays pending and retries.
+#
+# Sending goes through the search's own Apps Script (action=sendMail), so there are no new
+# credentials: GOOGLE_WEBAPP_URL and GOOGLE_API_KEY are picked up from the .envrc next to
+# the log tree, or from STATS_ENVRC. Mail arrives from the account that owns the script;
+# --email or STATS_EMAIL sends elsewhere, which that script must allow.
+#
+# Every ten minutes from cron is plenty - the triggers are level-based, not edge-based, so
+# nothing is missed by checking infrequently:
+#
+#   */10 * * * * cd ~/Projects/conway && tools/pattern-progress-stats --notify \
+#                  find-optimal/logs/find-optimal-5090-oracle.log
+#
+#   STATS_DAILY_SECONDS=86400   how often the summary goes out (default 24h)
+#   STATS_MAIL_ROWS=40          rows to size the mailed plot to, having no terminal
 
 set -o pipefail
 
@@ -45,11 +71,17 @@ want_color=auto
 interval=0
 nograph=
 rescan=
+notify=
+mailnow=
+email=${STATS_EMAIL:-}
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --color)     want_color=always; shift ;;
     --no-graph)  nograph=1; shift ;;
     --rescan)    rescan=1; shift ;;
+    --notify)    notify=1; shift ;;
+    --mail-now)  notify=1; mailnow=1; shift ;;
+    --email=*)   email="${1#--email=}"; shift ;;
     --no-color)  want_color=never;  shift ;;
     --watch)     interval=10; shift ;;
     --watch=*)   interval="${1#--watch=}"; shift ;;
@@ -63,7 +95,7 @@ done
 log=${1:-}
 if [ -z "$log" ]; then
   echo "usage: $(basename "$0") [--watch[=SECONDS]] [--no-graph] [--rescan]" \
-       "[--color|--no-color] <logfile>" >&2
+       "[--notify|--mail-now] [--email=ADDR] [--color|--no-color] <logfile>" >&2
   exit 2
 fi
 if [ ! -r "$log" ]; then
@@ -113,11 +145,15 @@ fi
 # not own the whole window. The width is not set here: the plot matches the tables above it.
 plot_height() {
   local size=""
-  [ -r /dev/tty ] && size=$(stty size 2>/dev/null </dev/tty)
-  case "$size" in
-    [0-9]*\ [0-9]*) termRows=${size%% *} ;;
-    *)              termRows=${LINES:-32} ;;
-  esac
+  if [ -n "${forceRows:-}" ]; then
+    termRows=$forceRows
+  else
+    [ -r /dev/tty ] && size=$(stty size 2>/dev/null </dev/tty)
+    case "$size" in
+      [0-9]*\ [0-9]*) termRows=${size%% *} ;;
+      *)              termRows=${LINES:-32} ;;
+    esac
+  fi
   [ "$termRows" -gt 0 ] 2>/dev/null || termRows=32
 
   plotH=$(( (termRows - 14) / 2 ))
@@ -126,12 +162,18 @@ plot_height() {
   return 0
 }
 
+# When set, the report describes a stretch of wall clock rather than the last N intervals:
+# the recent rows and the plot both follow it. Mailed reports use it; the screen does not.
+periodSec=0
+periodName=""
+
 render() {
   plot_height
   awk -v centers="$centers" -v middles="$middles" -v gap="$gap" -v recent="$recent" \
       -v bold="$bold" -v dim="$dim" -v cyan="$cyan" -v green="$green" -v yellow="$yellow" \
       -v reset="$reset" -v hi_="$hi" -v found="$found" -v nograph="$nograph" \
       -v plotH="$plotH" -v plotN="$plotn" -v windowed="$windowed" \
+      -v periodSec="$periodSec" -v periodName="$periodName" \
       -v totalN="$stN" -v totalActive="$stActive" -v totalRestarts="$stRestarts" \
       -v totalBest="$stBest" -v totalBestAt="$stBestAt" '
 function commas(v,   s, out, len, i) {
@@ -205,7 +247,7 @@ function scale(v, lo, hi, height,   r) {
 }
 
 function graph(tableW, height,   i, x, lo, hi, sum, ma, from, to, val, width,
-                                 row, col, grid, out, label, span, first, shown) {
+                                 row, col, grid, out, label, span, first, shown, maWin) {
   if (p < 4) return
 
   # The plot lines up with the tables above it: same right edge, with the y-axis labels and
@@ -217,21 +259,32 @@ function graph(tableW, height,   i, x, lo, hi, sum, ma, from, to, val, width,
   # arithmetic mean would trace a line well above the throughput actually achieved: a slow
   # interval occupies far more wall clock than a fast one but contributes the same single
   # sample, so averaging the rates over-weights the fast ones.
-  sum = 0
-  for (i = 1; i <= p; i++) {
-    if (ordered[i] > 0) sum += 1.0 / ordered[i]
-    if (i > recent && ordered[i - recent] > 0) sum -= 1.0 / ordered[i - recent]
-    ma[i] = (sum > 0) ? ((i < recent) ? i : recent) / sum : 0
-  }
 
   # Only the tail of the series is drawn. A column holds a fixed number of intervals, so the
   # x-axis spans a roughly fixed stretch of time no matter how long the log gets, instead of
   # compressing an ever-growing history into the same width. The trailing mean above is still
   # computed over everything, so the leftmost column arrives with its lead-in already done.
-  shown = (plotN > 0) ? plotN : width * PLOT_PER_COLUMN
-  first = p - shown + 1
+  if (periodSec > 0) {
+    first = rFirst
+  } else {
+    shown = (plotN > 0) ? plotN : width * PLOT_PER_COLUMN
+    first = p - shown + 1
+  }
   if (first < 1) first = 1
   shown = p - first + 1
+
+  # Smooth over about five columns rather than a fixed hundred samples: a day-long plot has
+  # a hundred intervals inside a single column, and a trailing mean that short traces the
+  # noise instead of the trend.
+  maWin = int(shown / width) * 5
+  if (maWin < recent) maWin = recent
+
+  sum = 0
+  for (i = 1; i <= p; i++) {
+    if (ordered[i] > 0) sum += 1.0 / ordered[i]
+    if (i > maWin && ordered[i - maWin] > 0) sum -= 1.0 / ordered[i - maWin]
+    ma[i] = (sum > 0) ? ((i < maWin) ? i : maWin) / sum : 0
+  }
 
   # The y-range stays that of the whole tail window, not of the stretch being drawn: it
   # holds still between renders instead of rescaling as the plot slides, and the two are
@@ -273,7 +326,7 @@ function graph(tableW, height,   i, x, lo, hi, sum, ma, from, to, val, width,
   span = duration(tsOf[p] - tsOf[first])
   printf "%s%10s   %s ago%*s%s\n", dim, "", span, width - length(span) - 4, "now", reset
   printf "%s%10s   %s.%s%s one interval   %s*%s%s the last %d, work over time%s\n",
-         dim, "", cyan, reset, dim, hi_, reset, dim, recent, reset
+         dim, "", cyan, reset, dim, hi_, reset, dim, maWin, reset
 }
 
 function emit(   c, r, out, plain, padding) {
@@ -353,13 +406,26 @@ END {
   lastMiddle = field(lastLine, "middleIdx", 9)
   high       = field(lastLine, "highGenerations", 15)
 
-  # Throughput over the last `recent` intervals, as work over the time it took. Both the
-  # recent eta and the recent speed come from this one number, so they cannot disagree the
-  # way an averaged rate and a wall-clock rate did. Deriving it from the samples rather
-  # than from a timestamp difference also keeps downtime inside the window out of it.
+  # The recent window is either a count of intervals or a stretch of wall clock. A mailed
+  # report wants the latter - a day of history rather than whatever the last hundred
+  # intervals happened to cover - and the plot below follows the same window.
+  if (periodSec > 0) {
+    rFirst = p
+    while (rFirst > 1 && tsOf[p] - tsOf[rFirst - 1] <= periodSec) rFirst--
+    recentLabel = "last " periodName
+  } else {
+    rFirst = (p > recent ? p - recent + 1 : 1)
+    recentLabel = "last" recent
+  }
+  recentCount = p - rFirst + 1
+
+  # Throughput over that window, as work over the time it took. Both the recent eta and the
+  # recent speed come from this one number, so they cannot disagree the way an averaged rate
+  # and a wall-clock rate did. Deriving it from the samples rather than from a timestamp
+  # difference also keeps downtime inside the window out of it.
   recentThroughput = 0
   inv = 0; counted = 0
-  for (i = (p > recent ? p - recent + 1 : 1); i <= p; i++) {
+  for (i = rFirst; i <= p; i++) {
     if (ordered[i] > 0) { inv += 1.0 / ordered[i]; counted++ }
   }
   if (inv > 0) recentThroughput = counted / inv
@@ -416,9 +482,13 @@ END {
     recentRate = (recentThroughput > 0) ? recentThroughput * 3600.0 / perInterval : 0
 
     plainCell(2, "rate", sprintf("%s/hr", commas(rate)))
+    if (periodSec > 0) {
+      plainCell(2, recentLabel, sprintf("%s intervals", commas(recentCount)))
+    }
     boldCell(2, "eta sust", duration(remaining / rate * 3600.0))
     if (recentRate > 0) {
-      boldCell(2, "eta last", duration(remaining / recentRate * 3600.0))
+      boldCell(2, "eta " (periodSec > 0 ? periodName : "last"),
+               duration(remaining / recentRate * 3600.0))
     }
   }
 
@@ -434,11 +504,11 @@ END {
     plainCell(3, "median", human(median) "/s")
     # Measured the same way as sustained above it, and compared against it: the sign then
     # agrees with whether eta last beats eta sust, which an averaged rate did not.
-    if (p > recent && recentThroughput > 0 && totalActive > 0) {
+    if (recentCount > 1 && recentThroughput > 0 && totalActive > 0) {
       lifetime = totalN * perInterval / totalActive
       pct = (lifetime > 0) ? (recentThroughput - lifetime) * 100.0 / lifetime : 0
       value = sprintf("%s/s %+.0f%%", human(recentThroughput), pct)
-      add(3, sprintf("last%d", recent), (pct >= 0 ? green : yellow) value reset, value)
+      add(3, recentLabel, (pct >= 0 ? green : yellow) value reset, value)
     }
     plainCell(3, "max", human(sortedPps[k]) "/s")
   }
@@ -448,8 +518,8 @@ END {
   # The cumulative figures are exact however big the log gets, but median, last100, max and
   # the graph only see the tail window, so say so rather than let them look whole-run.
   if (windowed && wn < totalN) {
-    printf "%smedian, last%d and max cover the last %s intervals, the plot fewer still;" \
-           " the rest is the whole log%s\n", dim, recent, commas(wn), reset
+    printf "%smedian and max cover the last %s intervals;" \
+           " the rest is the whole log%s\n", dim, commas(wn), reset
   }
 
   if (!nograph) graph(W[1] + W[2] + W[3] + 4, plotH + 0)
@@ -587,6 +657,139 @@ statefile=$(state_path) || statefile=""
 if [ -n "$statefile" ]; then
   [ -n "$rescan" ] && rm -f "$statefile"
   load_state
+fi
+
+# ---------------------------------------------------------------- notifications --
+#
+# Three things are worth a mail: crossing the next whole percent, a new best, and a daily
+# summary. Run this from a timer - `--notify` evaluates the triggers, sends what fired and
+# exits - rather than from the watch loop, so a closed terminal does not stop the reports.
+#
+# What has already been announced lives beside the counter cache. Without it a timer firing
+# every ten minutes would mail the same percentage 144 times a day.
+notifyfile="$statefile.notify"
+nfVersion=0; nfPct=-1; nfBest=0; nfDaily=0
+
+load_notify() {
+  [ -r "$notifyfile" ] || return 0
+  # shellcheck disable=SC1090
+  . "$notifyfile" 2>/dev/null || return 0
+  [ "${nfVersion:-0}" = 1 ] || { nfPct=-1; nfBest=0; nfDaily=0; }
+}
+
+save_notify() {
+  local tmp="$notifyfile.$$"
+  printf 'nfVersion=1\nnfPct=%s\nnfBest=%s\nnfDaily=%s\n' \
+         "$nfPct" "$nfBest" "$nfDaily" > "$tmp" && mv -f "$tmp" "$notifyfile"
+}
+
+# Credentials live with the search, not with this tool. A timer entry should not have to
+# carry them, so pick up the .envrc next to the log tree when they are not already set.
+load_credentials() {
+  local envrc
+  [ -n "${GOOGLE_WEBAPP_URL:-}" ] && [ -n "${GOOGLE_API_KEY:-}" ] && return 0
+  envrc=${STATS_ENVRC:-$(cd "$(dirname "$log")/.." 2>/dev/null && printf '%s/.envrc' "$PWD")}
+  [ -r "$envrc" ] || return 1
+  set -a; . "$envrc" >/dev/null 2>&1; set +a
+  [ -n "${GOOGLE_WEBAPP_URL:-}" ] && [ -n "${GOOGLE_API_KEY:-}" ]
+}
+
+# -L because an Apps Script web app answers a POST with a redirect to googleusercontent
+send_mail() {
+  local subject=$1 bodyfile=$2 response
+  response=$(curl -fsSL -X POST "$GOOGLE_WEBAPP_URL" \
+    --data-urlencode "apiKey=$GOOGLE_API_KEY" \
+    --data-urlencode "action=sendMail" \
+    --data-urlencode "subject=$subject" \
+    --data-urlencode "body@$bodyfile" \
+    ${email:+--data-urlencode "to=$email"} 2>&1) || {
+      echo "send failed: $response" >&2
+      return 1
+    }
+  # JSON.stringify emits no spaces, but do not depend on that
+  case "$(printf '%s' "$response" | tr -d ' \n\t')" in
+    *'"success":true'*) return 0 ;;
+    *) echo "send rejected: $response" >&2; return 1 ;;
+  esac
+}
+
+# The mailed report covers a day rather than the last hundred intervals, which is the point
+# of it: the screen already shows the recent window.
+mail_report() {
+  local subject=$1 body
+  body=$(mktemp) || return 1
+  {
+    printf '%s\n%s\n\n' "$log" "$(date '+%a %d %b %Y %H:%M:%S %Z')"
+    forceRows=${STATS_MAIL_ROWS:-40} periodSec=${STATS_PERIOD:-86400} periodName=24h \
+      render "$tmplog" "$tmppps"
+  } > "$body"
+  send_mail "$subject" "$body"
+  local rc=$?
+  rm -f "$body"
+  return $rc
+}
+
+if [ -n "$notify" ]; then
+  prepare
+  load_notify
+  if ! load_credentials; then
+    echo "no GOOGLE_WEBAPP_URL/GOOGLE_API_KEY; set them or point STATS_ENVRC at the .envrc" >&2
+    exit 1
+  fi
+
+  # Position and best come from the last line and the counter cache, the same two sources
+  # the report uses, so a mail can never disagree with the screen.
+  lastline=$(tail -1 "$tmplog")
+  c=$(expr "$lastline" : '.*centerIdx=\([0-9]*\)')
+  m=$(expr "$lastline" : '.*middleIdx=\([0-9]*\)')
+  high=$(expr "$lastline" : '.*highGenerations=\([0-9]*\)')
+  pct=$(( (${c:-0} * middles + ${m:-0}) * 100 / (centers * middles) ))
+  best=${high:-0}
+  [ "${stBest:-0}" -gt "$best" ] && best=$stBest
+  now=$(date +%s)
+
+  # A first run has nothing to compare against, so it records where things stand and stays
+  # quiet. Announcing 10% and a 214 that were both reached long ago is not news.
+  if [ "$nfVersion" != 1 ]; then
+    nfPct=$pct; nfBest=$best; nfDaily=$now
+    save_notify
+    echo "notifications armed at ${pct}% and best ${best}; nothing sent on a first run"
+    [ -z "$mailnow" ] && exit 0
+  fi
+
+  # Each trigger records itself only once its mail is actually away. Marking it announced
+  # on a failed send would drop the notification for good, and a new best is exactly the
+  # one thing that must not go missing because the network was down for a minute.
+  sent=0; failed=0
+  if [ -n "$mailnow" ]; then
+    if mail_report "find-optimal: report - ${pct}% searched, best ${best}"; then
+      sent=$((sent + 1)); nfDaily=$now
+    else failed=$((failed + 1)); fi
+  else
+    if [ "$best" -gt "$nfBest" ]; then
+      if mail_report "find-optimal: NEW BEST ${best} generations (was ${nfBest})"; then
+        sent=$((sent + 1)); nfBest=$best
+      else failed=$((failed + 1)); fi
+    fi
+    if [ "$pct" -gt "$nfPct" ]; then
+      if mail_report "find-optimal: ${pct}% searched"; then
+        sent=$((sent + 1)); nfPct=$pct
+      else failed=$((failed + 1)); fi
+    fi
+    if [ $(( now - nfDaily )) -ge "${STATS_DAILY_SECONDS:-86400}" ]; then
+      if mail_report "find-optimal: daily report - ${pct}% searched, best ${best}"; then
+        sent=$((sent + 1)); nfDaily=$now
+      else failed=$((failed + 1)); fi
+    fi
+  fi
+  save_notify
+
+  if [ "$failed" -gt 0 ]; then
+    echo "sent $sent, failed $failed - the failed ones stay pending and retry" >&2
+    exit 1
+  fi
+  [ "$sent" -gt 0 ] && echo "sent $sent" || echo "nothing to send"
+  exit 0
 fi
 
 if [ "$interval" -eq 0 ]; then
