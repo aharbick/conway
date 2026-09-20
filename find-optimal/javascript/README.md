@@ -24,14 +24,14 @@ constant alone forks the data: on 2025-12-16 `Frame Progress` and `Strip Progres
 empty one beside the full one, and every row since went there while the original froze.
 
 `getOrCreateSheet` now adopts a tab left under a name in `*_LEGACY_NAMES` by renaming it in
-place, so a future rename migrates rather than forks. Add the old name to that list
-whenever you rename a sheet constant.
+place, so a future rename migrates rather than forks. **Add the old name to that list
+whenever you rename a sheet constant**, in the same commit.
 
-Once both tabs exist it is too late for that - the lookup finds the canonical one and never
-looks for the legacy. Run `mergeLegacyBestsSheets()` from the Apps Script console to fold
-the legacy rows in above the canonical ones (they all predate them) and delete the emptied
-tab, whose absence is what makes a second run a no-op. The spreadsheet version history is
-the rollback if a merge turns out to be wrong.
+That guard cannot repair a fork that already happened - the lookup finds the canonical
+sheet and never looks for the legacy one. The 2025-12-16 fork was merged by hand on
+2026-09-20 (27,165 rows folded from `Strip Progress` into `Strip Bests`, oldest first;
+`Frame Progress` never existed). If it happens again, move the rows above the canonical
+ones and delete the emptied tab.
 
 
 ## Installation

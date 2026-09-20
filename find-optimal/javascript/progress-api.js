@@ -459,59 +459,6 @@ function googleSendSummaryData(e, spreadsheetId) {
 }
 
 /**
- * MAINTENANCE: fold an already-forked legacy sheet into its canonical one.
- *
- * getOrCreateSheet prevents a future rename from forking, but it cannot help once both
- * tabs exist - it finds the canonical one and never looks for the legacy. This moves the
- * legacy rows in, above the canonical ones because they all predate them, and deletes the
- * emptied tab: leaving it behind is a duplicate of data that now lives in the canonical
- * sheet, and its absence is what makes a second run a no-op. The rows are recoverable from
- * the spreadsheet version history if the merge turns out to be wrong.
- *
- * Run once from the Apps Script console:  mergeLegacyBestsSheets()
- */
-function mergeLegacyIntoCanonical(spreadsheet, canonicalName, legacyName, headers) {
-  const legacy = spreadsheet.getSheetByName(legacyName);
-  if (!legacy) return `no '${legacyName}' sheet, nothing to merge`;
-
-  const canonical = spreadsheet.getSheetByName(canonicalName);
-  if (!canonical) {
-    legacy.setName(canonicalName);
-    return `renamed '${legacyName}' to '${canonicalName}' (nothing to merge)`;
-  }
-
-  const rows = legacy.getLastRow() > 0 ? legacy.getDataRange().getValues() : [];
-  const body = rows.filter((r, i) => !(i === 0 && String(r[0]) === headers[0]))
-                   .filter((r) => String(r[0]) !== '');
-  if (body.length === 0) return `'${legacyName}' has no data rows`;
-
-  // Row 1 is the header, so the legacy rows start at row 2 and the canonical ones follow
-  canonical.insertRowsAfter(1, body.length);
-  canonical.getRange(2, 1, body.length, headers.length)
-           .setValues(body.map((r) => headers.map((_, c) => (r[c] === undefined ? '' : r[c]))));
-
-  spreadsheet.deleteSheet(legacy);
-  return `moved ${body.length} rows from '${legacyName}' into '${canonicalName}', removed '${legacyName}'`;
-}
-
-function mergeLegacyBestsSheets() {
-  return withLock(() => {
-    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const messages = [];
-    for (let i = 0; i < STRIP_BESTS_LEGACY_NAMES.length; i++) {
-      messages.push(mergeLegacyIntoCanonical(spreadsheet, STRIP_BESTS_SHEET_NAME,
-                                             STRIP_BESTS_LEGACY_NAMES[i], STRIP_BESTS_HEADERS));
-    }
-    for (let i = 0; i < FRAME_BESTS_LEGACY_NAMES.length; i++) {
-      messages.push(mergeLegacyIntoCanonical(spreadsheet, FRAME_BESTS_SHEET_NAME,
-                                             FRAME_BESTS_LEGACY_NAMES[i], FRAME_BESTS_HEADERS));
-    }
-    messages.forEach((m) => console.log(m));
-    return sendJsonResponse(true, messages.join('; '));
-  });
-}
-
-/**
  * UTILITY FUNCTION: Backfill Frame Completion sheet from Progress sheet data
  * Call this manually in Apps Script console: backfillFrameCompletionFromProgress()
  * Reads Progress sheet for kernelIdx=15 entries and populates Frame Completion bitmap
