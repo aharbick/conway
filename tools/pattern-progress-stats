@@ -81,9 +81,9 @@ else
   bold=""; dim=""; cyan=""; green=""; yellow=""; reset=""; hi=""; found=""
 fi
 
-# Height the plot to the terminal, so --watch fills the window without scrolling it. The
-# tables and the axis take about fourteen rows, and the cap keeps the whole report under 80
-# rows on a tall terminal. The width is not set here: the plot matches the tables above it.
+# Height the plot to the terminal, taking half of what is left below the tables: the shape
+# of the two series reads fine at that height, and leaving the rest free means --watch does
+# not own the whole window. The width is not set here: the plot matches the tables above it.
 plot_height() {
   local size=""
   [ -r /dev/tty ] && size=$(stty size 2>/dev/null </dev/tty)
@@ -93,9 +93,9 @@ plot_height() {
   esac
   [ "$termRows" -gt 0 ] 2>/dev/null || termRows=32
 
-  plotH=$(( termRows - 14 ))
-  [ "$plotH" -gt 56 ] && plotH=56
-  [ "$plotH" -lt 8 ]  && plotH=8
+  plotH=$(( (termRows - 14) / 2 ))
+  [ "$plotH" -gt 28 ] && plotH=28
+  [ "$plotH" -lt 6 ]  && plotH=6
   return 0
 }
 
