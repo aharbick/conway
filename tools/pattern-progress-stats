@@ -36,7 +36,8 @@
 # render, and everything else is computed from the tail of the log. The cache rebuilds
 # itself if the log is rotated or truncated, and --rescan forces it.
 #
-#   STATS_WINDOW_MB=20   how much of the tail the median, max and plot see (default 20)
+#   STATS_WINDOW_MB=20   how much of the tail the median, max and last100 see (default 20)
+#   STATS_PLOT_N=2000    intervals the plot covers (default: 20 per column, so about 1800)
 
 set -o pipefail
 
@@ -79,6 +80,11 @@ middles=${STATS_MIDDLES:-512}
 gap=${STATS_GAP:-600}
 recent=${STATS_RECENT:-100}
 window=$(( ${STATS_WINDOW_MB:-20} * 1000000 ))
+# Intervals the plot covers. The median, max and last100 read the whole tail window, but the
+# plot cannot: bucketing a growing number of samples into a fixed number of columns just
+# squeezes more history into each one, and the x-axis stretches from hours to weeks. 0 means
+# pick it from the plot width, so a column stays a fixed number of intervals wide.
+plotn=${STATS_PLOT_N:-0}
 
 # Colour follows the usual conventions: off when stdout is not a terminal, so piping or
 # redirecting never emits escape codes. NO_COLOR forces it off, CLICOLOR_FORCE on. Decided
@@ -125,7 +131,7 @@ render() {
   awk -v centers="$centers" -v middles="$middles" -v gap="$gap" -v recent="$recent" \
       -v bold="$bold" -v dim="$dim" -v cyan="$cyan" -v green="$green" -v yellow="$yellow" \
       -v reset="$reset" -v hi_="$hi" -v found="$found" -v nograph="$nograph" \
-      -v plotH="$plotH" -v windowed="$windowed" \
+      -v plotH="$plotH" -v plotN="$plotn" -v windowed="$windowed" \
       -v totalN="$stN" -v totalActive="$stActive" -v totalRestarts="$stRestarts" \
       -v totalBest="$stBest" -v totalBestAt="$stBestAt" '
 function commas(v,   s, out, len, i) {
@@ -199,7 +205,7 @@ function scale(v, lo, hi, height,   r) {
 }
 
 function graph(tableW, height,   i, x, lo, hi, sum, ma, from, to, val, width,
-                                 row, col, grid, out, label, span) {
+                                 row, col, grid, out, label, span, first, shown) {
   if (p < 4) return
 
   # The plot lines up with the tables above it: same right edge, with the y-axis labels and
@@ -218,15 +224,28 @@ function graph(tableW, height,   i, x, lo, hi, sum, ma, from, to, val, width,
     ma[i] = (sum > 0) ? ((i < recent) ? i : recent) / sum : 0
   }
 
+  # Only the tail of the series is drawn. A column holds a fixed number of intervals, so the
+  # x-axis spans a roughly fixed stretch of time no matter how long the log gets, instead of
+  # compressing an ever-growing history into the same width. The trailing mean above is still
+  # computed over everything, so the leftmost column arrives with its lead-in already done.
+  shown = (plotN > 0) ? plotN : width * PLOT_PER_COLUMN
+  first = p - shown + 1
+  if (first < 1) first = 1
+  shown = p - first + 1
+
+  # The y-range stays that of the whole tail window, not of the stretch being drawn: it
+  # holds still between renders instead of rescaling as the plot slides, and the two are
+  # close in practice - 385..3633 G/s against 512..3874 for the last 1,800 when measured.
   lo = sortedPps[int(k * 0.02) + 1]
   hi = sortedPps[int(k * 0.98)]
   if (hi <= lo) { lo = sortedPps[1]; hi = sortedPps[k] }
   if (hi <= lo) return
 
   for (x = 0; x < width; x++) {
-    from = int(x * p / width) + 1
-    to = int((x + 1) * p / width)
+    from = first + int(x * shown / width)
+    to = first + int((x + 1) * shown / width) - 1
     if (to < from) to = from
+    if (to > p) to = p
     grid[scale(ordered[to], lo, hi, height), x] = "."
     grid[scale(ma[to], lo, hi, height), x] = "*"
   }
@@ -251,7 +270,7 @@ function graph(tableW, height,   i, x, lo, hi, sum, ma, from, to, val, width,
 
   printf "%s%10s +%s%s\n", dim, "", rule(width + 1), reset
 
-  span = duration(tsOf[p] - tsOf[1])
+  span = duration(tsOf[p] - tsOf[first])
   printf "%s%10s   %s ago%*s%s\n", dim, "", span, width - length(span) - 4, "now", reset
   printf "%s%10s   %s.%s%s one interval   %s*%s%s the last %d, work over time%s\n",
          dim, "", cyan, reset, dim, hi_, reset, dim, recent, reset
@@ -356,6 +375,10 @@ END {
   # Column widths, and the y-axis gutter the plot below them reserves: a 10-column label,
   # a space, the spine, a space.
   GUTTER = 13
+  # Intervals per plot column when STATS_PLOT_N does not say otherwise. Twenty keeps the
+  # x-axis at a few hours at the rates this search runs at, which is the scale a slowdown
+  # shows up on, and leaves the trailing mean smoothed over about five columns.
+  PLOT_PER_COLUMN = 20
   TITLE[1] = "SEARCH"; W[1] = 38; L[1] = 8
   TITLE[2] = "PACE";   W[2] = 34; L[2] = 9
   TITLE[3] = "SPEED";  W[3] = 27; L[3] = 9
@@ -425,7 +448,7 @@ END {
   # The cumulative figures are exact however big the log gets, but median, last100, max and
   # the graph only see the tail window, so say so rather than let them look whole-run.
   if (windowed && wn < totalN) {
-    printf "%smedian, last%d, max and the plot cover the last %s intervals;" \
+    printf "%smedian, last%d and max cover the last %s intervals, the plot fewer still;" \
            " the rest is the whole log%s\n", dim, recent, commas(wn), reset
   }
 
