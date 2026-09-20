@@ -1,0 +1,152 @@
+#!/bin/bash
+#
+# Progress and throughput for a find-optimal strip search, from its log.
+#
+#   tools/pattern-progress-stats find-optimal/logs/find-optimal-5090-oracle.log
+#   watch -n10 "tools/pattern-progress-stats find-optimal/logs/find-optimal-5090-oracle.log"
+#
+# Reports how far through the search space the frontier has reached, how fast this log is
+# advancing, and what that implies for finishing - then hands the patternsPerSec values to
+# tools/stats for the throughput summary.
+#
+# The search walks centerIdx 0..8547 in order, and middleIdx 0..511 within each, so the
+# current position is itself the progress: everything behind it is either searched or was
+# skipped as already complete. Percentages are of the whole space, not of this run.
+#
+# Restarts are handled by ignoring gaps longer than STATS_GAP seconds (default 600) when
+# measuring elapsed time, so downtime between runs does not depress the rate.
+
+set -o pipefail
+
+log=${1:-}
+if [ -z "$log" ]; then
+  echo "usage: $(basename "$0") <logfile>" >&2
+  exit 2
+fi
+if [ ! -r "$log" ]; then
+  echo "cannot read $log" >&2
+  exit 1
+fi
+
+# Matches include/constants.h: CENTER_4X4_TOTAL_UNIQUE and STRIP_SEARCH_TOTAL_MIDDLE_IDX
+centers=${STATS_CENTERS:-8548}
+middles=${STATS_MIDDLES:-512}
+gap=${STATS_GAP:-600}
+recent=${STATS_RECENT:-100}
+
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+grep 'timestamp=' "$log" | awk \
+  -v centers="$centers" -v middles="$middles" -v gap="$gap" -v recent="$recent" '
+function commas(v,   s, out, len, i) {
+  s = sprintf("%d", v); len = length(s); out = ""
+  for (i = 1; i <= len; i++) {
+    out = out substr(s, i, 1)
+    if ((len - i) % 3 == 0 && i < len) out = out ","
+  }
+  return out
+}
+
+function duration(sec,   d, h, m) {
+  d = int(sec / 86400); sec -= d * 86400
+  h = int(sec / 3600);  sec -= h * 3600
+  m = int(sec / 60)
+  if (d > 0) return sprintf("%dd %dh", d, h)
+  if (h > 0) return sprintf("%dh %dm", h, m)
+  return sprintf("%dm", m)
+}
+
+function row(label, value, note) {
+  if (note == "") printf "%14s  %s\n", label, value
+  else            printf "%14s  %-24s %s\n", label, value, note
+}
+
+{
+  # Tolerates both log formats: intervals that found nothing omit the best* fields
+  if (match($0, /timestamp=[0-9]+/))  ts     = substr($0, RSTART + 10, RLENGTH - 10) + 0
+  if (match($0, /centerIdx=[0-9]+/))  center = substr($0, RSTART + 10, RLENGTH - 10) + 0
+  if (match($0, /middleIdx=[0-9]+/))  middle = substr($0, RSTART + 10, RLENGTH - 10) + 0
+
+  # The bar this interval was searched against, and what it actually found. Only oracle runs
+  # carry a bar, and only intervals that found something carry a best.
+  if (match($0, /highGenerations=[0-9]+/)) high = substr($0, RSTART + 16, RLENGTH - 16) + 0
+  if (match($0, /bestGenerations=[0-9]+/)) {
+    best = substr($0, RSTART + 16, RLENGTH - 16) + 0
+    if (best > bestSeen) { bestSeen = best; bestAt = sprintf("%d:%d", center, middle) }
+  }
+
+  n++
+  if (n > 1) {
+    delta = ts - prev
+    if (delta >= 0 && delta <= gap) active += delta
+    else if (delta > gap) restarts++
+  }
+  prev = ts
+  last = ts
+  lastCenter = center
+  lastMiddle = middle
+
+  if ($0 ~ /mode=exact/) exact++
+  else if ($0 ~ /mode=oracle/) oracle++
+
+  # Keep the recent window of timestamps for a rate that reflects now, not the lifetime
+  win[n % recent] = ts
+}
+
+END {
+  if (n == 0) { print "no interval lines in the log"; exit 1 }
+
+  total = centers * middles
+  position = lastCenter * middles + lastMiddle
+  remaining = total - position
+
+  print "progress"
+  row("position", sprintf("%d:%d", lastCenter, lastMiddle),
+      sprintf("center %s of %s", commas(lastCenter), commas(centers)))
+  row("complete", sprintf("%.2f%%", 100.0 * position / total),
+      sprintf("%s of %s intervals", commas(position), commas(total)))
+  row("remaining", sprintf("%s intervals", commas(remaining)), "")
+
+  if (high > 0) {
+    row("hunting", sprintf("> %d generations", high), "the bar these intervals were searched against")
+  }
+  if (bestSeen > 0) {
+    row("best seen", sprintf("%d generations", bestSeen),
+        sprintf("at %s%s", bestAt, (high > 0 && bestSeen > high) ? "   *** BEATS THE RECORD ***" : ""))
+  }
+
+  print ""
+  print "this log"
+  modeNote = "no mode recorded, so an exhaustive run"
+  if (exact + oracle > 0) modeNote = sprintf("%s exact, %s oracle", commas(exact), commas(oracle))
+  row("intervals", commas(n), modeNote)
+  row("elapsed", duration(active), (restarts > 0 ? sprintf("%d restart(s) skipped", restarts) : "running time"))
+
+  if (active > 0 && n > 1) {
+    rate = (n - 1) * 3600.0 / active                 # intervals per hour
+    row("rate", sprintf("%s intervals/hour", commas(rate)), "")
+
+    # The recent window is the better predictor: interval cost swings with center density
+    if (n > recent) {
+      oldest = win[(n + 1) % recent]
+      span = last - oldest
+      if (span > 0) {
+        recentRate = (recent - 1) * 3600.0 / span
+        row(sprintf("last %d", recent), sprintf("%s intervals/hour", commas(recentRate)),
+            sprintf("%+.0f%% vs overall", (recentRate - rate) * 100.0 / rate))
+      }
+    }
+
+    if (rate > 0) {
+      eta = remaining / rate * 3600.0
+      note = ""
+      if (recentRate > 0) note = sprintf("%s at the recent rate", duration(remaining / recentRate * 3600.0))
+      row("eta", duration(eta), note)
+    }
+  }
+}
+'
+
+echo
+echo "throughput (patterns/sec)"
+grep -o 'patternsPerSec=[0-9,]*' "$log" | sed 's/.*=//' | STATS_RECENT="$recent" "$here/stats"
