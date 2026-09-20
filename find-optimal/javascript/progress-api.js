@@ -40,7 +40,7 @@ const MAIL_SENDER_NAME = 'find-optimal';
 // It must be an alias the sending account has verified: Gmail settings, Accounts, "Send
 // mail as". Anything else is rejected. Leave it empty to send from the account itself,
 // which is fine as long as MAIL_DEFAULT_RECIPIENT is some other mailbox.
-const MAIL_SENDER_ALIAS = '';
+const MAIL_SENDER_ALIAS = 'gol@aharbick.com';
 
 const MAIL_DEFAULT_RECIPIENT = 'aharbick@aharbick.com';
 
