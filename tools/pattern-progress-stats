@@ -9,10 +9,6 @@
 # --watch redraws in place, which is simpler than wrapping this in watch(1): the script
 # keeps its terminal, so colour works without watch -c and without forcing codes into a pipe.
 #
-# Three sections: how far the search has got, how fast it is going and what that implies for
-# finishing, and the spread of the patternsPerSec values - the last of which is handed to
-# tools/stats so the summary is not duplicated.
-#
 # The search walks centerIdx 0..8547 in order, and middleIdx 0..511 within each, so the
 # current position is itself the progress: everything behind it is either searched or was
 # skipped as already complete. Percentages are of the whole space, not of this run.
@@ -72,19 +68,14 @@ esac
 if [ "$usecolor" = 1 ]; then
   bold=$'\033[1m'; dim=$'\033[2m'; cyan=$'\033[36m'
   green=$'\033[32m'; yellow=$'\033[33m'; reset=$'\033[0m'
-  stats_color=always
 else
   bold=""; dim=""; cyan=""; green=""; yellow=""; reset=""
-  stats_color=never
 fi
 
-here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-
 render() {
-grep 'timestamp=' "$log" | awk \
-  -v centers="$centers" -v middles="$middles" -v gap="$gap" -v recent="$recent" \
-  -v bold="$bold" -v dim="$dim" -v cyan="$cyan" -v green="$green" -v yellow="$yellow" \
-  -v reset="$reset" '
+  awk -v centers="$centers" -v middles="$middles" -v gap="$gap" -v recent="$recent" \
+      -v bold="$bold" -v dim="$dim" -v cyan="$cyan" -v green="$green" -v yellow="$yellow" \
+      -v reset="$reset" '
 function commas(v,   s, out, len, i) {
   s = sprintf("%d", v); len = length(s); out = ""
   for (i = 1; i <= len; i++) {
@@ -92,6 +83,13 @@ function commas(v,   s, out, len, i) {
     if ((len - i) % 3 == 0 && i < len) out = out ","
   }
   return out
+}
+
+function human(v,   units, i, a) {
+  split(" ,K,M,G,T,P", units, ",")
+  i = 1; a = (v < 0 ? -v : v)
+  while (a >= 1000 && i < 6) { v /= 1000; a /= 1000; i++ }
+  return (i == 1) ? sprintf("%.0f", v) : sprintf("%.2f %s", v, units[i])
 }
 
 function duration(sec,   d, h, m) {
@@ -103,22 +101,31 @@ function duration(sec,   d, h, m) {
   return sprintf("%dm", m)
 }
 
-function row(label, value, note) {
-  if (note == "") printf "  %-11s %s%s%s\n", label, cyan, value, reset
-  else            printf "  %-11s %s%-26s%s %s%s%s\n", label, cyan, value, reset, dim, note, reset
-}
+function row(label, value) { printf "  %-11s %s%s%s\n", label, cyan, value, reset }
+function head(t)           { printf "%s%s%s\n", bold, toupper(t), reset }
 
-{
-  # Tolerates both log formats: intervals that found nothing omit the best* fields
+# First input is the log in order; second is the patternsPerSec values sorted, for the
+# median and the maximum without sorting inside awk.
+FNR == NR {
   if (match($0, /timestamp=[0-9]+/))  ts     = substr($0, RSTART + 10, RLENGTH - 10) + 0
   if (match($0, /centerIdx=[0-9]+/))  center = substr($0, RSTART + 10, RLENGTH - 10) + 0
   if (match($0, /middleIdx=[0-9]+/))  middle = substr($0, RSTART + 10, RLENGTH - 10) + 0
-
-  # The bar this interval was searched against, and what it actually found
   if (match($0, /highGenerations=[0-9]+/)) high = substr($0, RSTART + 16, RLENGTH - 16) + 0
+
+  # Only intervals that were fully searched report a best, so these are the histogram
+  # samples. Zero means nothing survived long enough, which is not a sample worth showing.
   if (match($0, /bestGenerations=[0-9]+/)) {
     best = substr($0, RSTART + 16, RLENGTH - 16) + 0
-    if (best > bestSeen) { bestSeen = best; bestAt = sprintf("%d:%d", center, middle) }
+    if (best > 0) {
+      lastBest[++bestCount % 3] = best
+      if (best > bestSeen) { bestSeen = best; bestAt = sprintf("%d:%d", center, middle) }
+    }
+  }
+
+  if (match($0, /patternsPerSec=[0-9,]+/)) {
+    pps = substr($0, RSTART + 15, RLENGTH - 15)
+    gsub(/,/, "", pps)
+    ordered[++p] = pps + 0
   }
 
   n++
@@ -132,9 +139,11 @@ function row(label, value, note) {
   if ($0 ~ /mode=exact/) exact++
   else if ($0 ~ /mode=oracle/) oracle++
 
-  # Recent window of timestamps, for a rate that reflects now rather than the lifetime
   win[n % recent] = ts
+  next
 }
+
+{ sortedPps[++k] = $1 + 0 }
 
 END {
   if (n == 0) { print "no interval lines in the log"; exit 1 }
@@ -143,81 +152,110 @@ END {
   position = lastCenter * middles + lastMiddle
   remaining = total - position
 
-  printf "%ssearch%s\n", bold, reset
-  row("complete", sprintf("%.2f%%", 100.0 * position / total),
-      sprintf("%s of %s intervals, %s remaining", commas(position), commas(total), commas(remaining)))
-  row("position", sprintf("%d:%d", lastCenter, lastMiddle),
-      sprintf("center %s of %s", commas(lastCenter), commas(centers)))
+  # 2^64 / (8548 * 512): what the search calls one interval of the space, and what its
+  # patternsPerSec is measured against
+  perInterval = 4214880325120
 
-  # The record is the bar an oracle run is beating, which is the best known result - not the
-  # best this log happened to observe. Only the sampled exact intervals report a best at all,
-  # 51 of 3,302 in a typical oracle run, so their maximum says nothing about the search and
-  # belongs with the other sample statistics rather than here.
+  head("search")
+  row("complete", sprintf("%.2f%% (%s of %s intervals, %s remaining)",
+      100.0 * position / total, commas(position), commas(total), commas(remaining)))
+  row("position", sprintf("center %s of %s, middleIdx %s",
+      commas(lastCenter), commas(centers), commas(lastMiddle)))
+
   if (high > 0) {
     if (bestSeen > high) {
-      printf "  %-11s %s%s%d generations%s %s*** NEW RECORD at %s, previous bar %d ***%s\n",
-             "record", bold, green, bestSeen, reset, green, bestAt, high, reset
+      printf "  %-11s %s%s%d generations, NEW RECORD at %s (previous bar %d)%s\n",
+             "record", bold, green, bestSeen, bestAt, high, reset
     } else {
-      row("record", sprintf("%d generations", high), "the bar; nothing above it found yet")
+      row("record", sprintf("%d generations, nothing above it found yet", high))
     }
   } else if (bestSeen > 0) {
-    # An exhaustive log has no bar, and there every interval reports its best, so the
-    # maximum really is the best found
-    row("record", sprintf("%d generations", bestSeen), sprintf("best found, at %s", bestAt))
+    row("record", sprintf("%d generations, best found, at %s", bestSeen, bestAt))
   }
 
-  printf "\n%space%s\n", bold, reset
-  modeNote = "no mode recorded, so an exhaustive run"
-  if (exact + oracle > 0) modeNote = sprintf("%s exact, %s oracle", commas(exact), commas(oracle))
-  row("intervals", commas(n), modeNote)
-  if (high > 0 && bestSeen > 0 && bestSeen <= high) {
-    row("best sample", sprintf("%d generations", bestSeen),
-        sprintf("at %s, highest of the %s exact intervals", bestAt, commas(exact)))
+  printf "\n"
+  head("pace")
+  if (exact + oracle > 0) {
+    row("intervals", sprintf("%s (%s oracle, %s exact: fully searched, feeding the histogram)",
+        commas(n), commas(oracle), commas(exact)))
+  } else {
+    row("intervals", sprintf("%s (exhaustive run, every interval fully searched)", commas(n)))
   }
-  row("elapsed", duration(active),
-      (restarts > 0 ? sprintf("%d restart(s) excluded", restarts) : "running time"))
+
+  if (bestCount > 0) {
+    line = ""
+    for (i = 0; i < 3 && i < bestCount; i++) {
+      line = line (line == "" ? "" : ", ") lastBest[(bestCount - i) % 3]
+    }
+    row("last 3", sprintf("%s generations, most recent fully searched intervals", line))
+  }
+
+  row("elapsed", sprintf("%s of running time%s", duration(active),
+      (restarts > 0 ? sprintf(", %d restart(s) excluded", restarts) : "")))
 
   if (active > 0 && n > 1) {
-    rate = (n - 1) * 3600.0 / active                 # intervals per hour
+    rate = (n - 1) * 3600.0 / active          # intervals per hour
+    effective = n * perInterval / active      # patterns/sec, work over time
 
-    # Interval cost swings by more than 5x with center density, so the lifetime rate and the
-    # last hundred can differ by half. Both are shown rather than picking one.
     recentRate = 0
     if (n > recent) {
       oldest = win[(n + 1) % recent]
       if (last > oldest) recentRate = (recent - 1) * 3600.0 / (last - oldest)
     }
 
+    row("rate", sprintf("%s intervals/hour = %s/sec effective", commas(rate), human(effective)))
+
+    # The effective rate is work over time, which is what predicts a finish. The mean or
+    # median of the per-interval rates does not: a slow interval takes disproportionate time
+    # while contributing one sample, so both of those run optimistic.
     if (recentRate > 0) {
-      pct = (recentRate - rate) * 100.0 / rate
-      row("rate", sprintf("%s intervals/hour", commas(rate)),
-          sprintf("last %d: %s (%s%+.0f%%%s)", recent, commas(recentRate),
-                  (pct >= 0 ? green : yellow), pct, dim))
-      row("eta", duration(remaining / rate * 3600.0),
-          sprintf("%s at the recent rate", duration(remaining / recentRate * 3600.0)))
+      row("eta", sprintf("%s at that rate (%s at the last-%d rate)",
+          duration(remaining / rate * 3600.0), duration(remaining / recentRate * 3600.0), recent))
     } else {
-      row("rate", sprintf("%s intervals/hour", commas(rate)), "")
-      row("eta", duration(remaining / rate * 3600.0), "")
+      row("eta", duration(remaining / rate * 3600.0))
     }
   }
+
+  if (k > 0) {
+    median = (k % 2) ? sortedPps[(k + 1) / 2] : (sortedPps[k / 2] + sortedPps[k / 2 + 1]) / 2
+    printf "\n"
+    head("patterns/sec")
+    row("median", human(median))
+    if (p > recent) {
+      window = 0
+      for (i = p - recent + 1; i <= p; i++) window += ordered[i]
+      window /= recent
+      pct = (median > 0) ? (window - median) * 100.0 / median : 0
+      printf "  %-11s %s%s%s %s(%s%+.0f%%%s vs median)%s\n", sprintf("last %d", recent),
+             cyan, human(window), reset, dim, (pct >= 0 ? green : yellow), pct, dim, reset
+    }
+    row("max", human(sortedPps[k]))
+  }
 }
-'
-  printf "\n%spatterns/sec%s\n" "$bold" "$reset"
-  grep -o 'patternsPerSec=[0-9,]*' "$log" | sed 's/.*=//' |
-    STATS_RECENT="$recent" stats_color="$stats_color" "$here/stats" | sed 's/^/  /'
+' "$1" "$2"
 }
 
+prepare() {
+  grep 'timestamp=' "$log" > "$tmplog"
+  grep -o 'patternsPerSec=[0-9,]*' "$log" | sed 's/.*=//' | tr -d ',' | sort -g > "$tmppps"
+}
+
+tmplog=$(mktemp) && tmppps=$(mktemp) || exit 1
+trap 'rm -f "$tmplog" "$tmppps"' EXIT
+
 if [ "$interval" -eq 0 ]; then
-  render
+  prepare
+  render "$tmplog" "$tmppps"
   exit $?
 fi
 
 # Redraw in place: home the cursor and clear below it, so a shorter report cannot leave
 # stale lines behind and the screen does not flash the way a full clear does.
-trap 'printf "\033[?25h\n"; exit 0' INT TERM
+trap 'printf "\033[?25h\n"; rm -f "$tmplog" "$tmppps"; exit 0' INT TERM
 printf '\033[?25l'
 while true; do
-  out=$(render)
+  prepare
+  out=$(render "$tmplog" "$tmppps")
   printf '\033[H\033[J%severy %ss   %s   %s%s\n\n%s\n' \
     "$dim" "$interval" "$log" "$(date '+%a %d %b %H:%M:%S')" "$reset" "$out"
   sleep "$interval"
