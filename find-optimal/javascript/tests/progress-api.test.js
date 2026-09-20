@@ -22,7 +22,6 @@ global.Utilities = {
   },
   // Apps Script hands back SIGNED bytes; the code under test has to cope with that
   base64Decode: (s) => Array.from(Buffer.from(s, 'base64')).map((b) => (b > 127 ? b - 256 : b)),
-  formatDate: (d, _tz, _fmt) => d.toISOString().slice(0, 10),
 };
 global.SpreadsheetApp = { flush: () => lockEvents.push('flush') };
 global.ContentService = {
@@ -306,7 +305,8 @@ check('with neither name present a fresh sheet is still created',
 
 // ------------------------------------------------- merging the forked tabs -----
 // The legacy rows all predate the canonical ones, so they belong above them, and the
-// emptied tab is renamed so running the merge twice cannot duplicate them.
+// emptied tab goes away: it would otherwise duplicate what is now in the canonical sheet,
+// and its absence is what stops a second run from doubling the rows up.
 function MergeSheet(name, rows) {
   this.name = name;
   this.rows = rows.map((r) => r.slice());
@@ -325,7 +325,11 @@ function MergeSheet(name, rows) {
 const header = A.STRIP_BESTS_HEADERS;
 const canonical = new MergeSheet('Strip Bests', [header, [500, 1, 205, 'p500'], [501, 2, 206, 'p501']]);
 const legacyTab = new MergeSheet('Strip Progress', [header, [100, 1, 201, 'p100'], [101, 2, 202, 'p101']]);
-const book = { getSheetByName: (n) => [canonical, legacyTab].find((s) => s.name === n) || null };
+const tabs = [canonical, legacyTab];
+const book = {
+  getSheetByName: (n) => tabs.find((s) => s.name === n) || null,
+  deleteSheet: (s) => tabs.splice(tabs.indexOf(s), 1),
+};
 const msg = A.mergeLegacyIntoCanonical(book, 'Strip Bests', 'Strip Progress', header);
 
 check('the merge reports what it moved', /moved 2 rows/.test(msg), msg);
@@ -335,8 +339,9 @@ check('legacy rows land above the canonical ones, oldest first',
       canonical.rows.slice(1).map((r) => r[0]).join(','));
 check('no header row is copied in as data',
       canonical.rows.filter((r) => String(r[0]) === 'centerIdx').length === 1);
-check('the emptied tab is renamed so a second merge is a no-op',
-      /^Strip Progress \(merged \d{4}-\d{2}-\d{2}\)$/.test(legacyTab.name), legacyTab.name);
+check('the emptied tab is removed rather than left as a duplicate',
+      tabs.length === 1 && tabs[0] === canonical,
+      tabs.map((s) => s.name).join(','));
 check('and a second merge finds nothing',
       /nothing to merge/.test(A.mergeLegacyIntoCanonical(book, 'Strip Bests', 'Strip Progress', header)));
 

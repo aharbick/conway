@@ -463,8 +463,10 @@ function googleSendSummaryData(e, spreadsheetId) {
  *
  * getOrCreateSheet prevents a future rename from forking, but it cannot help once both
  * tabs exist - it finds the canonical one and never looks for the legacy. This moves the
- * legacy rows in, above the canonical ones because they all predate them, and renames the
- * emptied tab so a second run cannot double it up.
+ * legacy rows in, above the canonical ones because they all predate them, and deletes the
+ * emptied tab: leaving it behind is a duplicate of data that now lives in the canonical
+ * sheet, and its absence is what makes a second run a no-op. The rows are recoverable from
+ * the spreadsheet version history if the merge turns out to be wrong.
  *
  * Run once from the Apps Script console:  mergeLegacyBestsSheets()
  */
@@ -488,9 +490,8 @@ function mergeLegacyIntoCanonical(spreadsheet, canonicalName, legacyName, header
   canonical.getRange(2, 1, body.length, headers.length)
            .setValues(body.map((r) => headers.map((_, c) => (r[c] === undefined ? '' : r[c]))));
 
-  const stamp = Utilities.formatDate(new Date(), 'UTC', 'yyyy-MM-dd');
-  legacy.setName(`${legacyName} (merged ${stamp})`);
-  return `moved ${body.length} rows from '${legacyName}' into '${canonicalName}'`;
+  spreadsheet.deleteSheet(legacy);
+  return `moved ${body.length} rows from '${legacyName}' into '${canonicalName}', removed '${legacyName}'`;
 }
 
 function mergeLegacyBestsSheets() {

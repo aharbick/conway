@@ -29,8 +29,9 @@ whenever you rename a sheet constant.
 
 Once both tabs exist it is too late for that - the lookup finds the canonical one and never
 looks for the legacy. Run `mergeLegacyBestsSheets()` from the Apps Script console to fold
-the legacy rows in above the canonical ones (they all predate them) and rename the emptied
-tab, which also makes a second run a no-op.
+the legacy rows in above the canonical ones (they all predate them) and delete the emptied
+tab, whose absence is what makes a second run a no-op. The spreadsheet version history is
+the rollback if a merge turns out to be wrong.
 
 
 ## Installation
