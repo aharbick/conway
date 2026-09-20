@@ -25,9 +25,11 @@ set -o pipefail
 
 want_color=auto
 interval=0
+nograph=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --color)     want_color=always; shift ;;
+    --no-graph)  nograph=1; shift ;;
     --no-color)  want_color=never;  shift ;;
     --watch)     interval=10; shift ;;
     --watch=*)   interval="${1#--watch=}"; shift ;;
@@ -40,7 +42,7 @@ done
 
 log=${1:-}
 if [ -z "$log" ]; then
-  echo "usage: $(basename "$0") [--watch[=SECONDS]] [--color|--no-color] <logfile>" >&2
+  echo "usage: $(basename "$0") [--watch[=SECONDS]] [--no-graph] [--color|--no-color] <logfile>" >&2
   exit 2
 fi
 if [ ! -r "$log" ]; then
@@ -79,10 +81,34 @@ else
   bold=""; dim=""; cyan=""; green=""; yellow=""; reset=""; hi=""; found=""
 fi
 
+# Size the plot to the terminal, so --watch fills the window without scrolling it. The
+# tables take about a dozen rows, and the y-axis labels about sixteen columns. Height is
+# capped so the whole report stays under 80 rows even on a tall terminal.
+plot_size() {
+  local size=""
+  [ -r /dev/tty ] && size=$(stty size 2>/dev/null </dev/tty)
+  case "$size" in
+    [0-9]*\ [0-9]*) termRows=${size%% *}; termCols=${size##* } ;;
+    *)              termRows=${LINES:-32}; termCols=${COLUMNS:-110} ;;
+  esac
+  [ "$termRows" -gt 0 ] 2>/dev/null || termRows=32
+  [ "$termCols" -gt 0 ] 2>/dev/null || termCols=110
+
+  plotH=$(( termRows - 14 ))
+  plotW=$(( termCols - 16 ))
+  [ "$plotH" -gt 56 ] && plotH=56
+  [ "$plotH" -lt 8 ]  && plotH=8
+  [ "$plotW" -gt 140 ] && plotW=140
+  [ "$plotW" -lt 40 ]  && plotW=40
+  return 0
+}
+
 render() {
+  plot_size
   awk -v centers="$centers" -v middles="$middles" -v gap="$gap" -v recent="$recent" \
       -v bold="$bold" -v dim="$dim" -v cyan="$cyan" -v green="$green" -v yellow="$yellow" \
-      -v reset="$reset" -v hi="$hi" -v found="$found" '
+      -v reset="$reset" -v hi_="$hi" -v found="$found" -v nograph="$nograph" \
+      -v plotW="$plotW" -v plotH="$plotH" '
 function commas(v,   s, out, len, i) {
   s = sprintf("%d", v); len = length(s); out = ""
   for (i = 1; i <= len; i++) {
@@ -130,7 +156,7 @@ function add(col, label, coloured, plain) {
 
 # Ordinary value, and one worth picking out of the table at a glance
 function plainCell(col, label, value)  { add(col, label, cyan value reset, value) }
-function boldCell(col, label, value)   { add(col, label, hi value reset, value) }
+function boldCell(col, label, value)   { add(col, label, hi_ value reset, value) }
 
 function centred(text, width,   left) {
   left = int((width - length(text)) / 2)
@@ -142,6 +168,68 @@ function rule(width,   s, i) {
   s = ""
   for (i = 0; i < width; i++) s = s "-"
   return s
+}
+
+# Two series over time: the raw per-interval rate, and its trailing average. A column is
+# many intervals wide, so the raw series takes one of them rather than their spread: center
+# density swings throughput by more than 5x from one interval to the next, and a min-to-max
+# band at this width fills the plot solid. The average is the line the eta actually follows.
+function scale(v, lo, hi, height,   r) {
+  r = int((v - lo) / (hi - lo) * (height - 1))
+  return (r < 0) ? 0 : ((r > height - 1) ? height - 1 : r)
+}
+
+function graph(width, height,   i, x, y, lo, hi, sum, ma, from, to, val,
+                                row, col, grid, out, label, span) {
+  if (p < 4) return
+
+  sum = 0
+  for (i = 1; i <= p; i++) {
+    sum += ordered[i]
+    if (i > recent) sum -= ordered[i - recent]
+    ma[i] = sum / ((i < recent) ? i : recent)
+  }
+
+  lo = sortedPps[int(k * 0.02) + 1]
+  hi = sortedPps[int(k * 0.98)]
+  if (hi <= lo) { lo = sortedPps[1]; hi = sortedPps[k] }
+  if (hi <= lo) return
+
+  for (x = 0; x < width; x++) {
+    from = int(x * p / width) + 1
+    to = int((x + 1) * p / width)
+    if (to < from) to = from
+    grid[scale(ordered[to], lo, hi, height), x] = "."
+    grid[scale(ma[to], lo, hi, height), x] = "-"
+  }
+
+  printf "\n"
+  for (row = height - 1; row >= 0; row--) {
+    out = ""
+    for (col = 0; col < width; col++) {
+      val = grid[row, col]
+      if (val == "-") out = out hi_ "-" reset
+      else if (val != "") out = out dim val reset
+      else out = out " "
+    }
+    # Label the extremes and the middle; the rest of the axis stays quiet
+    label = ""
+    if (row == height - 1) label = human(hi) "/s"
+    else if (row == 0) label = human(lo) "/s"
+    else if (row == int((height - 1) / 2)) label = human((lo + hi) / 2) "/s"
+    sub(/ +$/, "", out)
+    printf "%s%12s%s %s%s%s %s\n", dim, label, reset, dim, (label == "" ? "|" : "+"), reset, out
+  }
+
+  out = ""
+  for (col = 0; col < width; col++) out = out "-"
+  printf "%s%12s +%s%s\n", dim, "", out, reset
+
+  span = tsOf[p] - tsOf[1]
+  printf "%s%12s  %s%*s%s\n", dim, "", sprintf("%s ago", duration(span)),
+         width - length(duration(span)) - 4, "now", reset
+  printf "%s%12s  . one interval   %s-%s%s the last %d averaged%s\n",
+         dim, "", hi_, dim, reset dim, recent, reset
 }
 
 function emit(   c, r, out, plain, padding) {
@@ -195,6 +283,7 @@ FNR == NR {
     pps = substr($0, RSTART + 15, RLENGTH - 15)
     gsub(/,/, "", pps)
     ordered[++p] = pps + 0
+    tsOf[p] = ts
   }
 
   n++
@@ -231,7 +320,7 @@ END {
 
   pctDone = sprintf("%.2f%%", 100.0 * position / total)
   rest = sprintf(" (%s done, %s left)", brief(position), brief(remaining))
-  add(1, "complete", hi pctDone reset cyan rest reset, pctDone rest)
+  add(1, "complete", hi_ pctDone reset cyan rest reset, pctDone rest)
   plainCell(1, "center", sprintf("%s of %s", commas(lastCenter), commas(centers)))
   plainCell(1, "middle", sprintf("%s of %s", commas(lastMiddle), commas(middles)))
 
@@ -292,6 +381,7 @@ END {
   }
 
   emit()
+  if (!nograph) graph(plotW + 0, plotH + 0)
 }
 ' "$1" "$2"
 }
