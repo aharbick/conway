@@ -347,7 +347,6 @@ END {
 
   if (active > 0 && n > 1) {
     rate = (n - 1) * 3600.0 / active          # intervals per hour
-    effective = n * perInterval / active      # patterns/sec, work over time
 
     recentRate = 0
     if (n > recent) {
