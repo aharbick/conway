@@ -11,6 +11,17 @@ const FRAME_SUMMARY_SHEET_NAME = 'Frame Summary';
 const STRIP_BESTS_SHEET_NAME = 'Strip Bests';
 const STRIP_SUMMARY_SHEET_NAME = 'Strip Summary';
 
+// Names these sheets used to have. Renaming the constant alone is not enough: the writers
+// look a sheet up by name and create it when it is missing, so the 2025-12-16 rename of
+// Frame/Strip Progress to Frame/Strip Bests silently started an empty tab beside the real
+// one and the original stopped growing. getOrCreateSheet adopts a legacy tab by renaming
+// it in place, so the next rename migrates the data instead of forking it.
+const FRAME_BESTS_LEGACY_NAMES = ['Frame Progress'];
+const STRIP_BESTS_LEGACY_NAMES = ['Strip Progress'];
+
+const FRAME_BESTS_HEADERS = ['frameIdx', 'kernelIdx', 'bestGenerations', 'bestPattern'];
+const STRIP_BESTS_HEADERS = ['centerIdx', 'middleIdx', 'bestGenerations', 'bestPattern'];
+
 const LOCK_TIMEOUT_MS = 30000; // 30 seconds timeout for locks
 
 // Spreadsheet ID for our Progress data
@@ -55,6 +66,31 @@ const STRIP_COUNT_COL = 3;       // C1: the count itself
  * @param {Function} operation - The function to execute under lock
  * @returns {Object} ContentService response object
  */
+/**
+ * The sheet by this name, adopting one left under an older name, or a new one with headers.
+ *
+ * Creating a fresh sheet is the last resort on purpose. An empty tab appearing beside a
+ * full one looks like a working script while the history stops accumulating, and nothing
+ * in the write path would ever notice.
+ */
+function getOrCreateSheet(spreadsheet, name, legacyNames, headers) {
+  const sheet = spreadsheet.getSheetByName(name);
+  if (sheet) return sheet;
+
+  for (let i = 0; i < legacyNames.length; i++) {
+    const legacy = spreadsheet.getSheetByName(legacyNames[i]);
+    if (legacy) {
+      console.log(`Adopting '${legacyNames[i]}' as '${name}': same data under a new name`);
+      legacy.setName(name);
+      return legacy;
+    }
+  }
+
+  const created = spreadsheet.insertSheet(name);
+  created.getRange(1, 1, 1, headers.length).setValues([headers]);
+  return created;
+}
+
 function withLock(operation) {
   const lock = LockService.getScriptLock();
 
@@ -223,14 +259,8 @@ function googleSendProgress(e, spreadsheetId) {
 
     // Get the spreadsheet and worksheet
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    let sheet = spreadsheet.getSheetByName(FRAME_BESTS_SHEET_NAME);
-
-    // Create sheet if it doesn't exist
-    if (!sheet) {
-      sheet = spreadsheet.insertSheet(FRAME_BESTS_SHEET_NAME);
-      // Add headers
-      sheet.getRange(1, 1, 1, 4).setValues([['frameIdx', 'kernelIdx', 'bestGenerations', 'bestPattern']]);
-    }
+    const sheet = getOrCreateSheet(spreadsheet, FRAME_BESTS_SHEET_NAME,
+                                   FRAME_BESTS_LEGACY_NAMES, FRAME_BESTS_HEADERS);
 
     const newRow = [frameIdx, kernelIdx, bestGenerations, bestPattern];
 
@@ -425,6 +455,58 @@ function googleSendSummaryData(e, spreadsheetId) {
     }
 
     return sendJsonResponse(true, 'Summary data saved successfully');
+  });
+}
+
+/**
+ * MAINTENANCE: fold an already-forked legacy sheet into its canonical one.
+ *
+ * getOrCreateSheet prevents a future rename from forking, but it cannot help once both
+ * tabs exist - it finds the canonical one and never looks for the legacy. This moves the
+ * legacy rows in, above the canonical ones because they all predate them, and renames the
+ * emptied tab so a second run cannot double it up.
+ *
+ * Run once from the Apps Script console:  mergeLegacyBestsSheets()
+ */
+function mergeLegacyIntoCanonical(spreadsheet, canonicalName, legacyName, headers) {
+  const legacy = spreadsheet.getSheetByName(legacyName);
+  if (!legacy) return `no '${legacyName}' sheet, nothing to merge`;
+
+  const canonical = spreadsheet.getSheetByName(canonicalName);
+  if (!canonical) {
+    legacy.setName(canonicalName);
+    return `renamed '${legacyName}' to '${canonicalName}' (nothing to merge)`;
+  }
+
+  const rows = legacy.getLastRow() > 0 ? legacy.getDataRange().getValues() : [];
+  const body = rows.filter((r, i) => !(i === 0 && String(r[0]) === headers[0]))
+                   .filter((r) => String(r[0]) !== '');
+  if (body.length === 0) return `'${legacyName}' has no data rows`;
+
+  // Row 1 is the header, so the legacy rows start at row 2 and the canonical ones follow
+  canonical.insertRowsAfter(1, body.length);
+  canonical.getRange(2, 1, body.length, headers.length)
+           .setValues(body.map((r) => headers.map((_, c) => (r[c] === undefined ? '' : r[c]))));
+
+  const stamp = Utilities.formatDate(new Date(), 'UTC', 'yyyy-MM-dd');
+  legacy.setName(`${legacyName} (merged ${stamp})`);
+  return `moved ${body.length} rows from '${legacyName}' into '${canonicalName}'`;
+}
+
+function mergeLegacyBestsSheets() {
+  return withLock(() => {
+    const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const messages = [];
+    for (let i = 0; i < STRIP_BESTS_LEGACY_NAMES.length; i++) {
+      messages.push(mergeLegacyIntoCanonical(spreadsheet, STRIP_BESTS_SHEET_NAME,
+                                             STRIP_BESTS_LEGACY_NAMES[i], STRIP_BESTS_HEADERS));
+    }
+    for (let i = 0; i < FRAME_BESTS_LEGACY_NAMES.length; i++) {
+      messages.push(mergeLegacyIntoCanonical(spreadsheet, FRAME_BESTS_SHEET_NAME,
+                                             FRAME_BESTS_LEGACY_NAMES[i], FRAME_BESTS_HEADERS));
+    }
+    messages.forEach((m) => console.log(m));
+    return sendJsonResponse(true, messages.join('; '));
   });
 }
 
@@ -698,14 +780,8 @@ function googleSendStripProgress(e, spreadsheetId) {
 
     // Get the spreadsheet and worksheet
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    let sheet = spreadsheet.getSheetByName(STRIP_BESTS_SHEET_NAME);
-
-    // Create sheet if it doesn't exist
-    if (!sheet) {
-      sheet = spreadsheet.insertSheet(STRIP_BESTS_SHEET_NAME);
-      // Add headers
-      sheet.getRange(1, 1, 1, 4).setValues([['centerIdx', 'middleIdx', 'bestGenerations', 'bestPattern']]);
-    }
+    const sheet = getOrCreateSheet(spreadsheet, STRIP_BESTS_SHEET_NAME,
+                                   STRIP_BESTS_LEGACY_NAMES, STRIP_BESTS_HEADERS);
 
     const newRow = [centerIdx, middleIdx, bestGenerations, bestPattern];
     sheet.appendRow(newRow);

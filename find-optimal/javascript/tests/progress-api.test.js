@@ -22,6 +22,7 @@ global.Utilities = {
   },
   // Apps Script hands back SIGNED bytes; the code under test has to cope with that
   base64Decode: (s) => Array.from(Buffer.from(s, 'base64')).map((b) => (b > 127 ? b - 256 : b)),
+  formatDate: (d, _tz, _fmt) => d.toISOString().slice(0, 10),
 };
 global.SpreadsheetApp = { flush: () => lockEvents.push('flush') };
 global.ContentService = {
@@ -60,7 +61,8 @@ const A = new Function(
     ' countBitsInBase64,' +
     ' writeStripCompletedCount, STRIP_BITMAP_BYTES, STRIP_CHUNK_ROWS, STRIP_COUNT_COL,' +
     ' STRIP_CHUNK_BYTES, STRIP_CHUNK_PREFIX, STRIP_BITMAP_SHEET_NAME, STRIP_MIDDLE_IDX_COUNT,' +
-    ' STRIP_TOTAL_CENTERS};'
+    ' STRIP_TOTAL_CENTERS, getOrCreateSheet, mergeLegacyIntoCanonical,' +
+    ' STRIP_BESTS_SHEET_NAME, STRIP_BESTS_LEGACY_NAMES, STRIP_BESTS_HEADERS};'
 )();
 
 let failures = 0;
@@ -262,6 +264,81 @@ check('a missing bitmap sheet becomes a JSON error, not an empty bitmap',
       missing.success === false && /missing/i.test(missing.error || ''),
       missing.success ? 'returned success!' : '');
 check('and no bitmap is handed back in that case', missing.bitmap === undefined);
+
+// ------------------------------------------- a renamed sheet must not fork -----
+// Renaming the constant from 'Strip Progress' to 'Strip Bests' made the writer create an
+// empty tab beside the full one, and every row since went to the new one while the
+// original froze. A legacy tab has to be adopted, not left behind.
+function FakeBook(names) {
+  this.sheets = {};
+  this.inserted = [];
+  names.forEach((n) => { this.sheets[n] = { name: n, setName: (v) => { this.sheets[n].name = v; } }; });
+  this.getSheetByName = (n) => {
+    const hit = Object.keys(this.sheets).find((k) => this.sheets[k].name === n);
+    return hit ? this.sheets[hit] : null;
+  };
+  this.insertSheet = (n) => {
+    this.inserted.push(n);
+    const made = { name: n, setName: () => {}, getRange: () => ({ setValues: () => {} }) };
+    this.sheets[n] = made;
+    return made;
+  };
+}
+
+const bookLegacy = new FakeBook(['Strip Progress']);
+const adopted = A.getOrCreateSheet(bookLegacy, A.STRIP_BESTS_SHEET_NAME,
+                                   A.STRIP_BESTS_LEGACY_NAMES, A.STRIP_BESTS_HEADERS);
+check('a sheet under the old name is adopted, not forked',
+      adopted.name === A.STRIP_BESTS_SHEET_NAME && bookLegacy.inserted.length === 0,
+      bookLegacy.inserted.length ? `created ${bookLegacy.inserted.join(',')}` : '');
+
+const bookBoth = new FakeBook(['Strip Bests', 'Strip Progress']);
+check('the canonical sheet wins when both exist',
+      A.getOrCreateSheet(bookBoth, A.STRIP_BESTS_SHEET_NAME, A.STRIP_BESTS_LEGACY_NAMES,
+                         A.STRIP_BESTS_HEADERS).name === 'Strip Bests' &&
+        bookBoth.inserted.length === 0);
+
+const bookNone = new FakeBook([]);
+A.getOrCreateSheet(bookNone, A.STRIP_BESTS_SHEET_NAME, A.STRIP_BESTS_LEGACY_NAMES,
+                   A.STRIP_BESTS_HEADERS);
+check('with neither name present a fresh sheet is still created',
+      bookNone.inserted.join(',') === A.STRIP_BESTS_SHEET_NAME);
+
+// ------------------------------------------------- merging the forked tabs -----
+// The legacy rows all predate the canonical ones, so they belong above them, and the
+// emptied tab is renamed so running the merge twice cannot duplicate them.
+function MergeSheet(name, rows) {
+  this.name = name;
+  this.rows = rows.map((r) => r.slice());
+  this.setName = (v) => { this.name = v; };
+  this.getLastRow = () => this.rows.length;
+  this.getDataRange = () => ({ getValues: () => this.rows.map((r) => r.slice()) });
+  this.insertRowsAfter = (after, count) => {
+    const blanks = Array.from({ length: count }, () => ['', '', '', '']);
+    this.rows.splice(after, 0, ...blanks);
+  };
+  this.getRange = (row, col, numRows) => ({
+    setValues: (vals) => { for (let i = 0; i < numRows; i++) this.rows[row - 1 + i] = vals[i].slice(); },
+  });
+}
+
+const header = A.STRIP_BESTS_HEADERS;
+const canonical = new MergeSheet('Strip Bests', [header, [500, 1, 205, 'p500'], [501, 2, 206, 'p501']]);
+const legacyTab = new MergeSheet('Strip Progress', [header, [100, 1, 201, 'p100'], [101, 2, 202, 'p101']]);
+const book = { getSheetByName: (n) => [canonical, legacyTab].find((s) => s.name === n) || null };
+const msg = A.mergeLegacyIntoCanonical(book, 'Strip Bests', 'Strip Progress', header);
+
+check('the merge reports what it moved', /moved 2 rows/.test(msg), msg);
+check('the header survives', String(canonical.rows[0][0]) === 'centerIdx');
+check('legacy rows land above the canonical ones, oldest first',
+      canonical.rows.slice(1).map((r) => r[0]).join(',') === '100,101,500,501',
+      canonical.rows.slice(1).map((r) => r[0]).join(','));
+check('no header row is copied in as data',
+      canonical.rows.filter((r) => String(r[0]) === 'centerIdx').length === 1);
+check('the emptied tab is renamed so a second merge is a no-op',
+      /^Strip Progress \(merged \d{4}-\d{2}-\d{2}\)$/.test(legacyTab.name), legacyTab.name);
+check('and a second merge finds nothing',
+      /nothing to merge/.test(A.mergeLegacyIntoCanonical(book, 'Strip Bests', 'Strip Progress', header)));
 
 // ------------------------------------------------- flush before unlocking -----
 lockEvents.length = 0;

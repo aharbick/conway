@@ -16,6 +16,23 @@ javascript/
 into the editor. Everything under `tools/` and `tests/` runs locally with Node and is never
 deployed.
 
+## Sheet renames
+
+The writers look a sheet up by name and create it when it is missing, so renaming a
+constant alone forks the data: on 2025-12-16 `Frame Progress` and `Strip Progress` became
+`Frame Bests` and `Strip Bests`, the script found no tab under the new name, created an
+empty one beside the full one, and every row since went there while the original froze.
+
+`getOrCreateSheet` now adopts a tab left under a name in `*_LEGACY_NAMES` by renaming it in
+place, so a future rename migrates rather than forks. Add the old name to that list
+whenever you rename a sheet constant.
+
+Once both tabs exist it is too late for that - the lookup finds the canonical one and never
+looks for the legacy. Run `mergeLegacyBestsSheets()` from the Apps Script console to fold
+the legacy rows in above the canonical ones (they all predate them) and rename the emptied
+tab, which also makes a second run a no-op.
+
+
 ## Installation
 
 1. Create the Apps Script:
