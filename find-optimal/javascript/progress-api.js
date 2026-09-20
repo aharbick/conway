@@ -308,17 +308,30 @@ function googleSendMail(e) {
  * Running this asks for the missing scope and proves the address works. Redeploy as a new
  * version afterwards so /exec runs with it.
  */
-function authorizeMail() {
-  if (!MAIL_DEFAULT_RECIPIENT) {
+function authorizeMail(to) {
+  const recipient = to || MAIL_DEFAULT_RECIPIENT;
+  if (!recipient) {
     throw new Error('Set MAIL_DEFAULT_RECIPIENT at the top of this file first');
   }
+
+  // Quota is the only evidence available here that Google took the message. MailApp keeps
+  // no copy in Sent and reports nothing about delivery, so a send that is accepted and then
+  // filtered at the far end looks exactly like a send that worked.
+  const before = MailApp.getRemainingDailyQuota();
+  const stamp = new Date().toISOString();
   MailApp.sendEmail({
-    to: MAIL_DEFAULT_RECIPIENT,
-    subject: 'find-optimal: mail authorized',
-    body: 'progress-api.js can send mail now.\n\nRemaining quota today: ' +
-          MailApp.getRemainingDailyQuota() + ' messages.',
+    to: recipient,
+    subject: 'find-optimal: mail authorized ' + stamp,
+    body: 'progress-api.js can send mail now.\n\nSent at ' + stamp + ' to ' + recipient,
   });
-  console.log('Sent a test message to ' + MAIL_DEFAULT_RECIPIENT);
+  const after = MailApp.getRemainingDailyQuota();
+
+  console.log('Sent to ' + recipient);
+  console.log('Quota ' + before + ' -> ' + after +
+              (after < before ? ' (accepted by Google)'
+                              : ' (UNCHANGED - it was not actually sent)'));
+  console.log('MailApp keeps no copy in Sent. If nothing arrives, search All Mail and Spam' +
+              ' for: subject:"find-optimal: mail authorized ' + stamp + '"');
 }
 
 /**
