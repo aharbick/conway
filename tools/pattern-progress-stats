@@ -81,34 +81,30 @@ else
   bold=""; dim=""; cyan=""; green=""; yellow=""; reset=""; hi=""; found=""
 fi
 
-# Size the plot to the terminal, so --watch fills the window without scrolling it. The
-# tables take about a dozen rows, and the y-axis labels about sixteen columns. Height is
-# capped so the whole report stays under 80 rows even on a tall terminal.
-plot_size() {
+# Height the plot to the terminal, so --watch fills the window without scrolling it. The
+# tables and the axis take about fourteen rows, and the cap keeps the whole report under 80
+# rows on a tall terminal. The width is not set here: the plot matches the tables above it.
+plot_height() {
   local size=""
   [ -r /dev/tty ] && size=$(stty size 2>/dev/null </dev/tty)
   case "$size" in
-    [0-9]*\ [0-9]*) termRows=${size%% *}; termCols=${size##* } ;;
-    *)              termRows=${LINES:-32}; termCols=${COLUMNS:-110} ;;
+    [0-9]*\ [0-9]*) termRows=${size%% *} ;;
+    *)              termRows=${LINES:-32} ;;
   esac
   [ "$termRows" -gt 0 ] 2>/dev/null || termRows=32
-  [ "$termCols" -gt 0 ] 2>/dev/null || termCols=110
 
   plotH=$(( termRows - 14 ))
-  plotW=$(( termCols - 16 ))
   [ "$plotH" -gt 56 ] && plotH=56
   [ "$plotH" -lt 8 ]  && plotH=8
-  [ "$plotW" -gt 140 ] && plotW=140
-  [ "$plotW" -lt 40 ]  && plotW=40
   return 0
 }
 
 render() {
-  plot_size
+  plot_height
   awk -v centers="$centers" -v middles="$middles" -v gap="$gap" -v recent="$recent" \
       -v bold="$bold" -v dim="$dim" -v cyan="$cyan" -v green="$green" -v yellow="$yellow" \
       -v reset="$reset" -v hi_="$hi" -v found="$found" -v nograph="$nograph" \
-      -v plotW="$plotW" -v plotH="$plotH" '
+      -v plotH="$plotH" '
 function commas(v,   s, out, len, i) {
   s = sprintf("%d", v); len = length(s); out = ""
   for (i = 1; i <= len; i++) {
@@ -179,9 +175,14 @@ function scale(v, lo, hi, height,   r) {
   return (r < 0) ? 0 : ((r > height - 1) ? height - 1 : r)
 }
 
-function graph(width, height,   i, x, y, lo, hi, sum, ma, from, to, val,
-                                row, col, grid, out, label, span) {
+function graph(tableW, height,   i, x, lo, hi, sum, ma, from, to, val, width,
+                                 row, col, grid, out, label, span) {
   if (p < 4) return
+
+  # The plot lines up with the tables above it: same right edge, with the y-axis labels and
+  # the spine taking the first GUTTER columns.
+  width = tableW - GUTTER
+  if (width < 20) return
 
   sum = 0
   for (i = 1; i <= p; i++) {
@@ -200,7 +201,7 @@ function graph(width, height,   i, x, y, lo, hi, sum, ma, from, to, val,
     to = int((x + 1) * p / width)
     if (to < from) to = from
     grid[scale(ordered[to], lo, hi, height), x] = "."
-    grid[scale(ma[to], lo, hi, height), x] = "-"
+    grid[scale(ma[to], lo, hi, height), x] = "*"
   }
 
   printf "\n"
@@ -208,8 +209,8 @@ function graph(width, height,   i, x, y, lo, hi, sum, ma, from, to, val,
     out = ""
     for (col = 0; col < width; col++) {
       val = grid[row, col]
-      if (val == "-") out = out hi_ "-" reset
-      else if (val != "") out = out dim val reset
+      if (val == "*") out = out hi_ "*" reset
+      else if (val != "") out = out cyan "." reset
       else out = out " "
     }
     # Label the extremes and the middle; the rest of the axis stays quiet
@@ -218,18 +219,15 @@ function graph(width, height,   i, x, y, lo, hi, sum, ma, from, to, val,
     else if (row == 0) label = human(lo) "/s"
     else if (row == int((height - 1) / 2)) label = human((lo + hi) / 2) "/s"
     sub(/ +$/, "", out)
-    printf "%s%12s%s %s%s%s %s\n", dim, label, reset, dim, (label == "" ? "|" : "+"), reset, out
+    printf "%s%10s %s%s%s\n", dim, label, (label == "" ? "|" : "+"), reset, (out == "" ? "" : " " out)
   }
 
-  out = ""
-  for (col = 0; col < width; col++) out = out "-"
-  printf "%s%12s +%s%s\n", dim, "", out, reset
+  printf "%s%10s +%s%s\n", dim, "", rule(width + 1), reset
 
-  span = tsOf[p] - tsOf[1]
-  printf "%s%12s  %s%*s%s\n", dim, "", sprintf("%s ago", duration(span)),
-         width - length(duration(span)) - 4, "now", reset
-  printf "%s%12s  . one interval   %s-%s%s the last %d averaged%s\n",
-         dim, "", hi_, dim, reset dim, recent, reset
+  span = duration(tsOf[p] - tsOf[1])
+  printf "%s%10s   %s ago%*s%s\n", dim, "", span, width - length(span) - 4, "now", reset
+  printf "%s%10s   %s.%s%s one interval   %s*%s%s the last %d averaged%s\n",
+         dim, "", cyan, reset, dim, hi_, reset, dim, recent, reset
 }
 
 function emit(   c, r, out, plain, padding) {
@@ -314,6 +312,9 @@ END {
   # patternsPerSec is measured against
   perInterval = 4214880325120
 
+  # Column widths, and the y-axis gutter the plot below them reserves: a 10-column label,
+  # a space, the spine, a space.
+  GUTTER = 13
   TITLE[1] = "SEARCH"; W[1] = 38; L[1] = 8
   TITLE[2] = "PACE";   W[2] = 34; L[2] = 9
   TITLE[3] = "SPEED";  W[3] = 27; L[3] = 9
@@ -381,7 +382,7 @@ END {
   }
 
   emit()
-  if (!nograph) graph(plotW + 0, plotH + 0)
+  if (!nograph) graph(W[1] + W[2] + W[3] + 4, plotH + 0)
 }
 ' "$1" "$2"
 }
