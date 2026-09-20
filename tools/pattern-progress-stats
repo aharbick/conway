@@ -16,8 +16,15 @@
 #
 # The search walks centerIdx 0..8547 in order, and middleIdx 0..511 within each, so the
 # current position is itself the progress: everything behind it is either searched or was
-# skipped as already complete. Percentages are of the whole space, so they count what
+# skipped as already settled. Percentages are of the whole space, so they count what
 # earlier runs did as well - "this log" is the part this one contributed.
+#
+# "searched", not "complete": behind the head an interval was settled one of two ways, and
+# only one of them is exhaustive coverage. A full run records the interval in the shared
+# completion bitmap; an oracle run only establishes that nothing there reaches its target,
+# and records that in its own file. The head passes both, so this figure is their union and
+# runs ahead of the exhaustive count - 441,534 against 436,766 when this was written. The
+# bitmaps themselves are the authority on which is which; this reads only the log.
 #
 # Restarts are handled by ignoring gaps longer than STATS_GAP seconds (default 600) when
 # measuring elapsed time, so downtime between runs does not depress the rate.
@@ -355,7 +362,7 @@ END {
 
   pctDone = sprintf("%.2f%%", 100.0 * position / total)
   rest = sprintf(" (%s done, %s left)", brief(position), brief(remaining))
-  add(1, "complete", hi_ pctDone reset cyan rest reset, pctDone rest)
+  add(1, "searched", hi_ pctDone reset cyan rest reset, pctDone rest)
   plainCell(1, "center", sprintf("%s of %s", commas(lastCenter), commas(centers)))
   plainCell(1, "middle", sprintf("%s of %s", commas(lastMiddle), commas(middles)))
 
