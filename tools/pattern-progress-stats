@@ -828,6 +828,24 @@ mail_report() {
   return $rc
 }
 
+# The 8x8 grid for a logged bestPatternBin, laid out the way the search prints it.
+#
+# printPattern reads bit row*8+col counting from the least significant bit, while asBinary
+# writes the string most significant first - so the grid is the logged string reversed and
+# then broken into rows of eight. Chunking it as written gives the same pattern rotated by
+# half a turn, which evolves identically but does not match what --simulate shows.
+pattern_grid() {
+  awk -v b="$1" 'BEGIN {
+    if (length(b) != 64) { printf "  binary  %s\n", b; exit }
+    for (i = 64; i >= 1; i--) r = r substr(b, i, 1)
+    for (row = 0; row < 8; row++) {
+      line = ""
+      for (col = 0; col < 8; col++) line = line (col ? " " : "") substr(r, row * 8 + col + 1, 1)
+      printf "%s%s\n", (row == 0 ? "  binary  " : "          "), line
+    }
+  }'
+}
+
 # Refuse early rather than at the first trigger, which might be days away
 notify_preflight() {
   if [ -z "$mailto" ]; then
@@ -906,7 +924,7 @@ notify_check() {
           "$(expr "$line" : '.*centerIdx=\([0-9]*\)')" \
           "$(expr "$line" : '.*middleIdx=\([0-9]*\)')"
         printf '  pattern %s\n' "$(expr "$line" : '.*bestPattern=\([0-9]*\)')"
-        printf '  binary  %s\n' "$(expr "$line" : '.*bestPatternBin=\([01]*\)')"
+        pattern_grid "$(expr "$line" : '.*bestPatternBin=\([01]*\)')"
       done < "$pendingfile" > "$prelude"
 
       if [ "$matches" -gt 0 ]; then
