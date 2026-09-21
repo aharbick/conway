@@ -16,51 +16,6 @@ javascript/
 into the editor. Everything under `tools/` and `tests/` runs locally with Node and is never
 deployed.
 
-## Mail notifications
-
-`sendMail` lets the search mail a report without any new credentials: it reuses the API key
-the rest of the endpoints use, and delivers through `MailApp` from the account that owns the
-script. `tools/pattern-progress-stats --notify` calls it when the search crosses a whole
-percent, finds a new best, or a day has passed.
-
-Setting it up takes two steps, and both are needed:
-
-1. **Set `MAIL_DEFAULT_RECIPIENT`** at the top of `progress-api.js`. It is empty by default
-   and nothing is sent until it has an address.
-2. **Run `authorizeMail()` from the editor**, then redeploy as a new version. Apps Script
-   grants scopes when a function runs in the editor and you accept the consent prompt, not
-   when a web app is deployed - so a deployment made before `MailApp` appeared in this file
-   has no `script.send_mail` scope, and `sendMail` fails with a permissions exception no
-   matter how many times it is redeployed.
-
-Recipients are an allowlist on purpose: the API key travels in a query string and lives in a
-workstation `.envrc`, so anyone holding it could otherwise send mail from the owning Google
-account to anywhere. `MAIL_ALLOWED_RECIPIENTS` widens it.
-
-The recipient is a constant rather than a lookup of the script owner because
-`Session.getEffectiveUser()` needs the `userinfo.email` scope, which a web app deployment
-does not carry - requesting it would mean re-authorizing the whole script to learn an
-address that is already known.
-
-### Do not send to the account that owns the script
-
-Gmail files a message it considers self-sent under `Sent` and delivers no inbox copy, and it
-counts every verified "Send mail as" identity as the account, so changing the From address
-does not work around it either. This fails silently in the worst way: the script reports success, the
-quota decrements, `Delivered-To` shows the mailbox, and nothing appears in the inbox.
-
-Send to a **Google Group** with the account as its only member. The group relays the
-message, so it arrives from the group rather than from the account and is delivered
-normally, and the reports still land in the same mailbox:
-
-1. Admin console, Directory, Groups, Create - say `gol-alerts@yourdomain`.
-2. Add the account that owns the script as a member.
-3. Access settings: the sending account must be allowed to post, and members must receive
-   mail (not "no email" delivery).
-4. Set `MAIL_DEFAULT_RECIPIENT` to the group.
-
-Any mailbox outside the account works just as well.
-
 ## Sheet renames
 
 The writers look a sheet up by name and create it when it is missing, so renaming a

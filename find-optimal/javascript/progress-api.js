@@ -22,31 +22,6 @@ const STRIP_BESTS_LEGACY_NAMES = ['Strip Progress'];
 const FRAME_BESTS_HEADERS = ['frameIdx', 'kernelIdx', 'bestGenerations', 'bestPattern'];
 const STRIP_BESTS_HEADERS = ['centerIdx', 'middleIdx', 'bestGenerations', 'bestPattern'];
 
-// The display name on the From line, so these are easy to spot and to filter on.
-const MAIL_SENDER_NAME = 'find-optimal';
-
-// Where sendMail delivers. Nothing is sent until this has an address.
-//
-// It must not be the account that owns this script, nor anything that routes back to it.
-// Gmail files a message it considers self-sent under Sent and delivers no inbox copy, and
-// it counts every verified "Send mail as" identity as the account - so sending from an
-// alias does not help, which was tried. The failure gives every sign of success: the script
-// reports sent, the quota decrements, and Delivered-To names the right mailbox, because the
-// message really was delivered. It is just labelled Sent rather than Inbox.
-//
-// A Google Group with the account as its only member is how the reports still reach that
-// mailbox: the group relays the message, so it arrives from the group and is delivered
-// normally. Any mailbox outside the account works too.
-//
-// It is a constant rather than a lookup of the script owner because Session.getEffectiveUser
-// needs the userinfo.email scope, which a web app deployment does not carry - asking for it
-// would mean re-authorizing the whole script to learn an address that is known anyway.
-const MAIL_DEFAULT_RECIPIENT = 'gol-alerts@aharbick.com';
-
-// Extra addresses sendMail may deliver to. The default recipient is always allowed; anything
-// else has to be listed here, so a leaked API key cannot turn this into an open relay.
-const MAIL_ALLOWED_RECIPIENTS = [];
-
 const LOCK_TIMEOUT_MS = 30000; // 30 seconds timeout for locks
 
 // Spreadsheet ID for our Progress data
@@ -261,100 +236,12 @@ function handleRequest(e) {
         return googleGetCompleteStripCache(e, SPREADSHEET_ID);
       case 'incrementStripCompletion':
         return googleIncrementStripCompletion(e, SPREADSHEET_ID);
-      case 'sendMail':
-        return googleSendMail(e);
       default:
-        return sendJsonResponse(false, 'Invalid action. Valid actions: sendProgress, sendSummaryData, getBestResult, getCompleteFrameCache, sendStripProgress, sendStripSummaryData, getCompleteStripCache, incrementStripCompletion, sendMail');
+        return sendJsonResponse(false, 'Invalid action. Valid actions: sendProgress, sendSummaryData, getBestResult, getCompleteFrameCache, sendStripProgress, sendStripSummaryData, getCompleteStripCache, incrementStripCompletion');
     }
   } catch (error) {
     return sendJsonResponse(false, error.toString());
   }
-}
-
-/**
- * Sends a notification mail on behalf of the account that owns this script.
- *
- * Recipients are restricted deliberately. The API key travels in a query string, is stored
- * in a .envrc on a workstation and is shared by every caller, so it is not a secret worth
- * betting an open relay on: anyone holding it could otherwise send mail from this Google
- * account to anywhere. Leaving `to` off sends to MAIL_DEFAULT_RECIPIENT, which is all the
- * search needs, and MAIL_ALLOWED_RECIPIENTS is the only way to widen that.
- */
-function googleSendMail(e) {
-  const data = e.parameter;
-  const subject = data.subject || '';
-  const body = data.body || '';
-
-  if (!subject && !body) {
-    return sendJsonResponse(false, 'Missing required parameters: subject and/or body');
-  }
-
-  const allowed = [MAIL_DEFAULT_RECIPIENT].concat(MAIL_ALLOWED_RECIPIENTS)
-                    .filter((a) => a).map((a) => a.toLowerCase());
-  if (allowed.length === 0) {
-    return sendJsonResponse(false,
-      'No recipient configured: set MAIL_DEFAULT_RECIPIENT in progress-api.js and redeploy');
-  }
-
-  const to = data.to || MAIL_DEFAULT_RECIPIENT;
-  if (allowed.indexOf(to.toLowerCase()) === -1) {
-    return sendJsonResponse(false, 'Recipient not allowed: add it to MAIL_ALLOWED_RECIPIENTS');
-  }
-
-  // A quota failure is the interesting case - silence would look like a working notifier
-  const remaining = MailApp.getRemainingDailyQuota();
-  if (remaining <= 0) {
-    return sendJsonResponse(false, 'Daily mail quota exhausted');
-  }
-
-  const message = { to: to, subject: subject, body: body, name: MAIL_SENDER_NAME };
-  // The report is a monospace table, so the readable version is the HTML one; the plain
-  // body stays as the fallback for clients that ask for it.
-  if (data.htmlBody) message.htmlBody = data.htmlBody;
-  MailApp.sendEmail(message);
-  return sendJsonResponse(true, 'Mail sent', { to: to, quotaRemaining: remaining - 1 });
-}
-
-/**
- * SETUP: run this once from the Apps Script editor, before using sendMail.
- *
- * Apps Script grants OAuth scopes when a function runs in the editor and you accept the
- * consent prompt - not when a web app is deployed. A deployment made before MailApp
- * appeared in this file therefore carries no script.send_mail scope, and every sendMail
- * fails with a permissions exception however many times it is redeployed.
- *
- * Running this asks for the missing scope and proves the address works. Redeploy as a new
- * version afterwards so /exec runs with it.
- */
-function authorizeMail(to) {
-  const recipient = to || MAIL_DEFAULT_RECIPIENT;
-  if (!recipient) {
-    throw new Error('Set MAIL_DEFAULT_RECIPIENT at the top of this file first');
-  }
-
-  // Quota is the only evidence available here that Google took the message. MailApp keeps
-  // no copy in Sent and reports nothing about delivery, so a send that is accepted and then
-  // filtered at the far end looks exactly like a send that worked.
-  const before = MailApp.getRemainingDailyQuota();
-  const stamp = new Date().toISOString();
-  const message = {
-    to: recipient,
-    subject: 'find-optimal: mail authorized ' + stamp,
-    body: 'progress-api.js can send mail now.\n\nSent at ' + stamp + ' to ' + recipient,
-    name: MAIL_SENDER_NAME,
-  };
-  MailApp.sendEmail(message);
-  const after = MailApp.getRemainingDailyQuota();
-
-  console.log('Sent to ' + recipient);
-  console.log('Quota ' + before + ' -> ' + after +
-              (after < before ? ' (accepted by Google)'
-                              : ' (UNCHANGED - it was not actually sent)'));
-  console.log('Search for it with: in:anywhere subject:"find-optimal: mail authorized ' +
-              stamp + '"');
-  console.log('If it is not in the inbox: landing under Sent means this recipient routes' +
-              ' back to the sending account, so send to a group that relays for it or to a' +
-              ' mailbox outside the account. A different From address does not help.');
 }
 
 /**

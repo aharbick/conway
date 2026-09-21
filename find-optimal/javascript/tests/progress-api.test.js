@@ -53,11 +53,8 @@ function FakeSheet() {
 // see this file's locals, and a variable here could stand in for one the script failed to
 // declare - exactly the bug that shipped in e05ccb6. Only the stubbed globals resolve.
 const apiPath = path.join(__dirname, '..', 'progress-api.js');
-const MAIL_RECIPIENT_LINE = /const MAIL_DEFAULT_RECIPIENT = '[^']*';/;
-const MAIL_RECIPIENT_TEST = "const MAIL_DEFAULT_RECIPIENT = 'owner@example.com';";
 const A = new Function(
-  // Whatever address the deployed copy carries, the tests run against a fixed one
-  fs.readFileSync(apiPath, 'utf8').replace(MAIL_RECIPIENT_LINE, MAIL_RECIPIENT_TEST) +
+  fs.readFileSync(apiPath, 'utf8') +
     '\nreturn {stripChunkLength, writeStripBitmapBytes, readStripBitmapBytes, countStripBits,' +
     ' setStripIntervalComplete, ensureStripBitmapSheet, readStripCompletedCount, handleRequest,' +
     ' countBitsInBase64,' +
@@ -305,67 +302,6 @@ A.getOrCreateSheet(bookNone, A.STRIP_BESTS_SHEET_NAME, A.STRIP_BESTS_LEGACY_NAME
                    A.STRIP_BESTS_HEADERS);
 check('with neither name present a fresh sheet is still created',
       bookNone.inserted.join(',') === A.STRIP_BESTS_SHEET_NAME);
-
-// ----------------------------------------------------------- sendMail ---------
-// The endpoint can send mail from the owner's Google account, so the recipient guard is
-// the part worth testing: the API key rides in a query string and is not secret enough to
-// back an open relay.
-const sent = [];
-global.MailApp = {
-  getRemainingDailyQuota: () => mailQuota,
-  sendEmail: (opts) => sent.push(opts),
-};
-let mailQuota = 100;
-
-const ok = request({ action: 'sendMail', subject: 'hello', body: 'world' });
-check('sendMail succeeds', ok.success === true, ok.error || '');
-check('it defaults to the configured recipient',
-      sent.length === 1 && sent[0].to === 'owner@example.com',
-      sent.length ? sent[0].to : '(nothing sent)');
-check('subject and body are passed through',
-      sent[0].subject === 'hello' && sent[0].body === 'world');
-check('no htmlBody is set when none was sent', sent[0].htmlBody === undefined);
-
-const withHtml = request({ action: 'sendMail', subject: 's', body: 'plain',
-                           htmlBody: '<pre>markup</pre>' });
-check('an htmlBody is passed through when given',
-      withHtml.success === true && sent[sent.length - 1].htmlBody === '<pre>markup</pre>' &&
-        sent[sent.length - 1].body === 'plain');
-
-const stranger = request({ action: 'sendMail', subject: 's', body: 'b', to: 'someone@else.com' });
-check('an unlisted recipient is refused',
-      stranger.success === false && /not allowed/i.test(stranger.error || ''),
-      stranger.success ? 'it sent!' : '');
-check('and nothing was sent in that case', sent.length === 2);
-
-check('the default recipient may be named explicitly',
-      request({ action: 'sendMail', subject: 's', body: 'b', to: 'OWNER@example.com' }).success === true,
-      'case-insensitive match');
-
-// Sending to nobody would look like it worked while quietly going nowhere
-const unset = new Function(
-  fs.readFileSync(apiPath, 'utf8').replace(MAIL_RECIPIENT_LINE,
-                                           "const MAIL_DEFAULT_RECIPIENT = '';") +
-    '\nreturn {handleRequest};')();
-const nobody = JSON.parse(unset.handleRequest(
-  { parameter: { apiKey: 'test-key', action: 'sendMail', subject: 's', body: 'b' } }));
-check('an unconfigured recipient is refused with a usable message',
-      nobody.success === false && /MAIL_DEFAULT_RECIPIENT/.test(nobody.error || ''),
-      nobody.error || '');
-
-const empty = request({ action: 'sendMail' });
-check('an empty message is refused', empty.success === false);
-
-mailQuota = 0;
-const over = request({ action: 'sendMail', subject: 's', body: 'b' });
-check('an exhausted quota is reported, not swallowed',
-      over.success === false && /quota/i.test(over.error || ''));
-mailQuota = 100;
-
-check('a bad API key never reaches MailApp',
-      JSON.parse(A.handleRequest({ parameter: { apiKey: 'wrong', action: 'sendMail',
-                                                subject: 's', body: 'b' } })).success === false &&
-        sent.length === 3);
 
 // ------------------------------------------------- flush before unlocking -----
 lockEvents.length = 0;
