@@ -43,9 +43,9 @@
 # new best, and a daily summary. The mailed report covers the last 24 hours rather than the
 # last hundred intervals, since the screen already shows the recent window.
 #
-#   tools/pattern-progress-stats --watch --notify logs/...   # watch, and mail as it goes
-#   tools/pattern-progress-stats --notify logs/...           # one-shot, for cron or a timer
-#   tools/pattern-progress-stats --mail-now logs/...         # send one right now, to test
+#   tools/pattern-progress-stats --watch --notify --mailto me@example.com logs/...
+#   tools/pattern-progress-stats --notify --mailto me@example.com logs/...   # for cron
+#   tools/pattern-progress-stats --mail-now --mailto me@example.com logs/... # test one now
 #
 # With --watch the triggers are evaluated on every tick, which costs three comparisons
 # unless one fires, and what it did shows in the header rather than being printed over the
@@ -65,15 +65,15 @@
 # to its own headers, and filed under Sent with no inbox copy - while the same account
 # submitting the same message over SMTP lands normally.
 #
-#   --email=ADDR, or STATS_EMAIL   where to send; required
+#   --mailto ADDR                  where to send; required by --notify and --mail-now
 #   STATS_SENDMAIL=/path/to/mta    the binary to pipe to (default: sendmail)
 #   STATS_MAIL_FROM='n <a@b.c>'    a From header; omitted, the MTA supplies one
 #
 # Every ten minutes from cron is plenty - the triggers are level-based, not edge-based, so
 # nothing is missed by checking infrequently:
 #
-#   */10 * * * * cd ~/Projects/conway && STATS_EMAIL=you@example.com \
-#                  tools/pattern-progress-stats --notify \
+#   */10 * * * * cd ~/Projects/conway && tools/pattern-progress-stats --notify \
+#                  --mailto you@example.com \
 #                  find-optimal/logs/find-optimal-5090-oracle.log
 #
 #   STATS_DAILY_SECONDS=86400   how often the summary goes out (default 24h)
@@ -87,7 +87,7 @@ nograph=
 rescan=
 notify=
 mailnow=
-email=${STATS_EMAIL:-}
+mailto=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --color)     want_color=always; shift ;;
@@ -95,7 +95,8 @@ while [ "$#" -gt 0 ]; do
     --rescan)    rescan=1; shift ;;
     --notify)    notify=1; shift ;;
     --mail-now)  notify=1; mailnow=1; shift ;;
-    --email=*)   email="${1#--email=}"; shift ;;
+    --mailto)    mailto="${2:-}"; shift 2 ;;
+    --mailto=*)  mailto="${1#--mailto=}"; shift ;;
     --no-color)  want_color=never;  shift ;;
     --watch)     interval=10; shift ;;
     --watch=*)   interval="${1#--watch=}"; shift ;;
@@ -109,7 +110,7 @@ done
 log=${1:-}
 if [ -z "$log" ]; then
   echo "usage: $(basename "$0") [--watch[=SECONDS]] [--no-graph] [--rescan]" \
-       "[--notify|--mail-now] [--email=ADDR] [--color|--no-color] <logfile>" >&2
+       "[--notify|--mail-now] [--mailto ADDR] [--color|--no-color] <logfile>" >&2
   exit 2
 fi
 if [ ! -r "$log" ]; then
@@ -714,7 +715,7 @@ send_mail() {
   out=$(
     {
       [ -n "${STATS_MAIL_FROM:-}" ] && printf 'From: %s\n' "$STATS_MAIL_FROM"
-      printf 'To: %s\n' "$email"
+      printf 'To: %s\n' "$mailto"
       printf 'Subject: %s\n' "$subject"
       printf 'MIME-Version: 1.0\n'
       printf 'Content-Type: multipart/alternative; boundary="%s"\n\n' "$boundary"
@@ -808,8 +809,8 @@ mail_report() {
 
 # Refuse early rather than at the first trigger, which might be days away
 notify_preflight() {
-  if [ -z "$email" ]; then
-    echo "no recipient: pass --email=ADDR or set STATS_EMAIL" >&2
+  if [ -z "$mailto" ]; then
+    echo "no recipient: pass --mailto ADDR" >&2
     return 2
   fi
   if ! command -v "${STATS_SENDMAIL:-sendmail}" >/dev/null 2>&1; then
