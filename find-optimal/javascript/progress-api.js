@@ -352,9 +352,9 @@ function authorizeMail(to) {
                               : ' (UNCHANGED - it was not actually sent)'));
   console.log('Search for it with: in:anywhere subject:"find-optimal: mail authorized ' +
               stamp + '"');
-  console.log('Landing under Sent rather than Inbox means this recipient routes back to the' +
-              ' sending account: send to a group that relays for it, or to a mailbox outside' +
-              ' the account. A different From address does not help.');
+  console.log('If it is not in the inbox: landing under Sent means this recipient routes' +
+              ' back to the sending account, so send to a group that relays for it or to a' +
+              ' mailbox outside the account. A different From address does not help.');
 }
 
 /**
