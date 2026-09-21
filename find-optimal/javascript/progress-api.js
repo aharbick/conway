@@ -360,10 +360,10 @@ function authorizeMail(to) {
     console.log('Landing under Sent rather than Inbox means the sender and the recipient' +
                 ' are the same account: set MAIL_SENDER_ALIAS, or send somewhere else.');
   } else {
-    console.log('If the From line still shows this account, Gmail did not accept the alias.' +
-                ' MailApp ignores an unverified one silently - check it is listed under' +
-                ' Gmail, Settings, Accounts, "Send mail as", on the account owning this' +
-                ' script, and that this file has been redeployed as a new version.');
+    console.log('Now check the delivered message: the From line should read ' +
+                MAIL_SENDER_ALIAS + '. If it shows this account instead, Gmail ignored the' +
+                ' alias - it must be verified under Gmail, Settings, Accounts, "Send mail' +
+                ' as", on the account owning this script, and this file redeployed.');
   }
 }
 
