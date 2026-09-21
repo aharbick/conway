@@ -73,19 +73,26 @@ class OracleProgress {
     }
     fclose(f);
 
-    // A bit set while hunting for 216 says nothing about whether a 215 lives there, so a
-    // lower target cannot reuse this file.
-    if (target < h.maxTarget) {
-      Logger::out() << "[FATAL] " << path << " records intervals searched for a target of "
-                    << h.maxTarget << ", so it cannot be reused for a target of " << target
-                    << ". Use a different --oracle-progress file.\n";
-      return false;
-    }
-
     completed_ = countBits();
+
+    // Bits cleared at a higher target are still worth having. One set while hunting 215
+    // means nothing there reaches 215, which settles the question this search exists to
+    // answer whatever its own target is; all it fails to say is whether a 214 lives there,
+    // so those intervals are skipped and any pattern merely matching the record inside one
+    // goes unseen. Nothing that could beat the record is missed, and redoing tens of
+    // thousands of intervals to catch ties in ground already swept is the worse trade.
+    //
+    // The file keeps the weakest claim it contains, so a later run at the higher target can
+    // still trust every bit: clearing at 214 implies clearing at 215, but not the reverse.
     maxTarget_ = (target > h.maxTarget) ? target : h.maxTarget;
     Logger::out() << "Oracle progress: " << completed_ << " intervals already cleared at target "
                   << h.maxTarget << " (" << path << ")\n";
+    if (target < h.maxTarget) {
+      Logger::out() << "  those were cleared for a target of " << h.maxTarget
+                    << " and are skipped, so a pattern matching " << target
+                    << " inside one will not be reported; nothing above " << h.maxTarget
+                    << " can be hiding there\n";
+    }
     return true;
   }
 
