@@ -46,9 +46,9 @@
 #
 # A tie counts, not just a record: another pattern reaching the record length is a second
 # example of it, and the mail carries the generations, the interval and the pattern in both
-# decimal and binary. Note that --oracle only reports a pattern at or above its target, and
-# the target defaults to one past the best known - so in oracle mode nothing ties unless the
-# search is run with the target set equal to the best instead, as --oracle=214.
+# decimal and binary. --oracle reports a pattern at or above its target and the target is
+# the best known, so ties arrive without any flag; a new record raises the target to itself,
+# and the mails then describe that one until something beats it.
 #
 #   tools/pattern-progress-stats --watch --notify --mailto me@example.com logs/...
 #   tools/pattern-progress-stats --notify --mailto me@example.com logs/...   # for cron

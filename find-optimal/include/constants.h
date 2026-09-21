@@ -74,7 +74,7 @@
 //
 // Used only when the best result is unavailable (--dont-save-results): one past the best
 // known terminating pattern as of 2026-09-18.
-#define STRIP_ORACLE_FALLBACK_TARGET 215
+#define STRIP_ORACLE_FALLBACK_TARGET 214
 
 // Subgrid cache constants
 #define SUBGRID_TOTAL_PATTERNS (1ULL << 49)  // 7x7 grid = 2^49 patterns

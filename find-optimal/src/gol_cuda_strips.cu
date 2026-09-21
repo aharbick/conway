@@ -489,9 +489,10 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
   uint32_t* d_hashTable = nullptr;
   cudaCheckError(cudaMalloc(&d_hashTable, STRIP_HASH_TABLE_SIZE * sizeof(uint32_t)));
 
-  // Set up the 7x7 oracle if asked for. The target defaults to one past the best known
-  // terminating pattern, so finding a longer one automatically tightens - and speeds up -
-  // the rest of the search.
+  // Set up the 7x7 oracle if asked for. The target defaults to the best known terminating
+  // pattern, not one past it, so a pattern merely matching the record is still reported -
+  // another example of it is worth having. Finding a longer one raises the target to that,
+  // which tightens the pruning and speeds up the rest of the search.
   OracleParams oracle;
   OracleProgress oracleProgress;
   uint32_t* d_bloomFilter = nullptr;
@@ -505,7 +506,7 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
 
     uint32_t target = cli->oracleTarget;
     if (target == 0) {
-      target = (gBestGenerations > 0) ? (uint32_t)gBestGenerations + 1 : STRIP_ORACLE_FALLBACK_TARGET;
+      target = (gBestGenerations > 0) ? (uint32_t)gBestGenerations : STRIP_ORACLE_FALLBACK_TARGET;
     }
 
     oracle.target = (uint16_t)target;
@@ -513,7 +514,8 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
     oracle.tier2Max = (uint16_t)subgridBloomTier2Max(header, target);
     oracle.d_filter = d_bloomFilter;
 
-    Logger::out() << "7x7 oracle enabled: target=" << target << " generations"
+    Logger::out() << "7x7 oracle enabled: reporting patterns at or above " << target
+                  << " generations"
                   << " (cache " << header.numKeys << " states, "
                   << header.minGenerations << ".." << header.maxGenerations << " generations)\n";
     Logger::out() << "  discarding a 7x7-coverable pattern needs no lookup up to generation "
@@ -566,11 +568,12 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
         continue;
       }
 
-      // A new record raises the bar, which prunes harder and speeds up what is left. Only
-      // ever upward: intervals already cleared at a lower target stay valid.
+      // A new record raises the bar to itself, so the search goes on reporting every pattern
+      // that matches the new record until something beats it. Only ever upward: intervals
+      // already cleared at a lower target stay valid.
       if (oracle.d_filter != nullptr && cli->oracleTarget == 0 && gBestGenerations > 0 &&
-          (uint32_t)gBestGenerations + 1 > oracle.target) {
-        uint32_t raised = (uint32_t)gBestGenerations + 1;
+          (uint32_t)gBestGenerations > oracle.target) {
+        uint32_t raised = (uint32_t)gBestGenerations;
         oracle.target = (uint16_t)raised;
         oracle.tier1Max = (uint16_t)subgridBloomTier1Max(bloomHeader, raised);
         oracle.tier2Max = (uint16_t)subgridBloomTier2Max(bloomHeader, raised);
@@ -617,9 +620,12 @@ __host__ void executeStripSearch(ProgramArgs* cli, uint32_t centerStart, uint32_
 
       // Report at end of each middleIdx. Only an exact interval may claim exhaustive
       // completion; an oracle interval records itself in the local bitmap instead.
+      //
+      // The target is the best known, so it is the figure to log as the record being
+      // matched. It was target - 1 while the target sat one past the best.
       reportStripSearchResults(cli, intervalStartTime, centerIdx, middleIdx,
                                intervalBestGenerations, intervalBestPattern, exactInterval,
-                               (oracle.d_filter != nullptr) ? (uint32_t)oracle.target - 1 : 0);
+                               (oracle.d_filter != nullptr) ? (uint32_t)oracle.target : 0);
 
       if (oracle.d_filter != nullptr) {
         // Exact intervals satisfy the oracle's claim too, so they mark both

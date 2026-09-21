@@ -37,7 +37,7 @@ static struct argp_option argp_options[] = {
     {0, 0, 0, 0, "Search options:", 2},
     {"cycle-detection", 'D', "ALGORITHM", 0, "Cycle detection algorithm: 'floyd' or 'nivasch' (default: 'floyd')", 2},
     {"strip-kernel", 'K', "KERNEL", 0, "Strip search combination kernel: 'fast' or 'legacy' (default: 'fast')", 2},
-    {"oracle", 'O', "TARGET", OPTION_ARG_OPTIONAL, "Strip search: skip patterns that cannot reach TARGET generations, using the 7x7 Bloom filter. Much faster, but only reports results at or above TARGET (every 64th middleIdx still runs exact for the histogram). Omit TARGET to use the best known result + 1.", 2},
+    {"oracle", 'O', "TARGET", OPTION_ARG_OPTIONAL, "Strip search: skip patterns that cannot reach TARGET generations, using the 7x7 Bloom filter. Much faster, but only reports results at or above TARGET (every 64th middleIdx still runs exact for the histogram). Omit TARGET to use the best known result, so patterns matching the record are reported too, and the target rises as the record does.", 2},
     {"bloom-file", 'B', "FILE", 0, "7x7 Bloom filter for --oracle (default: " DEFAULT_SUBGRID_BLOOM_PATH ").", 2},
     {"oracle-progress", 'P', "FILE", 0, "Where --oracle records completed intervals (default: " DEFAULT_ORACLE_PROGRESS_PATH "). Kept out of Google Sheets so it cannot be confused with exhaustive coverage.", 2},
     {"subgrid-cache-file", 'C', "FILE", 0, "Load 7x7 subgrid cache from FILE to use for early termination optimization.", 2},
