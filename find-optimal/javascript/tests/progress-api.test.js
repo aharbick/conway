@@ -324,12 +324,19 @@ check('it defaults to the configured recipient',
       sent.length ? sent[0].to : '(nothing sent)');
 check('subject and body are passed through',
       sent[0].subject === 'hello' && sent[0].body === 'world');
+check('no htmlBody is set when none was sent', sent[0].htmlBody === undefined);
+
+const withHtml = request({ action: 'sendMail', subject: 's', body: 'plain',
+                           htmlBody: '<pre>markup</pre>' });
+check('an htmlBody is passed through when given',
+      withHtml.success === true && sent[sent.length - 1].htmlBody === '<pre>markup</pre>' &&
+        sent[sent.length - 1].body === 'plain');
 
 const stranger = request({ action: 'sendMail', subject: 's', body: 'b', to: 'someone@else.com' });
 check('an unlisted recipient is refused',
       stranger.success === false && /not allowed/i.test(stranger.error || ''),
       stranger.success ? 'it sent!' : '');
-check('and nothing was sent in that case', sent.length === 1);
+check('and nothing was sent in that case', sent.length === 2);
 
 check('the default recipient may be named explicitly',
       request({ action: 'sendMail', subject: 's', body: 'b', to: 'OWNER@example.com' }).success === true,
@@ -358,7 +365,7 @@ mailQuota = 100;
 check('a bad API key never reaches MailApp',
       JSON.parse(A.handleRequest({ parameter: { apiKey: 'wrong', action: 'sendMail',
                                                 subject: 's', body: 'b' } })).success === false &&
-        sent.length === 2);
+        sent.length === 3);
 
 // ------------------------------------------------- flush before unlocking -----
 lockEvents.length = 0;

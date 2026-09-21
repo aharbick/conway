@@ -309,6 +309,9 @@ function googleSendMail(e) {
   }
 
   const message = { to: to, subject: subject, body: body, name: MAIL_SENDER_NAME };
+  // The report is a monospace table, so the readable version is the HTML one; the plain
+  // body stays as the fallback for clients that ask for it.
+  if (data.htmlBody) message.htmlBody = data.htmlBody;
   if (MAIL_SENDER_ALIAS) message.from = MAIL_SENDER_ALIAS;
   MailApp.sendEmail(message);
   return sendJsonResponse(true, 'Mail sent', { to: to, quotaRemaining: remaining - 1 });

@@ -699,12 +699,13 @@ load_credentials() {
 # method across the redirect and that endpoint answers a POST with 405. --data-urlencode
 # already makes this a POST, which is what the body needs - the report is too big for a URL.
 send_mail() {
-  local subject=$1 bodyfile=$2 response
+  local subject=$1 bodyfile=$2 htmlfile=$3 response
   response=$(curl -fsSL "$GOOGLE_WEBAPP_URL" \
     --data-urlencode "apiKey=$GOOGLE_API_KEY" \
     --data-urlencode "action=sendMail" \
     --data-urlencode "subject=$subject" \
     --data-urlencode "body@$bodyfile" \
+    ${htmlfile:+--data-urlencode "htmlBody@$htmlfile"} \
     ${email:+--data-urlencode "to=$email"} 2>&1) || {
       echo "send failed: $response" >&2
       return 1
@@ -716,19 +717,70 @@ send_mail() {
   esac
 }
 
+# Colour codes are for a terminal, and the report is a monospace table: a mail needs the
+# escapes turned into markup and the whole thing in a <pre>, or it arrives full of ESC[36m
+# and re-wrapped in a proportional font. Mapped for a light background, since that is what
+# mail clients default to.
+ansi_to_html() {
+  awk '
+  function style(c) {
+    if (c == "1")    return "font-weight:bold"
+    if (c == "2")    return "color:#9aa0a6"
+    if (c == "36")   return "color:#0b7285"
+    if (c == "32")   return "color:#2b8a3e"
+    if (c == "33")   return "color:#b8860b"
+    if (c == "1;93") return "color:#b06f00;font-weight:bold"
+    if (c == "1;92") return "color:#2b8a3e;font-weight:bold"
+    return ""
+  }
+  BEGIN {
+    printf "<pre style=\"font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;"
+    printf "font-size:12px;line-height:1.3;white-space:pre\">"
+  }
+  {
+    line = $0
+    gsub(/&/, "\\&amp;", line); gsub(/</, "\\&lt;", line); gsub(/>/, "\\&gt;", line)
+    out = ""; open = 0
+    # The report never nests colours - every run is opened and closed before the next - so
+    # one span at a time is enough
+    while (match(line, /\033\[[0-9;]*m/)) {
+      out = out substr(line, 1, RSTART - 1)
+      code = substr(line, RSTART + 2, RLENGTH - 3)
+      line = substr(line, RSTART + RLENGTH)
+      if (open) { out = out "</span>"; open = 0 }
+      if (style(code) != "") { out = out "<span style=\"" style(code) "\">"; open = 1 }
+    }
+    out = out line
+    if (open) out = out "</span>"
+    print out
+  }
+  END { print "</pre>" }'
+}
+
 # The mailed report covers a day rather than the last hundred intervals, which is the point
 # of it: the screen already shows the recent window.
 mail_report() {
-  local subject=$1 body
-  body=$(mktemp) || return 1
-  {
+  local subject=$1 coloured plain html rc
+  coloured=$(mktemp) && plain=$(mktemp) && html=$(mktemp) || return 1
+
+  # Rendered once with colour on whatever the terminal is doing, then split two ways
+  (
+    bold=$'\033[1m'; dim=$'\033[2m'; cyan=$'\033[36m'
+    green=$'\033[32m'; yellow=$'\033[33m'; reset=$'\033[0m'
+    hi=$'\033[1;93m'; found=$'\033[1;92m'
+    forceRows=${STATS_MAIL_ROWS:-40}
+    periodSec=${STATS_PERIOD:-86400}
+    periodName=24h
     printf '%s\n%s\n\n' "$log" "$(date '+%a %d %b %Y %H:%M:%S %Z')"
-    forceRows=${STATS_MAIL_ROWS:-40} periodSec=${STATS_PERIOD:-86400} periodName=24h \
-      render "$tmplog" "$tmppps"
-  } > "$body"
-  send_mail "$subject" "$body"
-  local rc=$?
-  rm -f "$body"
+    render "$tmplog" "$tmppps"
+  ) > "$coloured"
+
+  sed 's/\x1b\[[0-9;]*m//g' "$coloured" > "$plain"
+  ansi_to_html < "$coloured" > "$html"
+
+  send_mail "$subject" "$plain" "$html"
+  rc=$?
+  rm -f "$coloured" "$plain" "$html"
   return $rc
 }
 
