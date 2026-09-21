@@ -22,27 +22,26 @@ const STRIP_BESTS_LEGACY_NAMES = ['Strip Progress'];
 const FRAME_BESTS_HEADERS = ['frameIdx', 'kernelIdx', 'bestGenerations', 'bestPattern'];
 const STRIP_BESTS_HEADERS = ['centerIdx', 'middleIdx', 'bestGenerations', 'bestPattern'];
 
-// Where sendMail delivers. Set this to your own address; nothing is sent until you do.
+// The display name on the From line, so these are easy to spot and to filter on.
+const MAIL_SENDER_NAME = 'find-optimal';
+
+// Where sendMail delivers. Nothing is sent until this has an address.
+//
+// It must not be the account that owns this script, nor anything that routes back to it.
+// Gmail files a message it considers self-sent under Sent and delivers no inbox copy, and
+// it counts every verified "Send mail as" identity as the account - so sending from an
+// alias does not help, which was tried. The failure gives every sign of success: the script
+// reports sent, the quota decrements, and Delivered-To names the right mailbox, because the
+// message really was delivered. It is just labelled Sent rather than Inbox.
+//
+// A Google Group with the account as its only member is how the reports still reach that
+// mailbox: the group relays the message, so it arrives from the group and is delivered
+// normally. Any mailbox outside the account works too.
 //
 // It is a constant rather than a lookup of the script owner because Session.getEffectiveUser
 // needs the userinfo.email scope, which a web app deployment does not carry - asking for it
 // would mean re-authorizing the whole script to learn an address that is known anyway.
-// The display name on the From line, so these are easy to spot and to filter on.
-const MAIL_SENDER_NAME = 'find-optimal';
-
-// Address to send FROM, when it must differ from the recipient.
-//
-// Gmail files a message whose sender is the same account as its recipient under Sent and
-// delivers no inbox copy - it reads as something you sent, not something you received, and
-// no filter can intervene because there was no inbox delivery to act on. Sending from a
-// different address avoids that entirely.
-//
-// It must be an alias the sending account has verified: Gmail settings, Accounts, "Send
-// mail as". Anything else is rejected. Leave it empty to send from the account itself,
-// which is fine as long as MAIL_DEFAULT_RECIPIENT is some other mailbox.
-const MAIL_SENDER_ALIAS = 'gol@aharbick.com';
-
-const MAIL_DEFAULT_RECIPIENT = 'aharbick@aharbick.com';
+const MAIL_DEFAULT_RECIPIENT = 'gol-alerts@aharbick.com';
 
 // Extra addresses sendMail may deliver to. The default recipient is always allowed; anything
 // else has to be listed here, so a leaked API key cannot turn this into an open relay.
@@ -312,7 +311,6 @@ function googleSendMail(e) {
   // The report is a monospace table, so the readable version is the HTML one; the plain
   // body stays as the fallback for clients that ask for it.
   if (data.htmlBody) message.htmlBody = data.htmlBody;
-  if (MAIL_SENDER_ALIAS) message.from = MAIL_SENDER_ALIAS;
   MailApp.sendEmail(message);
   return sendJsonResponse(true, 'Mail sent', { to: to, quotaRemaining: remaining - 1 });
 }
@@ -345,26 +343,18 @@ function authorizeMail(to) {
     body: 'progress-api.js can send mail now.\n\nSent at ' + stamp + ' to ' + recipient,
     name: MAIL_SENDER_NAME,
   };
-  if (MAIL_SENDER_ALIAS) message.from = MAIL_SENDER_ALIAS;
   MailApp.sendEmail(message);
   const after = MailApp.getRemainingDailyQuota();
 
-  console.log('Sent to ' + recipient +
-              (MAIL_SENDER_ALIAS ? ' from ' + MAIL_SENDER_ALIAS : ' from this account'));
+  console.log('Sent to ' + recipient);
   console.log('Quota ' + before + ' -> ' + after +
               (after < before ? ' (accepted by Google)'
                               : ' (UNCHANGED - it was not actually sent)'));
   console.log('Search for it with: in:anywhere subject:"find-optimal: mail authorized ' +
               stamp + '"');
-  if (!MAIL_SENDER_ALIAS) {
-    console.log('Landing under Sent rather than Inbox means the sender and the recipient' +
-                ' are the same account: set MAIL_SENDER_ALIAS, or send somewhere else.');
-  } else {
-    console.log('Now check the delivered message: the From line should read ' +
-                MAIL_SENDER_ALIAS + '. If it shows this account instead, Gmail ignored the' +
-                ' alias - it must be verified under Gmail, Settings, Accounts, "Send mail' +
-                ' as", on the account owning this script, and this file redeployed.');
-  }
+  console.log('Landing under Sent rather than Inbox means this recipient routes back to the' +
+              ' sending account: send to a group that relays for it, or to a mailbox outside' +
+              ' the account. A different From address does not help.');
 }
 
 /**

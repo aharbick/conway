@@ -45,8 +45,8 @@ address that is already known.
 ### Do not send to the account that owns the script
 
 Gmail files a message it considers self-sent under `Sent` and delivers no inbox copy, and it
-counts every verified "Send mail as" identity as the account - so `MAIL_SENDER_ALIAS` does
-not work around it. This fails silently in the worst way: the script reports success, the
+counts every verified "Send mail as" identity as the account, so changing the From address
+does not work around it either. This fails silently in the worst way: the script reports success, the
 quota decrements, `Delivered-To` shows the mailbox, and nothing appears in the inbox.
 
 Send to a **Google Group** with the account as its only member. The group relays the
@@ -57,7 +57,7 @@ normally, and the reports still land in the same mailbox:
 2. Add the account that owns the script as a member.
 3. Access settings: the sending account must be allowed to post, and members must receive
    mail (not "no email" delivery).
-4. Set `MAIL_DEFAULT_RECIPIENT` to the group and clear `MAIL_SENDER_ALIAS`.
+4. Set `MAIL_DEFAULT_RECIPIENT` to the group.
 
 Any mailbox outside the account works just as well.
 
