@@ -53,7 +53,8 @@
 # running together cannot both decide the same trigger fired and mail it twice.
 #
 # A first --notify records where things stand and stays quiet, so it does not announce a
-# percentage and a record that were both reached weeks ago. What has been announced lives in
+# percentage and a record that were both reached weeks ago. It does not send that day's
+# summary either, unless the hour has yet to come round. What has been announced lives in
 # a .notify file beside the counter cache, and a trigger is only recorded once its mail is
 # away - a failed send stays pending and retries.
 #
@@ -76,7 +77,7 @@
 #                  --mailto you@example.com \
 #                  find-optimal/logs/find-optimal-5090-oracle.log
 #
-#   STATS_DAILY_SECONDS=86400   how often the summary goes out (default 24h)
+#   STATS_DAILY_HOUR=9          local hour the daily summary goes out (default 9am)
 #   STATS_MAIL_ROWS=40          rows to size the mailed plot to, having no terminal
 
 set -o pipefail
@@ -829,7 +830,7 @@ notify_preflight() {
 # would arrive twice.
 notifyStatus=""
 notify_check() {
-  local lastline c m high pct best now sent failed
+  local lastline c m high pct best now dailyAt sent failed
   notifyStatus=""
 
   exec 9>"$notifyfile.lock" || return 1
@@ -846,6 +847,7 @@ notify_check() {
   best=${high:-0}
   [ "${stBest:-0}" -gt "$best" ] && best=$stBest
   now=$(date +%s)
+  dailyAt=$(date -d "today ${STATS_DAILY_HOUR:-9}:00" +%s 2>/dev/null) || dailyAt=$((now + 1))
 
   # A first run has nothing to compare against, so it records where things stand and stays
   # quiet. Announcing 10% and a 214 that were both reached long ago is not news.
@@ -878,7 +880,11 @@ notify_check() {
         sent=$((sent + 1)); nfPct=$pct
       else failed=$((failed + 1)); fi
     fi
-    if [ $(( now - nfDaily )) -ge "${STATS_DAILY_SECONDS:-86400}" ]; then
+    # The summary goes out at a wall-clock hour, not every 24 hours from the last one, so
+    # it does not drift an hour later each day. Firing on "we are past today's hour and the
+    # last one predates it" also means a machine that was asleep at nine sends once when it
+    # wakes, rather than once for every morning it missed.
+    if [ "$now" -ge "$dailyAt" ] && [ "$nfDaily" -lt "$dailyAt" ]; then
       if mail_report "find-optimal: daily report - ${pct}% searched, best ${best}"; then
         sent=$((sent + 1)); nfDaily=$now
       else failed=$((failed + 1)); fi
