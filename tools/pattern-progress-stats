@@ -40,8 +40,15 @@
 #   STATS_PLOT_N=2000    intervals the plot covers (default: 20 per column, so about 1800)
 #
 # Mail. --notify evaluates three triggers and sends what fired: the next whole percent, a
-# new best, and a daily summary. The mailed report covers the last 24 hours rather than the
-# last hundred intervals, since the screen already shows the recent window.
+# pattern matching or beating the best seen, and a daily summary. The mailed report covers
+# the last 24 hours rather than the last hundred intervals, since the screen already shows
+# the recent window.
+#
+# A tie counts, not just a record: another pattern reaching the record length is a second
+# example of it, and the mail carries the generations, the interval and the pattern in both
+# decimal and binary. Note that --oracle only reports a pattern at or above its target, and
+# the target defaults to one past the best known - so in oracle mode nothing ties unless the
+# search is run with the target set equal to the best instead, as --oracle=214.
 #
 #   tools/pattern-progress-stats --watch --notify --mailto me@example.com logs/...
 #   tools/pattern-progress-stats --notify --mailto me@example.com logs/...   # for cron
@@ -577,6 +584,8 @@ load_state() {
   if [ "${stVersion:-0}" != 1 ] || [ "${stInode:-0}" != "$inode" ] || \
      [ "${stOffset:-0}" -gt "$size" ]; then
     stN=0; stActive=0; stRestarts=0; stPrev=0; stBest=0; stBestAt="-"; stOffset=0
+    # A rebuild replays the whole log, so anything set aside from the old one is stale
+    [ -n "$pendingfile" ] && rm -f "$pendingfile"
   fi
 }
 
@@ -612,7 +621,7 @@ advance_state() {
 
   read -r stN stActive stRestarts stPrev stBest stBestAt <<EOF
 $(awk -v n="$stN" -v active="$stActive" -v restarts="$stRestarts" -v prev="$stPrev" \
-      -v best="$stBest" -v bestAt="$stBestAt" -v gap="$gap" '
+      -v best="$stBest" -v bestAt="$stBestAt" -v gap="$gap" -v pending="$pendingfile" '
 /timestamp=/ {
   if (!match($0, /timestamp=[0-9]+/)) next
   ts = substr($0, RSTART + 10, RLENGTH - 10) + 0
@@ -628,6 +637,13 @@ $(awk -v n="$stN" -v active="$stActive" -v restarts="$stRestarts" -v prev="$stPr
 
   if (match($0, /bestGenerations=[0-9]+/)) {
     b = substr($0, RSTART + 16, RLENGTH - 16) + 0
+
+    # Set aside anything that matches or beats the best so far. A tie is worth seeing -
+    # another pattern reaching the record length is a second example of it - and this is
+    # the only place every line is read exactly once, so it is where to catch them without
+    # rescanning or risking a miss when one scrolls out of the tail window.
+    if (b > 0 && b >= best && pending != "") print $0 >> pending
+
     if (b > best) {
       best = b
       c = m = 0
@@ -670,8 +686,10 @@ tmplog=$(mktemp) && tmppps=$(mktemp) && tmpchunk=$(mktemp) || exit 1
 trap 'rm -f "$tmplog" "$tmppps" "$tmpchunk" "$tmpchunk.t"' EXIT
 
 statefile=$(state_path) || statefile=""
+pendingfile=""
 if [ -n "$statefile" ]; then
-  [ -n "$rescan" ] && rm -f "$statefile"
+  pendingfile="$statefile.pending"
+  [ -n "$rescan" ] && rm -f "$statefile" "$pendingfile"
   load_state
 fi
 
@@ -784,7 +802,7 @@ ansi_to_html() {
 # The mailed report covers a day rather than the last hundred intervals, which is the point
 # of it: the screen already shows the recent window.
 mail_report() {
-  local subject=$1 coloured plain html rc
+  local subject=$1 prelude=${2:-} coloured plain html rc
   coloured=$(mktemp) && plain=$(mktemp) && html=$(mktemp) || return 1
 
   # Rendered once with colour on whatever the terminal is doing, then split two ways
@@ -796,6 +814,8 @@ mail_report() {
     periodSec=${STATS_PERIOD:-86400}
     periodName=24h
     printf '%s\n%s\n\n' "$log" "$(date '+%a %d %b %Y %H:%M:%S %Z')"
+    # What triggered the mail goes above the report, since that is what is being read for
+    [ -n "$prelude" ] && [ -s "$prelude" ] && { cat "$prelude"; printf '\n'; }
     render "$tmplog" "$tmppps"
   ) > "$coloured"
 
@@ -831,6 +851,7 @@ notify_preflight() {
 notifyStatus=""
 notify_check() {
   local lastline c m high pct best now dailyAt sent failed
+  local prelude matches maxg subject line g
   notifyStatus=""
 
   exec 9>"$notifyfile.lock" || return 1
@@ -854,6 +875,7 @@ notify_check() {
   if [ "$nfVersion" != 1 ]; then
     nfPct=$pct; nfBest=$best; nfDaily=$now
     save_notify
+    [ -n "$pendingfile" ] && : > "$pendingfile"
     notifyStatus="armed at ${pct}% and best ${best}"
     if [ -z "$mailnow" ]; then
       exec 9>&-
@@ -870,10 +892,39 @@ notify_check() {
       sent=$((sent + 1)); nfDaily=$now
     else failed=$((failed + 1)); fi
   else
-    if [ "$best" -gt "$nfBest" ]; then
-      if mail_report "find-optimal: NEW BEST ${best} generations (was ${nfBest})"; then
-        sent=$((sent + 1)); nfBest=$best
-      else failed=$((failed + 1)); fi
+    # Anything set aside that matches or beats what was last announced. Filtering on nfBest
+    # here rather than when setting them aside means a cache rebuild, which replays the
+    # climb from 198 upward, does not mail every step of it.
+    if [ -n "$pendingfile" ] && [ -s "$pendingfile" ]; then
+      prelude=$(mktemp); matches=0; maxg=0
+      while read -r line; do
+        g=$(expr "$line" : '.*bestGenerations=\([0-9]*\)')
+        [ "${g:-0}" -ge "$nfBest" ] || continue
+        [ "${g:-0}" -gt "$maxg" ] && maxg=$g
+        matches=$((matches + 1))
+        printf '%s generations at %s:%s\n' "$g" \
+          "$(expr "$line" : '.*centerIdx=\([0-9]*\)')" \
+          "$(expr "$line" : '.*middleIdx=\([0-9]*\)')"
+        printf '  pattern %s\n' "$(expr "$line" : '.*bestPattern=\([0-9]*\)')"
+        printf '  binary  %s\n' "$(expr "$line" : '.*bestPatternBin=\([01]*\)')"
+      done < "$pendingfile" > "$prelude"
+
+      if [ "$matches" -gt 0 ]; then
+        if [ "$maxg" -gt "$nfBest" ]; then
+          subject="find-optimal: NEW BEST ${maxg} generations (was ${nfBest})"
+        elif [ "$matches" -gt 1 ]; then
+          subject="find-optimal: ${matches} more patterns at ${maxg} generations"
+        else
+          subject="find-optimal: another pattern at ${maxg} generations"
+        fi
+        if mail_report "$subject" "$prelude"; then
+          sent=$((sent + 1)); nfBest=$maxg; : > "$pendingfile"
+        else failed=$((failed + 1)); fi
+      else
+        # Nothing here reaches the bar, so it will not on a later pass either
+        : > "$pendingfile"
+      fi
+      rm -f "$prelude"
     fi
     if [ "$pct" -gt "$nfPct" ]; then
       if mail_report "find-optimal: ${pct}% searched"; then
