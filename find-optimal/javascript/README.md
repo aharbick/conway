@@ -31,9 +31,11 @@ Setting it up takes two steps, and both are needed:
    grants scopes when a function runs in the editor and you accept the consent prompt, not
    when a web app is deployed - so a deployment made before `MailApp` appeared in this file
    has no `script.send_mail` scope, and `sendMail` fails with a permissions exception no
-   matter how many times it is redeployed. Recipients are an allowlist on purpose: the API key travels in
-a query string and lives in a workstation `.envrc`, so anyone holding it could otherwise
-send mail from the owning Google account to anywhere. `MAIL_ALLOWED_RECIPIENTS` widens it.
+   matter how many times it is redeployed.
+
+Recipients are an allowlist on purpose: the API key travels in a query string and lives in a
+workstation `.envrc`, so anyone holding it could otherwise send mail from the owning Google
+account to anywhere. `MAIL_ALLOWED_RECIPIENTS` widens it.
 
 The recipient is a constant rather than a lookup of the script owner because
 `Session.getEffectiveUser()` needs the `userinfo.email` scope, which a web app deployment
